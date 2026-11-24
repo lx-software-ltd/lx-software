@@ -112,6 +112,8 @@ export class LxsoftwareStack extends cdk.Stack {
       adminWebDomainName: params.adminWebDomainName,
       publicSiteOrigins: params.publicSiteOrigins,
       publicApiBaseUrl: params.publicApiBaseUrl,
+      apiCustomDomainName: params.apiCustomDomainName,
+      apiCustomDomainCertificateArn: params.apiCustomDomainCertificateArn,
       sharedEncryptionKey: this.sharedEncryptionKey,
     });
 

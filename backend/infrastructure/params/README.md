@@ -58,6 +58,11 @@ Typical committed values include:
   stays GET-only. Keys still need `set-write --allow-write`. Authenticated
   write denials return `403 {"reason": …}` (`writes_disabled`,
   `key_read_only`, `owner_only`, `scope`).
+- Optional API hostname on `lxsoftware`: `lxsoftware:ApiCustomDomainName`
+  (`api.lx-software.com`) and `lxsoftware:ApiCustomDomainCertificateArn`
+  (`<FROM_GITHUB_SECRET: CDK_PARAM_API_CUSTOM_DOMAIN_CERTIFICATE_ARN>`, ACM in
+  **ap-southeast-1**). An empty value or the disabled placeholder skips the
+  custom domain. The DNS record is DNS-only and points at `ApiCustomDomainTarget`.
 - Optional Cognito custom Hosted UI on `lxsoftware`: `lxsoftware:CognitoCustomDomainName`
   and `lxsoftware:CognitoCustomDomainCertificateArn` (`<FROM_GITHUB_SECRET: CDK_PARAM_COGNITO_CUSTOM_DOMAIN_CERTIFICATE_ARN>`, ACM in **us-east-1**).
   An empty value keeps the prefix domain. The template defaults are disabled

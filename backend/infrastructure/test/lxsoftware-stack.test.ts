@@ -6,6 +6,10 @@ import * as cdk from "aws-cdk-lib";
 import * as cognito from "aws-cdk-lib/aws-cognito";
 import { Match, Template } from "aws-cdk-lib/assertions";
 import {
+  API_CUSTOM_CERTIFICATE_DISABLED,
+  API_CUSTOM_DOMAIN_DISABLED,
+} from "../lib/admin-api-domain";
+import {
   COGNITO_CUSTOM_CERTIFICATE_DISABLED,
   COGNITO_CUSTOM_DOMAIN_DISABLED,
 } from "../lib/cognito-custom-domain";
@@ -427,6 +431,58 @@ describe("HTTP API routes", () => {
       expect(route?.Properties?.AuthorizationType).toBe("JWT");
       expect(route?.Properties?.AuthorizerId).toBeDefined();
     }
+  });
+});
+
+describe("API custom domain", () => {
+  test("the regional domain and mapping exist only when both parameters are set", () => {
+    const parameters = template.toJSON().Parameters as Record<string, { Default?: string }>;
+    expect(parameters.ApiCustomDomainName.Default).toBe(API_CUSTOM_DOMAIN_DISABLED);
+    expect(parameters.ApiCustomDomainCertificateArn.Default).toBe(API_CUSTOM_CERTIFICATE_DISABLED);
+
+    const domains = resourcesOfType("AWS::ApiGatewayV2::DomainName");
+    expect(Object.keys(domains)).toHaveLength(1);
+    const domain = Object.values(domains)[0];
+    expect(domain.Condition).toBe("UseApiCustomDomain");
+    const config = domain.Properties?.DomainNameConfigurations?.[0];
+    expect(config).toMatchObject({
+      EndpointType: "REGIONAL",
+      SecurityPolicy: "TLS_1_2",
+      CertificateArn: { Ref: "ApiCustomDomainCertificateArn" },
+    });
+    expect(domain.Properties?.DomainName).toEqual({ Ref: "ApiCustomDomainName" });
+
+    const mappings = resourcesOfType("AWS::ApiGatewayV2::ApiMapping");
+    expect(Object.keys(mappings)).toHaveLength(1);
+    const mapping = Object.values(mappings)[0];
+    expect(mapping.Condition).toBe("UseApiCustomDomain");
+    expect(mapping.Properties?.Stage).toBe("$default");
+    const stages = resourcesOfType("AWS::ApiGatewayV2::Stage");
+    const stageId = Object.keys(stages)[0];
+    const depends = mapping.DependsOn;
+    expect(Array.isArray(depends) ? depends : [depends]).toContain(stageId);
+
+    const outputs = template.toJSON().Outputs as Record<string, { Condition?: string }>;
+    expect(outputs.ApiCustomDomainTarget.Condition).toBe("UseApiCustomDomain");
+    expect(outputs.ApiCustomDomainUrl.Condition).toBe("UseApiCustomDomain");
+
+    const conditions = template.toJSON().Conditions as Record<string, unknown>;
+    const serialized = JSON.stringify(conditions.UseApiCustomDomain);
+    expect(serialized).toContain(API_CUSTOM_DOMAIN_DISABLED);
+    expect(serialized).toContain(API_CUSTOM_CERTIFICATE_DISABLED);
+    expect(serialized).toContain('""');
+
+    const api = Object.values(resourcesOfType("AWS::ApiGatewayV2::Api"))[0];
+    expect(api.Properties?.DisableExecuteApiEndpoint).toBeUndefined();
+    const withBaseUrl = Object.values(resourcesOfType("AWS::Lambda::Function")).filter(
+      (fn) => fn.Properties?.Environment?.Variables?.PUBLIC_API_BASE_URL !== undefined,
+    );
+    expect(withBaseUrl).toHaveLength(1);
+    const baseUrl = JSON.stringify(
+      withBaseUrl[0].Properties?.Environment?.Variables?.PUBLIC_API_BASE_URL,
+    );
+    expect(baseUrl).toContain("UseApiCustomDomain");
+    expect(baseUrl).toContain("ApiCustomDomainName");
   });
 });
 
@@ -1037,6 +1093,10 @@ describe("Siu Tin Dei parameter naming", () => {
     expect(file["lxsoftware:LxSoftwareResumeEnabled"]).toBe("true");
     expect(file["lxsoftware:SiutindeiAdminApiBaseUrl"]).toBe(
       "https://api.siutindei.com/v1",
+    );
+    expect(file["lxsoftware:ApiCustomDomainName"]).toBe("api.lx-software.com");
+    expect(file["lxsoftware:ApiCustomDomainCertificateArn"]).toBe(
+      "<FROM_GITHUB_SECRET: CDK_PARAM_API_CUSTOM_DOMAIN_CERTIFICATE_ARN>",
     );
 
     const env = { account: "123456789012", region: "ap-southeast-1" };

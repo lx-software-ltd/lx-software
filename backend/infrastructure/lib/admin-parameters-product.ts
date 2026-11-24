@@ -281,7 +281,7 @@ export function defineProductParameters(scope: cdk.Stack) {
     type: "String",
     default: "",
     description:
-      "Public base URL of this stack's HTTP API. Used today for board unsubscribe and newsletter confirm links. Leave blank to use the API endpoint CloudFormation assigns.",
+      "Public base URL of this stack's HTTP API. Used for board unsubscribe and newsletter confirm links. Leave blank to use https://ApiCustomDomainName when that domain is on, otherwise the API endpoint CloudFormation assigns.",
   });
   const publicApiWritesEnabled = new cdk.CfnParameter(scope, "PublicApiWritesEnabled", {
     type: "String",
