@@ -536,7 +536,7 @@ stack-wide knobs are unprefixed. Lambda env vars stay short
 | `SiutindeiBoardToolsEnabled` | `true` (default) / `false`. Deploy-time kill switch for every tool call. |
 | `SiutindeiBoardStaffEnabled` | `false` (default) / `true`. Deploy-time kill switch for staff tasks; fail-closed (`1|true|yes|on`), set on `AdminApiFn` and `InboundStatementMailFn`. Production sets `true`; the Staff UI toggle is still required. |
 | `PublicSiteOrigins` | CSV of extra browser origins on the HTTP API CORS list (admin origin always included). Needed by the public newsletter form. |
-| `PublicApiBaseUrl` | Public base URL of the HTTP API for unsubscribe / confirm links. Blank uses the CloudFormation endpoint. |
+| `PublicApiBaseUrl` | Public base URL of the HTTP API for unsubscribe / confirm links. Blank uses `https://ApiCustomDomainName` when that domain is on, otherwise the CloudFormation endpoint. |
 | `SiutindeiBoardOutreachSendingDomain` / `SiutindeiBoardOutreachFromLocalPart` | Cold-outreach From (`partnerships@partners.siutindei.com`). Publish the three `SiutindeiOutreachDkimCnameN` outputs (or run `python3 scripts/sync-ses-sending-dns.py --domain partners.siutindei.com --retry`) plus MAIL FROM MX + TXT and DMARC before `outreach_send` will send. SES Easy DKIM that sits in `FAILED` does not re-check DNS on its own. |
 | `SiutindeiBoardAwsStackPrefix` / `SiutindeiBoardAwsLambdaNames` | Alarm-name prefix (default `siutindei`) and CSV of siutindei Lambda names for `aws_lambda_health`. `aws_monthly_cost` filters by the `Project` tag and falls back to the account (`scope: account`). |
 | `SiutindeiClusterArn` | Aurora cluster ARN. When set, CDK enables the HTTP Data API and applies `scripts/siutindei/receivables.sql`; required for `finance` / `product` tools. |
@@ -550,6 +550,31 @@ stack-wide knobs are unprefixed. Lambda env vars stay short
 | `SiutindeiBoardChatModel` / `MeetingModel` / `DeepDiveModel` | Default OpenRouter slugs (`openai/gpt-4.1-mini`, `openai/gpt-4.1-mini`, `anthropic/claude-sonnet-4`); overridable in **Settings**. They are also sent as `models` fallbacks so a 429 on a cheap primary continues on the defaults. |
 | `SiutindeiBoardCatalogImportEnabled` | `false` (CDK default) / `true`. Kill switch for `catalog_import`; preview and local dry-run work while it is off. Production is `true`. |
 | `SiutindeiAdminApiBaseUrl` / `SiutindeiUserPoolId` / `SiutindeiBoardImporterClientId` / `SiutindeiBoardCatalogManagerId` | siutindei admin API base URL, Cognito user pool and importer app client for the catalog importer user, and the default manager id stamped on imported organisations. Blank until the product side exists. Production sets the base URL to `https://api.siutindei.com/v1`. |
+| `ApiCustomDomainName` / `ApiCustomDomainCertificateArn` | Optional `api.lx-software.com` and its certificate in **ap-southeast-1**. Both empty, or the disabled placeholders, leave the custom domain off. Production sets the hostname and `<FROM_GITHUB_SECRET: CDK_PARAM_API_CUSTOM_DOMAIN_CERTIFICATE_ARN>`. |
+
+### API hostname
+
+The HTTP API is also served at `https://api.lx-software.com`, the same
+shape as findingalpha's `api.findingalpha.app`. The certificate is
+requested in **ap-southeast-1**, the stack's region. It is not the
+us-east-1 certificate used by CloudFront. Set the production
+environment secret `CDK_PARAM_API_CUSTOM_DOMAIN_CERTIFICATE_ARN` when
+the certificate is **ISSUED**. An empty secret leaves the custom domain
+off, and the execute-api URL keeps working for the admin SPA.
+
+The DNS record points at the stack output `ApiCustomDomainTarget` (a
+`d-<id>.execute-api.ap-southeast-1.amazonaws.com` name). It does not
+point at `<api-id>.execute-api.ap-southeast-1.amazonaws.com`. The
+record is DNS only, not proxied. After the domain exists:
+
+```bash
+python3 scripts/cloudflare/publish-api-domain.py check
+python3 scripts/cloudflare/publish-api-domain.py apply
+```
+
+`CLOUDFLARE_API_TOKEN` needs Zone DNS edit on `lx-software.com`. AWS
+credentials need `apigateway:GET` on the domain name. `check` only
+reads. `apply` writes the CNAME.
 
 ### Secrets
 

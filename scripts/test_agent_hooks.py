@@ -62,6 +62,7 @@ class GuardShellTest(unittest.TestCase):
         self.assert_denied("python3 scripts/mint-openrouter-app-keys.py")
         self.assert_denied("python3 scripts/configure-public-analytics.py apply")
         self.assert_denied("python3 scripts/cloudflare/publish-apex-redirect.py apply")
+        self.assert_denied("python3 scripts/cloudflare/publish-api-domain.py apply")
         self.assert_denied("bash scripts/cloudflare/publish-public-media.sh")
         self.assert_denied("python3 scripts/backfill-asset-index.py --apply")
         self.assert_denied("aws ses set-active-receipt-rule-set --rule-set-name example")
@@ -93,6 +94,7 @@ class GuardShellTest(unittest.TestCase):
             "python3 scripts/mint-openrouter-app-keys.py --dry-run",
             "python3 scripts/configure-public-analytics.py check",
             "python3 scripts/cloudflare/publish-apex-redirect.py check",
+            "python3 scripts/cloudflare/publish-api-domain.py check",
             "python3 scripts/backfill-asset-index.py",
             "npx cdk diff",
         ):
