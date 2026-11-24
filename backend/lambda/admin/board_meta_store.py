@@ -190,4 +190,3 @@ def _is_live(source: str, received: str) -> bool:
     except ValueError:
         return False
     return age <= timedelta(hours=_LIVE_HOURS)
-

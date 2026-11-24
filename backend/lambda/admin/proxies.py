@@ -357,5 +357,3 @@ def _proxy_fx_v2_rates(qs: dict[str, Any] | None, request_id: str) -> dict[str, 
     if not isinstance(payload, list):
         return _json_response(502, {"message": "FX upstream unexpected shape"})
     return _json_response(200, payload)
-
-

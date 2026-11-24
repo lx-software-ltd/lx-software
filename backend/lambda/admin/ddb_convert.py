@@ -54,4 +54,3 @@ def _from_ddb(obj: dict[str, Any]) -> dict[str, Any]:
         else:
             out[k] = v
     return out
-

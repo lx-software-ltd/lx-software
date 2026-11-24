@@ -37,4 +37,3 @@ describe("consentDaysRemaining", () => {
     expect(consentDaysRemaining("not-a-date", now)).toBeNull();
   });
 });
-

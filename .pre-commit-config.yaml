@@ -14,10 +14,12 @@ repos:
       - id: check-yaml
         args: [--allow-multiple-documents]
       - id: check-json
+        exclude: tsconfig.*\.json$
       - id: check-added-large-files
         args: [--maxkb=1000]
       - id: check-merge-conflict
       - id: detect-private-key
+        exclude: ^backend/lambda/admin/test_board_t8\.py$
 
   - repo: https://github.com/lx-software-ltd/actions
     rev: 8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf
