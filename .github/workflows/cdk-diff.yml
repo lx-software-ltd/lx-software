@@ -41,13 +41,13 @@ jobs:
 
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@936d3fad83b00b4cc23a603717fdf804576c300c # main 2026-11-24
+        uses: lx-software-ltd/actions/setup-node@a461dd613711bb036918699617487c42f324cc9e # main 2026-11-24
         with:
           cache: npm
           working-directory: backend/infrastructure
 
       - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@936d3fad83b00b4cc23a603717fdf804576c300c # main 2026-11-24
+        uses: lx-software-ltd/actions/setup-python@a461dd613711bb036918699617487c42f324cc9e # main 2026-11-24
 
       - name: Determine deployment region
         id: region
@@ -58,7 +58,7 @@ jobs:
 
       - name: Configure AWS credentials
         id: aws
-        uses: lx-software-ltd/actions/aws-oidc@936d3fad83b00b4cc23a603717fdf804576c300c # main 2026-11-24
+        uses: lx-software-ltd/actions/aws-oidc@a461dd613711bb036918699617487c42f324cc9e # main 2026-11-24
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ steps.region.outputs.region }}
@@ -73,7 +73,7 @@ jobs:
 
       - name: Check CDK Bootstrap status
         if: steps.aws.outputs.ready == 'true'
-        uses: lx-software-ltd/actions/cdk-bootstrap-check@936d3fad83b00b4cc23a603717fdf804576c300c # main 2026-11-24
+        uses: lx-software-ltd/actions/cdk-bootstrap-check@a461dd613711bb036918699617487c42f324cc9e # main 2026-11-24
         with:
           qualifier: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
           region: ${{ steps.region.outputs.region }}
@@ -91,12 +91,13 @@ jobs:
           CDK_PARAM_SIUTINDEI_CLUSTER_ARN: ${{ secrets.CDK_PARAM_SIUTINDEI_CLUSTER_ARN }}
           CDK_PARAM_EVOLVESPROUTS_CLUSTER_ARN: ${{ secrets.CDK_PARAM_EVOLVESPROUTS_CLUSTER_ARN }}
           CDK_PARAM_COGNITO_CUSTOM_DOMAIN_CERTIFICATE_ARN: ${{ secrets.CDK_PARAM_COGNITO_CUSTOM_DOMAIN_CERTIFICATE_ARN }}
+          CDK_PARAM_API_CUSTOM_DOMAIN_CERTIFICATE_ARN: ${{ secrets.CDK_PARAM_API_CUSTOM_DOMAIN_CERTIFICATE_ARN }}
           CDK_PARAM_ADMIN_WEB_CERTIFICATE_ARN: ${{ secrets.CDK_PARAM_ADMIN_WEB_CERTIFICATE_ARN }}
           # template:end
 
       - name: Run CDK diff
         if: steps.aws.outputs.ready == 'true' && steps.prep.outputs.run == 'true'
-        uses: lx-software-ltd/actions/cdk-diff@936d3fad83b00b4cc23a603717fdf804576c300c # main 2026-11-24
+        uses: lx-software-ltd/actions/cdk-diff@a461dd613711bb036918699617487c42f324cc9e # main 2026-11-24
         with:
           working-directory: backend/infrastructure
           stacks: ${{ steps.prep.outputs.stacks }}
@@ -107,6 +108,12 @@ jobs:
           # template:end
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ steps.region.outputs.region }}
+        # template:set
+        env:
+          P_GOOGLE_CLIENT_ID: ${{ vars.ADMIN_GOOGLE_CLIENT_ID }}
+          P_GOOGLE_CLIENT_SECRET: ${{ secrets.ADMIN_GOOGLE_CLIENT_SECRET }}
+          P_EMAIL_ALLOWLIST: ${{ secrets.ADMIN_FEDERATED_EMAIL_ALLOWLIST }}
+        # template:end
 
   pull-request:
     if: github.event_name == 'pull_request'
@@ -120,13 +127,13 @@ jobs:
 
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@936d3fad83b00b4cc23a603717fdf804576c300c # main 2026-11-24
+        uses: lx-software-ltd/actions/setup-node@a461dd613711bb036918699617487c42f324cc9e # main 2026-11-24
         with:
           cache: npm
           working-directory: backend/infrastructure
 
       - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@936d3fad83b00b4cc23a603717fdf804576c300c # main 2026-11-24
+        uses: lx-software-ltd/actions/setup-python@a461dd613711bb036918699617487c42f324cc9e # main 2026-11-24
 
       - name: Determine deployment region
         id: region
@@ -144,7 +151,7 @@ jobs:
       - name: Configure AWS credentials
         id: aws
         if: vars.AWS_DIFF_ROLE_NAME != ''
-        uses: lx-software-ltd/actions/aws-oidc@936d3fad83b00b4cc23a603717fdf804576c300c # main 2026-11-24
+        uses: lx-software-ltd/actions/aws-oidc@a461dd613711bb036918699617487c42f324cc9e # main 2026-11-24
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ steps.region.outputs.region }}
@@ -164,7 +171,7 @@ jobs:
 
       - name: Check CDK Bootstrap status
         if: steps.aws.outputs.ready == 'true'
-        uses: lx-software-ltd/actions/cdk-bootstrap-check@936d3fad83b00b4cc23a603717fdf804576c300c # main 2026-11-24
+        uses: lx-software-ltd/actions/cdk-bootstrap-check@a461dd613711bb036918699617487c42f324cc9e # main 2026-11-24
         with:
           qualifier: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
           region: ${{ steps.region.outputs.region }}
@@ -182,12 +189,13 @@ jobs:
           CDK_PARAM_SIUTINDEI_CLUSTER_ARN: ${{ secrets.CDK_PARAM_SIUTINDEI_CLUSTER_ARN }}
           CDK_PARAM_EVOLVESPROUTS_CLUSTER_ARN: ${{ secrets.CDK_PARAM_EVOLVESPROUTS_CLUSTER_ARN }}
           CDK_PARAM_COGNITO_CUSTOM_DOMAIN_CERTIFICATE_ARN: ${{ secrets.CDK_PARAM_COGNITO_CUSTOM_DOMAIN_CERTIFICATE_ARN }}
+          CDK_PARAM_API_CUSTOM_DOMAIN_CERTIFICATE_ARN: ${{ secrets.CDK_PARAM_API_CUSTOM_DOMAIN_CERTIFICATE_ARN }}
           CDK_PARAM_ADMIN_WEB_CERTIFICATE_ARN: ${{ secrets.CDK_PARAM_ADMIN_WEB_CERTIFICATE_ARN }}
           # template:end
 
       - name: Run CDK diff
         if: steps.aws.outputs.ready == 'true' && steps.prep.outputs.run == 'true'
-        uses: lx-software-ltd/actions/cdk-diff@936d3fad83b00b4cc23a603717fdf804576c300c # main 2026-11-24
+        uses: lx-software-ltd/actions/cdk-diff@a461dd613711bb036918699617487c42f324cc9e # main 2026-11-24
         with:
           working-directory: backend/infrastructure
           stacks: ${{ steps.prep.outputs.stacks }}
@@ -198,3 +206,9 @@ jobs:
           # template:end
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ steps.region.outputs.region }}
+        # template:set
+        env:
+          P_GOOGLE_CLIENT_ID: ${{ vars.ADMIN_GOOGLE_CLIENT_ID }}
+          P_GOOGLE_CLIENT_SECRET: ${{ secrets.ADMIN_GOOGLE_CLIENT_SECRET }}
+          P_EMAIL_ALLOWLIST: ${{ secrets.ADMIN_FEDERATED_EMAIL_ALLOWLIST }}
+        # template:end

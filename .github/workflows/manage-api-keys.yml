@@ -3,38 +3,64 @@ name: Manage Public API Keys
 on:
   workflow_dispatch:
     inputs:
-      # template:set
       action:
+        # template:set
         description: "What to do"
+        # template:end
         required: true
         type: choice
-        options: [create, list, revoke, set-write, set-scopes]
+        options:
+          - create
+          - list
+          - revoke
+          - set-write
+          - set-scopes
       label:
+        # template:set
         description: "Key label (create only)"
+        # template:end
         required: false
         type: string
       expires_at:
+        # template:set
         description: "Expiry, ISO date e.g. 2027-01-01 (create only; default 90 days)"
+        # template:end
         required: false
         type: string
       scopes:
+        # template:set
         description: "Comma-separated scopes (create, and set-scopes which replaces the list)"
+        # template:end
         required: false
         type: string
       allowed_cidrs:
+        # template:set
         description: "Comma-separated CIDRs (create only, optional)"
+        # template:end
         required: false
         type: string
       allow_write:
+        # template:set
         description: "Opt the key into PUT/POST/DELETE (create and set-write)"
+        # template:end
         required: false
         type: boolean
         default: false
       key_id:
+        # template:set
         description: "keyId to revoke, set-write or set-scopes"
+        # template:end
         required: false
         type: string
-      # template:end
+      tier:
+        # template:set
+        description: "Minted keys use the admin tier"
+        # template:end
+        required: false
+        type: choice
+        default: admin
+        options:
+          - admin
 
 permissions:
   contents: read
@@ -57,7 +83,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@936d3fad83b00b4cc23a603717fdf804576c300c # main 2026-11-24
+        uses: lx-software-ltd/actions/setup-python@a461dd613711bb036918699617487c42f324cc9e # main 2026-11-24
 
       - name: Validate inputs
         env:
@@ -70,7 +96,7 @@ jobs:
 
       - name: Configure AWS credentials
         id: aws
-        uses: lx-software-ltd/actions/aws-oidc@936d3fad83b00b4cc23a603717fdf804576c300c # main 2026-11-24
+        uses: lx-software-ltd/actions/aws-oidc@a461dd613711bb036918699617487c42f324cc9e # main 2026-11-24
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ vars.AWS_REGION }}
