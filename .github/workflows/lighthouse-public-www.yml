@@ -1,17 +1,15 @@
 name: Lighthouse Public Website
-# template:set
-# template:end
 
 on:
   workflow_dispatch:
     inputs:
       page_paths:
         # template:set
-        description: 'Comma/newline-separated page paths or full URLs to audit (e.g. /, /privacy)'
+        description: "Comma/newline-separated page paths or full URLs to audit (e.g. /, /privacy)"
         # template:end
         required: false
         # template:set
-        default: '/, /fractional-cto-hong-kong, /about, /privacy, /terms, /wechat'
+        default: "/, /fractional-cto-hong-kong, /about, /privacy, /terms, /wechat"
         # template:end
   pull_request:
     paths:
@@ -33,33 +31,19 @@ jobs:
       contents: read
       statuses: write
     name: Lighthouse audit
-
-    # template:optional production-environment
-    if: ${{ github.ref == 'refs/heads/main' && (github.event_name != 'pull_request') }}
-    # The VITE_* build variables live on the production environment, the same
-    # ones Deploy Public Website reads, so the audited bundle matches the live site.
-    # .lighthouserc.json blocks the GTM / GA4 hosts during the audit: the bundle
-    # still carries VITE_GTM_ID, but the runs no longer count as sessions on the
-    # production GA4 property (three runs per page per workflow used to show up
-    # as US "direct" traffic on /privacy, /terms and /wechat).
-    # production allows only main. A pull_request ref is refs/pull/N/merge, so
-    # this job does not run for a pull request. The pull-request job below
-    # audits without that environment.
-    environment: production
-
-    # template:end
-
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         # template:set
+        with:
+          lfs: false
         # template:end
 
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
+        uses: lx-software-ltd/actions/setup-node@962b4408003d89c3bf791ce9299bd13eb75a418e # main 2026-11-24
         with:
           cache: npm
           working-directory: apps/public_www
@@ -80,7 +64,7 @@ jobs:
         run: npm run build
 
       - name: Run Lighthouse CI
-        uses: lx-software-ltd/actions/lighthouse-ci@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
+        uses: lx-software-ltd/actions/lighthouse-ci@962b4408003d89c3bf791ce9299bd13eb75a418e # main 2026-11-24
         with:
           working-directory: apps/public_www
           page-paths: ${{ inputs.page_paths }}
@@ -97,57 +81,3 @@ jobs:
           path: apps/public_www/.lighthouseci/**
           if-no-files-found: warn
           include-hidden-files: true
-# template:optional lighthouse-pull-request
-  lighthouse-pull-request:
-    permissions:
-      contents: read
-      statuses: write
-    name: Lighthouse audit
-    # Dependabot cannot read the production variables. The pull request
-    # author is what matters: a later push to that branch is not made by
-    # the Dependabot actor. This job does not select production: that
-    # environment allows only main, and the pull request ref is rejected
-    # before any step.
-    if: github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]'
-    runs-on: ubuntu-26.04
-    timeout-minutes: 20
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
-        with:
-          cache: npm
-          working-directory: apps/public_www
-
-      - name: Build public website
-        working-directory: apps/public_www
-        env:
-          VITE_MEDIA_BASE_URL: ${{ vars.VITE_MEDIA_BASE_URL }}
-          VITE_CONTACT_TEL: ${{ vars.VITE_CONTACT_TEL }}
-          VITE_CONTACT_WHATSAPP: ${{ vars.VITE_CONTACT_WHATSAPP }}
-          VITE_CONTACT_EMAIL: ${{ vars.VITE_CONTACT_EMAIL }}
-          VITE_CONTACT_WECHAT_ID: ${{ vars.VITE_CONTACT_WECHAT_ID }}
-          VITE_CONTACT_LINKEDIN: ${{ vars.VITE_CONTACT_LINKEDIN }}
-          VITE_GTM_ID: ${{ vars.VITE_GTM_ID }}
-        run: npm run build
-
-      - name: Run Lighthouse CI
-        uses: lx-software-ltd/actions/lighthouse-ci@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
-        with:
-          working-directory: apps/public_www
-          page-paths: ${{ inputs.page_paths }}
-          default-paths: /, /fractional-cto-hong-kong, /about, /privacy, /terms, /wechat
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload Lighthouse artifacts
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: lighthouse-public-www-results
-          path: apps/public_www/.lighthouseci/**
-          if-no-files-found: warn
-          include-hidden-files: true
-
-# template:end

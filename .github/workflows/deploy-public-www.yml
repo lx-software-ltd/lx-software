@@ -20,8 +20,6 @@ concurrency:
 
 jobs:
   build-and-deploy:
-# template:set
-# template:end
     if: github.ref == 'refs/heads/main'
     permissions:
       contents: read
@@ -33,22 +31,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
+        uses: lx-software-ltd/actions/setup-node@962b4408003d89c3bf791ce9299bd13eb75a418e # main 2026-11-24
         with:
           cache: npm
           working-directory: apps/public_www
 
-# template:set
-      # Vite inlines VITE_* at build time. Contact values are public on the
-      # page but must not live in git. Empty telephone / WhatsApp shows
-      # "Not configured". Empty VITE_MEDIA_BASE_URL serves the harbour
-      # files from this site. The live host is https://media.lx-software.com.
-      # Empty VITE_CONTACT_LINKEDIN shows "Not configured" and omits sameAs.
-      # Empty VITE_GTM_ID ships the site without Google Tag Manager / GA4.
-# template:end
       - name: Build public website
         working-directory: apps/public_www
-# template:set
+        # template:set
         env:
           VITE_MEDIA_BASE_URL: ${{ vars.VITE_MEDIA_BASE_URL }}
           VITE_CONTACT_TEL: ${{ vars.VITE_CONTACT_TEL }}
@@ -57,19 +47,19 @@ jobs:
           VITE_CONTACT_WECHAT_ID: ${{ vars.VITE_CONTACT_WECHAT_ID }}
           VITE_CONTACT_LINKEDIN: ${{ vars.VITE_CONTACT_LINKEDIN }}
           VITE_GTM_ID: ${{ vars.VITE_GTM_ID }}
-# template:end
+        # template:end
         run: npm run build
 
       # After the build. npm ci and the build must not see the deploy role.
       - name: Configure AWS credentials
         id: aws
-        uses: lx-software-ltd/actions/aws-oidc@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
+        uses: lx-software-ltd/actions/aws-oidc@962b4408003d89c3bf791ce9299bd13eb75a418e # main 2026-11-24
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ vars.AWS_REGION }}
 
       - name: Deploy public website
-        uses: lx-software-ltd/actions/s3-cloudfront-deploy@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
+        uses: lx-software-ltd/actions/s3-cloudfront-deploy@962b4408003d89c3bf791ce9299bd13eb75a418e # main 2026-11-24
         with:
           source: apps/public_www/dist
 # template:set

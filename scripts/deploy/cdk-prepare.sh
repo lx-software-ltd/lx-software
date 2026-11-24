@@ -3,6 +3,10 @@
 set -euo pipefail
 mode="${1:-}"
 case "$mode" in
+  region)
+    echo "region=${INPUT_AWS_REGION:-}" >> "${GITHUB_OUTPUT:?}"
+    exit 0
+    ;;
   diff|deploy) ;;
   *) echo "::error::cdk-prepare.sh requires diff or deploy" >&2; exit 1 ;;
 esac
@@ -61,6 +65,9 @@ if [ ${#PARAM_ARGS[@]} -gt 0 ]; then
   printf '%s\0' "${PARAM_ARGS[@]}" > "${RUNNER_TEMP:?}/cdk-args"
 else
   : > "${RUNNER_TEMP:?}/cdk-args"
+fi
+if [ "${CDK_STACKS:-}" = "all stacks" ] || [ -z "${CDK_STACKS:-}" ]; then
+  CDK_STACKS="lxsoftware-public-www lxsoftware lxsoftware-admin-web"
 fi
 STACK_ARGS=()
 if [ -n "${CDK_STACKS:-}" ]; then

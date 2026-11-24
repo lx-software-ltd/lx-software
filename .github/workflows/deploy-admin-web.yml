@@ -13,12 +13,7 @@ on:
       - ".github/workflows/deploy-admin-web.yml"
     # template:end
 
-  # template:optional workflow-run
-  # template:set
-  # A backend deploy can replace the Cognito client or the HTTP API. Rebuild
-  # the SPA from current main so it picks up those outputs. Only a successful
-  # Deploy Backend on main qualifies.
-  # template:end
+  # template:optional admin-stack-settings
   workflow_run:
     workflows: ["Deploy Backend"]
     types: [completed]
@@ -45,25 +40,23 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
+        uses: lx-software-ltd/actions/setup-node@962b4408003d89c3bf791ce9299bd13eb75a418e # main 2026-11-24
         with:
           cache: npm
           working-directory: apps/admin_web
 
 
       - name: Configure AWS credentials
-        # template:set
         id: aws
-        # template:end
-        uses: lx-software-ltd/actions/aws-oidc@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
+        uses: lx-software-ltd/actions/aws-oidc@962b4408003d89c3bf791ce9299bd13eb75a418e # main 2026-11-24
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ vars.AWS_REGION }}
 
-      # template:optional admin-settings
+      # template:optional admin-stack-settings
       - name: Read admin SPA settings
         id: stack_outputs
-        uses: lx-software-ltd/actions/cfn-stack-outputs@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
+        uses: lx-software-ltd/actions/cfn-stack-outputs@962b4408003d89c3bf791ce9299bd13eb75a418e # main 2026-11-24
         with:
           # template:set
           stack: lxsoftware
@@ -95,7 +88,7 @@ jobs:
         # template:end
 
       - name: Deploy admin web
-        uses: lx-software-ltd/actions/s3-cloudfront-deploy@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
+        uses: lx-software-ltd/actions/s3-cloudfront-deploy@962b4408003d89c3bf791ce9299bd13eb75a418e # main 2026-11-24
         with:
           # template:set
           source: apps/admin_web/dist
