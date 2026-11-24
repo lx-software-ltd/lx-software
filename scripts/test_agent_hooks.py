@@ -57,7 +57,7 @@ class GuardShellTest(unittest.TestCase):
     def test_live_mutations_are_denied(self) -> None:
         self.assert_denied("npx cdk deploy lxsoftware")
         self.assert_denied("aws s3api delete-object --bucket example --key a")
-        self.assert_denied("bash scripts/deploy/deploy-public-website.sh")
+        self.assert_denied("bash scripts/deploy/cdk-prepare.sh deploy")
         self.assert_denied("python3 scripts/manage-public-api-keys.py create --label demo")
         self.assert_denied("python3 scripts/mint-openrouter-app-keys.py")
         self.assert_denied("python3 scripts/configure-public-analytics.py apply")
@@ -69,9 +69,9 @@ class GuardShellTest(unittest.TestCase):
     def test_mentioning_a_protected_command_is_allowed(self) -> None:
         for command in (
             "cat scripts/deploy/cdk-params.sh",
-            "git diff main -- scripts/deploy/deploy-public-website.sh",
-            "git add scripts/deploy/deploy-admin-www.sh",
-            "shellcheck scripts/deploy/deploy-public-website.sh",
+            "git diff main -- scripts/deploy/cdk-prepare.sh",
+            "git add scripts/deploy/cdk-prepare.sh",
+            "shellcheck scripts/deploy/cdk-prepare.sh",
             "python3 -m ruff check scripts/mint-openrouter-app-keys.py",
             "rg -n 'cdk deploy' docs",
             "sed -n 1,20p scripts/cloudflare/publish-public-media.sh",
@@ -83,7 +83,7 @@ class GuardShellTest(unittest.TestCase):
             self.assertEqual(permission, "allow", f"{command}: {message}")
 
     def test_nested_invocations_are_denied(self) -> None:
-        self.assert_denied("scripts/deploy/deploy-public-website.sh")
+        self.assert_denied("scripts/deploy/cdk-prepare.sh")
         self.assert_denied("bash -c 'cdk deploy lxsoftware'")
         self.assert_denied("echo $(aws s3api delete-bucket --bucket example)")
 

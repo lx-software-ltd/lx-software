@@ -67,6 +67,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Set up Python
+        uses: lx-software-ltd/actions/setup-python@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
+
       - name: Validate inputs
         env:
           ACTION: ${{ inputs.action }}
@@ -87,7 +90,7 @@ jobs:
         run: pip install --quiet boto3
 
       - name: Create key
-        if: ${{ inputs.action == 'create' }}
+        if: inputs.action == 'create'
         env:
           LABEL: ${{ inputs.label }}
           EXPIRES_AT: ${{ inputs.expires_at }}
@@ -99,24 +102,20 @@ jobs:
         run: bash scripts/deploy/create-api-key.sh
 
       - name: List keys
-        if: ${{ inputs.action == 'list' }}
+        if: inputs.action == 'list'
         env:
           AWS_REGION: ${{ vars.AWS_REGION }}
-        run: |
-          set -euo pipefail
-          python3 scripts/manage-public-api-keys.py list --region "$AWS_REGION" | tee -a "$GITHUB_STEP_SUMMARY"
+        run: python3 scripts/manage-public-api-keys.py list --region "$AWS_REGION" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Revoke key
-        if: ${{ inputs.action == 'revoke' }}
+        if: inputs.action == 'revoke'
         env:
           KEY_ID: ${{ inputs.key_id }}
           AWS_REGION: ${{ vars.AWS_REGION }}
-        run: |
-          set -euo pipefail
-          python3 scripts/manage-public-api-keys.py revoke --key-id "$KEY_ID" --region "$AWS_REGION" | tee -a "$GITHUB_STEP_SUMMARY"
+        run: python3 scripts/manage-public-api-keys.py revoke --key-id "$KEY_ID" --region "$AWS_REGION" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Set write
-        if: ${{ inputs.action == 'set-write' }}
+        if: inputs.action == 'set-write'
         env:
           KEY_ID: ${{ inputs.key_id }}
           ALLOW_WRITE: ${{ inputs.allow_write }}
@@ -130,11 +129,9 @@ jobs:
           python3 scripts/manage-public-api-keys.py set-write --key-id "$KEY_ID" "$FLAG" --region "$AWS_REGION" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Set scopes
-        if: ${{ inputs.action == 'set-scopes' }}
+        if: inputs.action == 'set-scopes'
         env:
           KEY_ID: ${{ inputs.key_id }}
           SCOPES: ${{ inputs.scopes }}
           AWS_REGION: ${{ vars.AWS_REGION }}
-        run: |
-          set -euo pipefail
-          python3 scripts/manage-public-api-keys.py set-scopes --key-id "$KEY_ID" --scopes "$SCOPES" --region "$AWS_REGION" | tee -a "$GITHUB_STEP_SUMMARY"
+        run: python3 scripts/manage-public-api-keys.py set-scopes --key-id "$KEY_ID" --scopes "$SCOPES" --region "$AWS_REGION" | tee -a "$GITHUB_STEP_SUMMARY"

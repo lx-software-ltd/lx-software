@@ -9,7 +9,6 @@ on:
       - main
     paths:
       - "apps/public_www/**"
-      - "scripts/deploy/deploy-public-website.sh"
       - ".github/workflows/deploy-public-www.yml"
 
 permissions:

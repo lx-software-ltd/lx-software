@@ -78,13 +78,14 @@ jobs:
           P_GOOGLE_CLIENT_SECRET: ${{ secrets.ADMIN_GOOGLE_CLIENT_SECRET }}
           P_EMAIL_ALLOWLIST: ${{ secrets.ADMIN_FEDERATED_EMAIL_ALLOWLIST }}
 
-      - name: Deploy CDK stacks
+      - name: Deploy stacks
         uses: lx-software-ltd/actions/cdk-deploy@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
         with:
           working-directory: backend/infrastructure
           stacks: ${{ inputs.cdk_stacks }}
           plan-file: backend/infrastructure/cdk-plan.json
           param-file: ${{ vars.CDK_PARAM_FILE }}
+          attempts: "3"
           region: ${{ vars.AWS_REGION }}
         env:
           CDK_PARAM_FILE: ${{ vars.CDK_PARAM_FILE }}
