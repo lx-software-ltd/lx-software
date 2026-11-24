@@ -40,7 +40,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@87ecbd6c7c4f272df61c671c8451c4032a6dc407 # main 2026-11-24
+        uses: lx-software-ltd/actions/setup-node@2c0ccd2fdf6d2ab7cec932bcebc33f05d24bdd1a # main 2026-11-24
         with:
           cache: npm
           working-directory: apps/admin_web
@@ -48,7 +48,7 @@ jobs:
 
       - name: Configure AWS credentials
         id: aws
-        uses: lx-software-ltd/actions/aws-oidc@87ecbd6c7c4f272df61c671c8451c4032a6dc407 # main 2026-11-24
+        uses: lx-software-ltd/actions/aws-oidc@2c0ccd2fdf6d2ab7cec932bcebc33f05d24bdd1a # main 2026-11-24
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ vars.AWS_REGION }}
@@ -56,7 +56,7 @@ jobs:
       # template:optional admin-stack-settings
       - name: Read admin SPA settings
         id: stack_outputs
-        uses: lx-software-ltd/actions/cfn-stack-outputs@87ecbd6c7c4f272df61c671c8451c4032a6dc407 # main 2026-11-24
+        uses: lx-software-ltd/actions/cfn-stack-outputs@2c0ccd2fdf6d2ab7cec932bcebc33f05d24bdd1a # main 2026-11-24
         with:
           # template:set
           stack: lxsoftware
@@ -88,7 +88,7 @@ jobs:
         # template:end
 
       - name: Deploy admin web
-        uses: lx-software-ltd/actions/s3-cloudfront-deploy@87ecbd6c7c4f272df61c671c8451c4032a6dc407 # main 2026-11-24
+        uses: lx-software-ltd/actions/s3-cloudfront-deploy@2c0ccd2fdf6d2ab7cec932bcebc33f05d24bdd1a # main 2026-11-24
         with:
           # template:set
           source: apps/admin_web/dist
