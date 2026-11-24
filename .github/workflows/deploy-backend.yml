@@ -11,8 +11,6 @@ on:
         required: false
         default: ""
         type: string
-
-permissions:
       # template:end
   push:
     branches:
@@ -135,4 +133,3 @@ jobs:
           P_EMAIL_ALLOWLIST: ${{ secrets.ADMIN_FEDERATED_EMAIL_ALLOWLIST }}
           P_META_VERIFY_TOKEN: ${{ secrets.SIUTINDEI_BOARD_META_VERIFY_TOKEN }}
         # template:end
-
