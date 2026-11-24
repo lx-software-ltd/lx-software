@@ -3,18 +3,18 @@ name: CDK Diff
 on:
   pull_request:
     paths:
-# template:set
+      # template:set
       - "backend/**"
       - ".github/workflows/cdk-diff.yml"
-# template:end
+      # template:end
   repository_dispatch:
     types: [cdk-diff]
   workflow_dispatch:
     inputs:
       stacks:
-# template:set
+        # template:set
         description: "Optional space/comma-separated CDK stack names"
-# template:end
+        # template:end
         required: false
         default: ""
 
@@ -27,6 +27,8 @@ concurrency:
 
 jobs:
   diff:
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name != 'pull_request') }}
+    environment: production
     permissions:
       contents: read
       id-token: write
@@ -36,79 +38,52 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-# template:set
-# template:end
 
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
+        uses: lx-software-ltd/actions/setup-node@0e5dbcbbe9fb3dc7eff728b7725de461a3a2ff6f # main 2026-11-24
         with:
           cache: npm
           working-directory: backend/infrastructure
-# template:set
-# template:end
+
       - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
+        uses: lx-software-ltd/actions/setup-python@0e5dbcbbe9fb3dc7eff728b7725de461a3a2ff6f # main 2026-11-24
 
-
-
-# template:optional diff-role-guard
-      - name: Refuse the deploy role on a pull request
-        if: github.event_name == 'pull_request' && vars.AWS_DIFF_ROLE_NAME == 'GitHubActionsRole'
-        run: |
-          echo "::error::AWS_DIFF_ROLE_NAME must name a read-only role. A pull request does not assume GitHubActionsRole."
-          exit 1
-# template:end
+      - name: Determine deployment region
+        id: region
+        env:
+          INPUT_CDK_STACKS: ${{ inputs.stacks }}
+          INPUT_AWS_REGION: ${{ vars.AWS_REGION }}
+        run: bash scripts/deploy/cdk-prepare.sh region
 
       - name: Configure AWS credentials
         id: aws
-# template:optional diff-role
-        if: github.event_name != 'pull_request' || vars.AWS_DIFF_ROLE_NAME != ''
-# template:end
-        uses: lx-software-ltd/actions/aws-oidc@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
+        uses: lx-software-ltd/actions/aws-oidc@0e5dbcbbe9fb3dc7eff728b7725de461a3a2ff6f # main 2026-11-24
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
-# template:set
-          region: ${{ vars.AWS_REGION }}
-          role-name: ${{ github.event_name == 'pull_request' && vars.AWS_DIFF_ROLE_NAME || 'GitHubActionsRole' }}
-          required: ${{ github.event_name == 'pull_request' && 'false' || 'true' }}
-# template:end
+          region: ${{ steps.region.outputs.region }}
+          role-name: GitHubActionsRole
+          required: "true"
 
-# template:optional diff-note
-      - name: Note when a pull request diff did not run
-        if: github.event_name == 'pull_request' && steps.aws.outputs.ready != 'true'
-        run: |
-          echo "::warning::This pull request did not assume a role. Set AWS_DIFF_ROLE_NAME to a read-only role that trusts only pull_request. GitHubActionsRole is not assumed from a pull request."
-# template:end
-
-
-# template:optional qemu
-# template:set
-      # `cdk diff` synthesizes with asset bundling; AdminApiFn pip deps are
-      # installed in the linux/arm64 SAM image, which needs QEMU on x86-64.
-# template:end
       - name: Set up QEMU for arm64 Lambda bundling
         if: steps.aws.outputs.ready == 'true'
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
         with:
           platforms: arm64
-# template:end
 
       - name: Check CDK Bootstrap status
         if: steps.aws.outputs.ready == 'true'
-        uses: lx-software-ltd/actions/cdk-bootstrap-check@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
+        uses: lx-software-ltd/actions/cdk-bootstrap-check@0e5dbcbbe9fb3dc7eff728b7725de461a3a2ff6f # main 2026-11-24
         with:
           qualifier: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
-# template:set
-          region: ${{ vars.AWS_REGION }}
-# template:end
+          region: ${{ steps.region.outputs.region }}
 
       - name: Prepare CDK app
         if: steps.aws.outputs.ready == 'true'
         id: prep
         run: bash scripts/deploy/cdk-prepare.sh diff
-# template:set
         env:
+          # template:set
           CDK_STACKS: ${{ inputs.stacks }}
           CDK_PARAM_FILE: ${{ vars.CDK_PARAM_FILE }}
           CDK_PARAM_PUBLIC_WEBSITE_CERTIFICATE_ARN: ${{ secrets.CDK_PARAM_PUBLIC_WEBSITE_CERTIFICATE_ARN }}
@@ -117,22 +92,109 @@ jobs:
           CDK_PARAM_EVOLVESPROUTS_CLUSTER_ARN: ${{ secrets.CDK_PARAM_EVOLVESPROUTS_CLUSTER_ARN }}
           CDK_PARAM_COGNITO_CUSTOM_DOMAIN_CERTIFICATE_ARN: ${{ secrets.CDK_PARAM_COGNITO_CUSTOM_DOMAIN_CERTIFICATE_ARN }}
           CDK_PARAM_ADMIN_WEB_CERTIFICATE_ARN: ${{ secrets.CDK_PARAM_ADMIN_WEB_CERTIFICATE_ARN }}
-# template:end
+          # template:end
 
       - name: Run CDK diff
         if: steps.aws.outputs.ready == 'true' && steps.prep.outputs.run == 'true'
-        uses: lx-software-ltd/actions/cdk-diff@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
+        uses: lx-software-ltd/actions/cdk-diff@0e5dbcbbe9fb3dc7eff728b7725de461a3a2ff6f # main 2026-11-24
         with:
           working-directory: backend/infrastructure
           stacks: ${{ steps.prep.outputs.stacks }}
           plan-file: backend/infrastructure/cdk-plan.json
           args-file: ${{ runner.temp }}/cdk-args
-# template:set
-# template:end
+          # template:set
+          param-file: ${{ vars.CDK_PARAM_FILE }}
+          # template:end
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
-# template:set
+          region: ${{ steps.region.outputs.region }}
+
+  pull-request:
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      id-token: write
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+
+      - name: Set up Node.js
+        uses: lx-software-ltd/actions/setup-node@0e5dbcbbe9fb3dc7eff728b7725de461a3a2ff6f # main 2026-11-24
+        with:
+          cache: npm
+          working-directory: backend/infrastructure
+
+      - name: Set up Python
+        uses: lx-software-ltd/actions/setup-python@0e5dbcbbe9fb3dc7eff728b7725de461a3a2ff6f # main 2026-11-24
+
+      - name: Determine deployment region
+        id: region
         env:
-          P_GOOGLE_CLIENT_ID: ${{ vars.ADMIN_GOOGLE_CLIENT_ID }}
-          P_GOOGLE_CLIENT_SECRET: ${{ secrets.ADMIN_GOOGLE_CLIENT_SECRET }}
-          P_EMAIL_ALLOWLIST: ${{ secrets.ADMIN_FEDERATED_EMAIL_ALLOWLIST }}
-# template:end
+          INPUT_CDK_STACKS: ${{ inputs.stacks }}
+          INPUT_AWS_REGION: ${{ vars.AWS_REGION }}
+        run: bash scripts/deploy/cdk-prepare.sh region
+
+      - name: Refuse the deploy role on a pull request
+        if: vars.AWS_DIFF_ROLE_NAME == 'GitHubActionsRole'
+        run: |
+          echo "::error::AWS_DIFF_ROLE_NAME must name a read-only role. A pull request does not assume GitHubActionsRole."
+          exit 1
+
+      - name: Configure AWS credentials
+        id: aws
+        if: vars.AWS_DIFF_ROLE_NAME != ''
+        uses: lx-software-ltd/actions/aws-oidc@0e5dbcbbe9fb3dc7eff728b7725de461a3a2ff6f # main 2026-11-24
+        with:
+          account-id: ${{ secrets.AWS_ACCOUNT_ID }}
+          region: ${{ steps.region.outputs.region }}
+          role-name: ${{ vars.AWS_DIFF_ROLE_NAME }}
+          required: "false"
+
+      - name: Note when a pull request diff did not run
+        if: steps.aws.outputs.ready != 'true'
+        run: |
+          echo "::warning::This pull request did not assume a role. Set AWS_DIFF_ROLE_NAME to a read-only role that trusts only pull_request. GitHubActionsRole is not assumed from a pull request."
+
+      - name: Set up QEMU for arm64 Lambda bundling
+        if: steps.aws.outputs.ready == 'true'
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          platforms: arm64
+
+      - name: Check CDK Bootstrap status
+        if: steps.aws.outputs.ready == 'true'
+        uses: lx-software-ltd/actions/cdk-bootstrap-check@0e5dbcbbe9fb3dc7eff728b7725de461a3a2ff6f # main 2026-11-24
+        with:
+          qualifier: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
+          region: ${{ steps.region.outputs.region }}
+
+      - name: Prepare CDK app
+        if: steps.aws.outputs.ready == 'true'
+        id: prep
+        run: bash scripts/deploy/cdk-prepare.sh diff
+        env:
+          # template:set
+          CDK_STACKS: ${{ inputs.stacks }}
+          CDK_PARAM_FILE: ${{ vars.CDK_PARAM_FILE }}
+          CDK_PARAM_PUBLIC_WEBSITE_CERTIFICATE_ARN: ${{ secrets.CDK_PARAM_PUBLIC_WEBSITE_CERTIFICATE_ARN }}
+          CDK_PARAM_OPENROUTER_API_KEY_SECRET_ARN: ${{ secrets.CDK_PARAM_OPENROUTER_API_KEY_SECRET_ARN }}
+          CDK_PARAM_SIUTINDEI_CLUSTER_ARN: ${{ secrets.CDK_PARAM_SIUTINDEI_CLUSTER_ARN }}
+          CDK_PARAM_EVOLVESPROUTS_CLUSTER_ARN: ${{ secrets.CDK_PARAM_EVOLVESPROUTS_CLUSTER_ARN }}
+          CDK_PARAM_COGNITO_CUSTOM_DOMAIN_CERTIFICATE_ARN: ${{ secrets.CDK_PARAM_COGNITO_CUSTOM_DOMAIN_CERTIFICATE_ARN }}
+          CDK_PARAM_ADMIN_WEB_CERTIFICATE_ARN: ${{ secrets.CDK_PARAM_ADMIN_WEB_CERTIFICATE_ARN }}
+          # template:end
+
+      - name: Run CDK diff
+        if: steps.aws.outputs.ready == 'true' && steps.prep.outputs.run == 'true'
+        uses: lx-software-ltd/actions/cdk-diff@0e5dbcbbe9fb3dc7eff728b7725de461a3a2ff6f # main 2026-11-24
+        with:
+          working-directory: backend/infrastructure
+          stacks: ${{ steps.prep.outputs.stacks }}
+          plan-file: backend/infrastructure/cdk-plan.json
+          args-file: ${{ runner.temp }}/cdk-args
+          # template:set
+          param-file: ${{ vars.CDK_PARAM_FILE }}
+          # template:end
+          account-id: ${{ secrets.AWS_ACCOUNT_ID }}
+          region: ${{ steps.region.outputs.region }}

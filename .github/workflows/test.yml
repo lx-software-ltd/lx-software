@@ -21,16 +21,22 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        # template:set
-        # template:end
+        with:
+          fetch-depth: 0
+
 
       - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
+        uses: lx-software-ltd/actions/setup-python@0e5dbcbbe9fb3dc7eff728b7725de461a3a2ff6f # main 2026-11-24
 
       - name: Run Python tests
         run: bash scripts/ci/test-python.sh
-        # template:set
-        # template:end
+      - name: Upload coverage report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: python-coverage
+          path: coverage.xml
+          if-no-files-found: ignore
   test-admin-web:
     name: Test Admin Web
     runs-on: ubuntu-26.04
@@ -39,7 +45,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
+        uses: lx-software-ltd/actions/setup-node@0e5dbcbbe9fb3dc7eff728b7725de461a3a2ff6f # main 2026-11-24
         with:
           cache: npm
           working-directory: apps/admin_web
@@ -74,7 +80,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
+        uses: lx-software-ltd/actions/setup-node@0e5dbcbbe9fb3dc7eff728b7725de461a3a2ff6f # main 2026-11-24
         with:
           cache: npm
           working-directory: apps/public_www
@@ -82,14 +88,10 @@ jobs:
       - name: Run tests
         run: npm run test:ci
         working-directory: apps/public_www
-        # template:set
-        # template:end
 
       - name: Build
         run: npm run build
         working-directory: apps/public_www
-        # template:set
-        # template:end
 
   test-infrastructure:
     name: Test infrastructure
@@ -99,13 +101,13 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
+        uses: lx-software-ltd/actions/setup-node@0e5dbcbbe9fb3dc7eff728b7725de461a3a2ff6f # main 2026-11-24
         with:
           cache: npm
           working-directory: backend/infrastructure
 
       - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
+        uses: lx-software-ltd/actions/setup-python@0e5dbcbbe9fb3dc7eff728b7725de461a3a2ff6f # main 2026-11-24
 
       - name: Run infrastructure tests
         run: npm run test:infra
@@ -121,13 +123,13 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
+        uses: lx-software-ltd/actions/setup-node@0e5dbcbbe9fb3dc7eff728b7725de461a3a2ff6f # main 2026-11-24
         with:
           cache: npm
           working-directory: apps/admin_web
 
       - name: Install Playwright Chromium
-        uses: lx-software-ltd/actions/playwright-install@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
+        uses: lx-software-ltd/actions/playwright-install@0e5dbcbbe9fb3dc7eff728b7725de461a3a2ff6f # main 2026-11-24
         with:
           working-directory: apps/admin_web
           # template:set
@@ -137,8 +139,22 @@ jobs:
       - name: Run viewport smoke tests
         run: npm run test:e2e
         working-directory: apps/admin_web
-        # template:set
-        # template:end
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: apps/admin_web/playwright-report/
+          retention-days: 30
+
+      - name: Upload test results
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: test-results
+          path: apps/admin_web/test-results/
+          retention-days: 7
 
   # template:end
   test:
@@ -155,6 +171,6 @@ jobs:
     if: always()
     steps:
       - name: Require every test job
-        uses: lx-software-ltd/actions/require-jobs@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
+        uses: lx-software-ltd/actions/require-jobs@0e5dbcbbe9fb3dc7eff728b7725de461a3a2ff6f # main 2026-11-24
         with:
           needs-json: ${{ toJson(needs) }}

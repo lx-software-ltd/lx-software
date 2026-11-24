@@ -16,9 +16,6 @@ on:
     branches:
       - main
     # template:set
-    # AdminApiFn / inbound-mail / authorizer code lives next to the CDK app.
-    # A Lambda-only PR (no stack.ts change) must still roll the function, or
-    # the admin SPA can ship a button whose route 404s on the previous build.
     paths:
       - "backend/infrastructure/**"
       - "backend/lambda/**"
@@ -34,8 +31,6 @@ concurrency:
 
 jobs:
   deploy:
-    # template:set
-    # template:end
     if: github.ref == 'refs/heads/main'
     permissions:
       contents: read
@@ -45,53 +40,42 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        # template:set
-        # template:end
 
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
+        uses: lx-software-ltd/actions/setup-node@0e5dbcbbe9fb3dc7eff728b7725de461a3a2ff6f # main 2026-11-24
         with:
           cache: npm
           working-directory: backend/infrastructure
-      # template:set
-      # template:end
-      - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
 
+      - name: Set up Python
+        uses: lx-software-ltd/actions/setup-python@0e5dbcbbe9fb3dc7eff728b7725de461a3a2ff6f # main 2026-11-24
+
+      - name: Determine deployment region
+        id: region
+        env:
+          INPUT_CDK_STACKS: ${{ github.event.inputs.cdk_stacks || vars.CDK_STACKS || 'all stacks' }}
+          INPUT_AWS_REGION: ${{ vars.AWS_REGION }}
+        run: bash scripts/deploy/cdk-prepare.sh region
 
       - name: Configure AWS credentials
-        # template:set
         id: aws
-        # template:end
-        uses: lx-software-ltd/actions/aws-oidc@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
+        uses: lx-software-ltd/actions/aws-oidc@0e5dbcbbe9fb3dc7eff728b7725de461a3a2ff6f # main 2026-11-24
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
-          # template:set
-          region: ${{ vars.AWS_REGION }}
-          # template:end
+          region: ${{ steps.region.outputs.region }}
 
-      # template:optional qemu
-      # template:set
-      # AdminApiFn bundles pip dependencies (Pillow, defusedxml) inside the
-      # linux/arm64 SAM build image. The x86-64 runner needs QEMU binfmt
-      # registered or `docker run --platform linux/arm64` fails with
-      # "exec /usr/bin/bash: exec format error".
-      # template:end
       - name: Set up QEMU for arm64 Lambda bundling
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
         with:
           platforms: arm64
 
-      # template:end
 
       - name: Check CDK bootstrap
-        uses: lx-software-ltd/actions/cdk-bootstrap-check@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
+        uses: lx-software-ltd/actions/cdk-bootstrap-check@0e5dbcbbe9fb3dc7eff728b7725de461a3a2ff6f # main 2026-11-24
         with:
           qualifier: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
-          # template:set
-          region: ${{ vars.AWS_REGION }}
-          # template:end
+          region: ${{ steps.region.outputs.region }}
       - name: Prepare CDK app
         id: prep
         run: bash scripts/deploy/cdk-prepare.sh deploy
@@ -104,7 +88,7 @@ jobs:
 
 
       - name: Deploy stacks
-        uses: lx-software-ltd/actions/cdk-deploy@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
+        uses: lx-software-ltd/actions/cdk-deploy@0e5dbcbbe9fb3dc7eff728b7725de461a3a2ff6f # main 2026-11-24
         with:
           working-directory: backend/infrastructure
           plan-file: backend/infrastructure/cdk-plan.json
@@ -114,10 +98,11 @@ jobs:
           param-file: ${{ vars.CDK_PARAM_FILE }}
           attempts: "3"
           # template:set
+          format: plain-json
+          pass-empty: WafWebAclArn,PublicWwwEdgeVerifySecret,PublicWwwEdgeVerifySecretPrevious,PublicWwwStagingEdgeVerifySecret,PublicWwwStagingEdgeVerifySecretPrevious
+          run-seed: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_seed_data || 'false' }}
           # template:end
-          # template:set
-          region: ${{ vars.AWS_REGION }}
-          # template:end
+          region: ${{ steps.region.outputs.region }}
         # template:set
         env:
           CDK_PARAM_FILE: ${{ vars.CDK_PARAM_FILE }}

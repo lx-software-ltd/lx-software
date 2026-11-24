@@ -1,19 +1,4 @@
 name: Manage Public API Keys
-# template:set
-# Mint / list / revoke / set-write / set-scopes the public API keys served by the /public/*
-# routes (see docs/deployment/admin-website.md, "Public API keys").
-#
-# SECURITY: this repository is PUBLIC, so workflow logs are world-readable.
-# A newly minted key is therefore never printed; it is written to a file and
-# symmetrically encrypted (gpg AES256) with the PUBLIC_API_KEY_GPG_PASSPHRASE
-# secret before the armored ciphertext is shown. Decrypt locally with:
-#
-#   pbpaste > key.asc   # or paste the block into key.asc
-#   gpg --decrypt key.asc
-#
-# entering the same passphrase. Configure the secret once under
-# Settings > Environments > production > Secrets.
-# template:end
 
 on:
   workflow_dispatch:
@@ -72,7 +57,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
+        uses: lx-software-ltd/actions/setup-python@0e5dbcbbe9fb3dc7eff728b7725de461a3a2ff6f # main 2026-11-24
 
       - name: Validate inputs
         env:
@@ -85,7 +70,7 @@ jobs:
 
       - name: Configure AWS credentials
         id: aws
-        uses: lx-software-ltd/actions/aws-oidc@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
+        uses: lx-software-ltd/actions/aws-oidc@0e5dbcbbe9fb3dc7eff728b7725de461a3a2ff6f # main 2026-11-24
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ vars.AWS_REGION }}

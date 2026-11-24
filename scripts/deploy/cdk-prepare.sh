@@ -3,6 +3,10 @@
 set -euo pipefail
 mode="${1:-}"
 case "$mode" in
+  region)
+    echo "region=${INPUT_AWS_REGION:-}" >> "${GITHUB_OUTPUT:?}"
+    exit 0
+    ;;
   diff|deploy) ;;
   *) echo "::error::cdk-prepare.sh requires diff or deploy" >&2; exit 1 ;;
 esac
