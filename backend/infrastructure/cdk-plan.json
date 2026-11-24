@@ -30,5 +30,12 @@
         "lxsoftware-admin-web:AdminWebDomainName=admin.lx-software.com"
       ]
     }
-  ]
+  ],
+  "aliases": {
+    "all stacks": [
+      "lxsoftware-public-www",
+      "lxsoftware",
+      "lxsoftware-admin-web"
+    ]
+  }
 }
