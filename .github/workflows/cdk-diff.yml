@@ -76,68 +76,10 @@ jobs:
           qualifier: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
           region: ${{ vars.AWS_REGION }}
 
-      - name: Prepare CDK diff
+      - name: Prepare CDK app
         if: steps.aws.outputs.ready == 'true'
         id: prep
-        run: |
-          if [ ! -f "backend/infrastructure/package.json" ]; then
-            echo "::warning::Missing backend/infrastructure/package.json"
-            echo "Missing backend/infrastructure/package.json"
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          cd backend/infrastructure
-          npm run build --if-present
-          PUBLIC_PARAM_ARGS=()
-          ADMIN_LX_PARAM_ARGS=()
-          ADMIN_WEB_PARAM_ARGS=()
-          resolve_param_file() {
-            local path="$1"
-            if [ -z "$path" ]; then
-              return 1
-            fi
-            if [ -f "$path" ]; then
-              echo "$path"
-              return 0
-            fi
-            if [ -n "$GITHUB_WORKSPACE" ] && [ -f "$GITHUB_WORKSPACE/$path" ]; then
-              echo "$GITHUB_WORKSPACE/$path"
-              return 0
-            fi
-            return 1
-          }
-          if [ -n "${CDK_PARAM_FILE:-}" ]; then
-            RESOLVED_PARAM_FILE=$(resolve_param_file "$CDK_PARAM_FILE" || true)
-            if [ -n "$RESOLVED_PARAM_FILE" ]; then
-              # shellcheck source=../../scripts/deploy/cdk-params.sh
-              source ../../scripts/deploy/cdk-params.sh
-              cdk_load_param_args "$RESOLVED_PARAM_FILE"
-            else
-              echo "CDK_PARAM_FILE '$CDK_PARAM_FILE' not found"
-              exit 1
-            fi
-          fi
-          PARAM_ARGS=( "${PUBLIC_PARAM_ARGS[@]}" "${ADMIN_LX_PARAM_ARGS[@]}" "${ADMIN_WEB_PARAM_ARGS[@]}" )
-          if [ ${#PARAM_ARGS[@]} -gt 0 ]; then
-            printf '%s\0' "${PARAM_ARGS[@]}" > "$RUNNER_TEMP/cdk-diff-args"
-          else
-            : > "$RUNNER_TEMP/cdk-diff-args"
-          fi
-          STACK_ARGS=()
-          if [ -n "${CDK_STACKS:-}" ]; then
-            IFS=$', \n\t' read -r -a STACK_LIST <<< "$CDK_STACKS"
-            for stack in "${STACK_LIST[@]}"; do
-              trimmed="${stack#"${stack%%[![:space:]]*}"}"
-              trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
-              if [ -n "$trimmed" ]; then
-                STACK_ARGS+=("$trimmed")
-              fi
-            done
-          fi
-          {
-            echo "run=true"
-            echo "stacks=${STACK_ARGS[*]}"
-          } >> "$GITHUB_OUTPUT"
+        run: bash scripts/deploy/cdk-prepare.sh diff
         env:
           CDK_STACKS: ${{ inputs.stacks }}
           CDK_PARAM_FILE: ${{ vars.CDK_PARAM_FILE }}
@@ -155,7 +97,7 @@ jobs:
           working-directory: backend/infrastructure
           stacks: ${{ steps.prep.outputs.stacks }}
           plan-file: backend/infrastructure/cdk-plan.json
-          args-file: ${{ runner.temp }}/cdk-diff-args
+          args-file: ${{ runner.temp }}/cdk-args
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
         env:
           P_GOOGLE_CLIENT_ID: ${{ vars.ADMIN_GOOGLE_CLIENT_ID }}

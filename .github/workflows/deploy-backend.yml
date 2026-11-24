@@ -13,6 +13,12 @@ on:
       - "backend/lambda/**"
       - "contracts/**"
   workflow_dispatch:
+    inputs:
+      cdk_stacks:
+        description: CDK stacks to deploy. Empty deploys every stack in the plan.
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -38,7 +44,9 @@ jobs:
         with:
           cache: npm
           working-directory: backend/infrastructure
-          install: "false"
+
+      - name: Set up Python
+        uses: lx-software-ltd/actions/setup-python@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
 
       - name: Configure AWS credentials
         id: aws
@@ -46,20 +54,6 @@ jobs:
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ vars.AWS_REGION }}
-
-      - name: Install CDK dependencies
-        run: |
-          if [ ! -f "backend/infrastructure/package.json" ]; then
-            echo "Missing backend/infrastructure/package.json"
-            exit 1
-          fi
-          cd backend/infrastructure
-          npm ci
-
-      - name: Build CDK app
-        run: |
-          cd backend/infrastructure
-          npm run build --if-present
 
       # AdminApiFn bundles pip dependencies (Pillow, defusedxml) inside the
       # linux/arm64 SAM build image. The x86-64 runner needs QEMU binfmt
@@ -76,18 +70,19 @@ jobs:
           qualifier: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
           region: ${{ vars.AWS_REGION }}
 
-      - name: Mask CDK plan secrets
+      - name: Prepare CDK app
+        id: prep
+        run: bash scripts/deploy/cdk-prepare.sh deploy
         env:
+          CDK_STACKS: ${{ inputs.cdk_stacks }}
           P_GOOGLE_CLIENT_SECRET: ${{ secrets.ADMIN_GOOGLE_CLIENT_SECRET }}
           P_EMAIL_ALLOWLIST: ${{ secrets.ADMIN_FEDERATED_EMAIL_ALLOWLIST }}
-        run: |
-          if [ -n "$P_GOOGLE_CLIENT_SECRET" ]; then echo "::add-mask::$P_GOOGLE_CLIENT_SECRET"; fi
-          if [ -n "$P_EMAIL_ALLOWLIST" ]; then echo "::add-mask::$P_EMAIL_ALLOWLIST"; fi
 
       - name: Deploy CDK stacks
         uses: lx-software-ltd/actions/cdk-deploy@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
         with:
           working-directory: backend/infrastructure
+          stacks: ${{ inputs.cdk_stacks }}
           plan-file: backend/infrastructure/cdk-plan.json
           param-file: ${{ vars.CDK_PARAM_FILE }}
           region: ${{ vars.AWS_REGION }}

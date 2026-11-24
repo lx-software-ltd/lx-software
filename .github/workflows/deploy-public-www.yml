@@ -9,7 +9,8 @@ on:
       - main
     paths:
       - "apps/public_www/**"
-      - "scripts/deploy/**"
+      - "scripts/deploy/deploy-public-website.sh"
+      - ".github/workflows/deploy-public-www.yml"
 
 permissions:
   contents: read
@@ -63,7 +64,6 @@ jobs:
           region: ${{ vars.AWS_REGION }}
 
       - name: Deploy public website
-        if: steps.aws.outputs.ready == 'true'
         uses: lx-software-ltd/actions/s3-cloudfront-deploy@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
         with:
           source: apps/public_www/dist
