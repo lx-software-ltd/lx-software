@@ -27,6 +27,14 @@ from typing import Any
 API_HOSTNAME = "api.lx-software.com"
 ZONE_NAME = "lx-software.com"
 DEFAULT_REGION = "ap-southeast-1"
+CLOUDFLARE_API = "https://api.cloudflare.com/client/v4"
+
+
+def cloudflare_url(path: str) -> str:
+    """A Cloudflare API path. A scheme or parent segment cannot leave this host."""
+    if not path.startswith("/") or path.startswith("//") or "\\" in path or ".." in path or "://" in path:
+        raise RuntimeError("refusing Cloudflare path")
+    return CLOUDFLARE_API + path
 
 
 def regional_target(domain: dict[str, Any]) -> str:
@@ -60,8 +68,8 @@ def desired_cname(target: str) -> dict[str, Any]:
 
 def _cf_request(method: str, path: str, token: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
     data = None if payload is None else json.dumps(payload).encode()
-    req = urllib.request.Request(
-        f"https://api.cloudflare.com/client/v4{path}",
+    req = urllib.request.Request(  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected # nosec B310
+        cloudflare_url(path),
         data=data,
         method=method,
         headers={
@@ -70,7 +78,10 @@ def _cf_request(method: str, path: str, token: str, payload: dict[str, Any] | No
         },
     )
     try:
-        with urllib.request.urlopen(req) as resp:
+        # Host is fixed to api.cloudflare.com. cloudflare_url rejects a scheme or '..'.
+        with urllib.request.urlopen(
+            req
+        ) as resp:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected # nosec B310
             return json.loads(resp.read().decode())
     except urllib.error.HTTPError as exc:
         body = exc.read().decode()[:800]

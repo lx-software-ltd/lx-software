@@ -39,6 +39,15 @@ class PublishApiDomainTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.mod.regional_target({})
 
+    def test_cloudflare_url_stays_on_the_api_host(self) -> None:
+        self.assertEqual(
+            self.mod.cloudflare_url("/zones/abc"),
+            "https://api.cloudflare.com/client/v4/zones/abc",
+        )
+        for path in ("file:///etc/passwd", "//evil.example", "/zones/../etc", "https://evil.example"):
+            with self.assertRaises(RuntimeError):
+                self.mod.cloudflare_url(path)
+
     def test_cname_must_be_dns_only_and_exact(self) -> None:
         target = "d-abc.execute-api.ap-southeast-1.amazonaws.com"
         self.assertTrue(
