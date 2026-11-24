@@ -73,10 +73,6 @@ jobs:
           qualifier: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
           region: ${{ vars.AWS_REGION }}
 
-      - name: Acknowledge CDK notices
-        working-directory: backend/infrastructure
-        run: npx cdk acknowledge 34892 || true
-
       - name: Mask CDK plan secrets
         env:
           P_GOOGLE_CLIENT_SECRET: ${{ secrets.ADMIN_GOOGLE_CLIENT_SECRET }}

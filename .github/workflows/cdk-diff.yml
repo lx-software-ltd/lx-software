@@ -85,7 +85,6 @@ jobs:
             exit 0
           fi
           cd backend/infrastructure
-          npx cdk acknowledge 34892 || true
           npm run build --if-present
           PUBLIC_PARAM_ARGS=()
           ADMIN_LX_PARAM_ARGS=()
