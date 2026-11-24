@@ -100,7 +100,7 @@ jobs:
 
       - name: Configure AWS credentials
         id: aws
-        uses: lx-software-ltd/actions/aws-oidc@1d66ad00053fdbea390c4d2c3f4b89d8c31cfdfc # main 2026-11-24
+        uses: lx-software-ltd/actions/aws-oidc@498ccef500b37e3b04314213aa10f49a2b5c02e5 # main 2026-11-24
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ vars.AWS_REGION }}
