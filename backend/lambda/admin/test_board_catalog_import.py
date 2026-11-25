@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 import board_catalog
 import board_catalog_import
+import board_crawl
 import board_holds
 import board_staff
 import board_store
@@ -1638,14 +1639,16 @@ class ImportClientTests(BoardTestCase):
         page = "12 Example Drive. Open Mon-Fri 9:00-18:00."
         parked = self._accept_custom(sheet, page=page)
         self.assertEqual(parked["status"], "needs_owner")
-        self.assertEqual(parked.get("importPhase"), "invalid")
+        self.assertEqual(parked.get("importPhase"), "unverified")
+        self.assertEqual(int(parked.get("revalidateAttempts") or 0), 0)
         saved = json.loads(board_staff.read_deliverable(parked))
         org = saved["organisations"][0]
         self.assertNotIn("phone", org["verified_fields"])
         self.assertIn("phone", org["unverified_fields"])
         self.assertTrue(any("phone" in line for line in parked.get("openQuestions") or []))
-        again = self._accept_custom(sheet, page=page, attempts=1)
+        again = self._accept_custom(sheet, page=page, attempts=2)
         self.assertEqual(again.get("importPhase"), "unverified")
+        self.assertEqual(int(again.get("revalidateAttempts") or 0), 2)
 
     def test_duplicate_coordinates_are_refused(self) -> None:
         def org(name, address):
@@ -1687,6 +1690,205 @@ class ImportClientTests(BoardTestCase):
         }
         page = "12 Example Drive. Phone 21234567. Open Mon-Fri 9:00-18:00."
         accepted = self._accept_custom(sheet, page=page)
+        self.assertEqual(accepted.get("importPhase"), "validated", accepted.get("openQuestions"))
+
+    def test_same_building_coordinates_are_allowed(self) -> None:
+        def org(name, address):
+            return {
+                "name_en": name,
+                "type": "class",
+                "address_en": address,
+                "lat": 22.28,
+                "lng": 114.15,
+                "official_url": "https://hall.example/about",
+                "verified_fields": ["name_en", "official_url"],
+            }
+
+        sheet = {
+            "district": "Southern",
+            "organisations": [
+                org("Harbour Hall", "Shop 5, 12 Example Drive"),
+                org("Harbour Annex", "12 Example Drive"),
+            ],
+        }
+        accepted = self._accept_custom(sheet)
+        self.assertEqual(accepted.get("importPhase"), "validated", accepted.get("openQuestions"))
+
+    def test_a_shop_number_does_not_stand_in_for_the_street(self) -> None:
+        sheet = {
+            "district": "Southern",
+            "organisations": [
+                {
+                    "name_en": "Harbour Hall",
+                    "type": "class",
+                    "address_en": "Shop 5, 12 Example Drive",
+                    "opening_hours": "Mon-Fri 9:00-18:00",
+                    "official_url": "https://hall.example/about",
+                    "verified_fields": ["name_en", "address_en", "opening_hours", "official_url"],
+                }
+            ],
+        }
+        parked = self._accept_custom(sheet, page="Shop 5 is closed. Open Mon-Fri 9:00-18:00.")
+        saved = json.loads(board_staff.read_deliverable(parked))
+        self.assertNotIn("address_en", saved["organisations"][0]["verified_fields"])
+        kept = self._accept_custom(sheet, page="12 Example Drive. Open Mon-Fri 9:00-18:00.")
+        saved = json.loads(board_staff.read_deliverable(kept))
+        self.assertIn("address_en", saved["organisations"][0]["verified_fields"])
+
+    def test_a_price_needs_the_currency_amount(self) -> None:
+        sheet = {
+            "district": "Southern",
+            "organisations": [
+                {
+                    "name_en": "Harbour Hall",
+                    "type": "class",
+                    "address_en": "12 Example Drive",
+                    "opening_hours": "Mon-Fri 9:00-18:00",
+                    "price_note": "HK$200 per 4 classes",
+                    "official_url": "https://hall.example/about",
+                    "verified_fields": ["name_en", "address_en", "opening_hours", "price_note", "official_url"],
+                }
+            ],
+        }
+        parked = self._accept_custom(sheet, page="12 Example Drive. Ages 4 and up. Open Mon-Fri 9:00-18:00.")
+        saved = json.loads(board_staff.read_deliverable(parked))
+        self.assertNotIn("price_note", saved["organisations"][0]["verified_fields"])
+
+    def test_one_organisations_page_does_not_verify_another(self) -> None:
+        sheet = {
+            "district": "Southern",
+            "organisations": [
+                {
+                    "name_en": "Harbour Hall",
+                    "type": "class",
+                    "address_en": "12 Example Drive",
+                    "phone": "2123 4567",
+                    "opening_hours": "Mon-Fri 9:00-18:00",
+                    "official_url": "https://hall.example/about",
+                    "verified_fields": ["name_en", "address_en", "phone", "opening_hours", "official_url"],
+                }
+            ],
+        }
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        with patch("board_async.invoke_async", lambda payload, fallback=None: None):
+            task = board_catalog.create_next(self.table, settings)
+        key = board_staff._deliverable_key(task["taskId"], "json")
+        board_staff._blob_put(key, json.dumps(sheet).encode())
+        task["deliverableKey"] = key
+        task["status"] = "review"
+        task["lastReview"] = {"verdict": "accept", "notes": "", "at": "2026-09-16T00:00:00Z"}
+        board_store.put_task(self.table, task)
+        board_store.add_tool_call(
+            self.table,
+            {
+                "callId": "own-page",
+                "op": "research_fetch_page",
+                "status": "ok",
+                "taskId": task["taskId"],
+                "arguments": {"url": "https://hall.example/about"},
+                "resultPreview": json.dumps({"text": "12 Example Drive. Open Mon-Fri 9:00-18:00."}),
+            },
+        )
+        board_store.add_tool_call(
+            self.table,
+            {
+                "callId": "other-page",
+                "op": "research_fetch_page",
+                "status": "ok",
+                "taskId": task["taskId"],
+                "arguments": {"url": "https://other.example/about"},
+                "resultPreview": json.dumps({"text": "Phone 21234567"}),
+            },
+        )
+        parked = board_staff._accept_task(self.table, task, "2026-09-16T12:00:00Z")
+        saved = json.loads(board_staff.read_deliverable(parked))
+        self.assertNotIn("phone", saved["organisations"][0]["verified_fields"])
+
+    def test_a_copied_record_fact_does_not_need_the_page(self) -> None:
+        now = board_store.now_iso()
+        board_store.put_candidate(
+            self.table,
+            {
+                "candidateId": "harbour",
+                "source": "places",
+                "nameEn": "Harbour Hall",
+                "district": "Southern",
+                "addressEn": "12 Example Drive",
+                "phone": "2123 4567",
+                "status": "imported",
+                "updatedAt": now,
+                "createdAt": now,
+            },
+        )
+        sheet = {
+            "district": "Southern",
+            "organisations": [
+                {
+                    "name_en": "Harbour Hall",
+                    "type": "class",
+                    "address_en": "Shop 5, 12 Example Drive",
+                    "phone": "2123 4567",
+                    "opening_hours": "Mon-Fri 9:00-18:00",
+                    "official_url": "https://hall.example/about",
+                    "verified_fields": ["name_en", "address_en", "phone", "opening_hours", "official_url"],
+                }
+            ],
+        }
+        accepted = self._accept_custom(sheet, page="Open Mon-Fri 9:00-18:00.")
+        self.assertEqual(accepted.get("importPhase"), "validated", accepted.get("openQuestions"))
+
+    def test_page_text_is_found_under_the_requested_url(self) -> None:
+        result = board_crawl.FetchResult(
+            status=200,
+            final_url="https://hall.example/about/",
+            content_type="text/html",
+            text="12 Example Drive. Phone 21234567. Open Mon-Fri 9:00-18:00.",
+            hash="h",
+        )
+        board_crawl.fetched_page_payload(
+            self.table,
+            "https://hall.example/about",
+            result,
+            result.text,
+        )
+        self.assertIn("21234567", board_crawl.page_text_cached(self.table, "https://hall.example/about"))
+        sheet = {
+            "district": "Southern",
+            "organisations": [
+                {
+                    "name_en": "Harbour Hall",
+                    "type": "class",
+                    "address_en": "12 Example Drive",
+                    "phone": "2123 4567",
+                    "opening_hours": "Mon-Fri 9:00-18:00",
+                    "official_url": "https://hall.example/about",
+                    "verified_fields": ["name_en", "address_en", "phone", "opening_hours", "official_url"],
+                }
+            ],
+        }
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        with patch("board_async.invoke_async", lambda payload, fallback=None: None):
+            task = board_catalog.create_next(self.table, settings)
+        key = board_staff._deliverable_key(task["taskId"], "json")
+        board_staff._blob_put(key, json.dumps(sheet).encode())
+        task["deliverableKey"] = key
+        task["status"] = "review"
+        task["lastReview"] = {"verdict": "accept", "notes": "", "at": "2026-09-16T00:00:00Z"}
+        board_store.put_task(self.table, task)
+        board_store.add_tool_call(
+            self.table,
+            {
+                "callId": "redirected",
+                "op": "research_fetch_page",
+                "status": "ok",
+                "taskId": task["taskId"],
+                "arguments": {"url": "https://hall.example/about"},
+                "resultPreview": json.dumps({"text": "truncated", "finalUrl": "https://hall.example/about/"}),
+            },
+        )
+        accepted = board_staff._accept_task(self.table, task, "2026-09-16T12:00:00Z")
         self.assertEqual(accepted.get("importPhase"), "validated", accepted.get("openQuestions"))
 
 

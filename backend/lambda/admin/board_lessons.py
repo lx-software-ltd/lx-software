@@ -129,10 +129,10 @@ def _write(
 def create_from_veto(table: Any, hold: dict[str, Any], *, class_once: bool = False) -> dict[str, Any]:
     subject = str(hold.get("seatId") or hold.get("personaId") or "")
     class_key = str(hold.get("classKey") or hold.get("actionClass") or "")
-    existing = _recent_class_draft(table, subject, class_key)
-    if existing is not None:
-        return _extend_class_draft(table, existing, hold)
-    _ = class_once
+    if class_once:
+        existing = _recent_class_draft(table, subject, class_key)
+        if existing is not None:
+            return _extend_class_draft(table, existing, hold)
     settings = board_store.load_settings(table)
     what = str(hold.get("summary") or hold.get("op") or "held action")
     preview = json.dumps(hold.get("preview") or hold.get("arguments") or {}, default=str)[:1500]

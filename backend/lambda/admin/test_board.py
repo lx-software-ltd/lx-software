@@ -572,6 +572,14 @@ class BoardTestCase(unittest.TestCase):
         patcher_env = patch.dict("os.environ", env, clear=False)
         patcher_env.start()
         self.addCleanup(patcher_env.stop)
+        # Context packs probe the public site. Tests that need the real probe
+        # set allow_site_probe on the class.
+        if not getattr(self, "allow_site_probe", False):
+            import board_web_live
+
+            probe = patch.object(board_web_live, "_probe", return_value=None)
+            probe.start()
+            self.addCleanup(probe.stop)
         for var in ("AWS_LAMBDA_FUNCTION_NAME", "PARSE_WORKER_FUNCTION_NAME", "GITHUB_READ_TOKEN_SECRET_ARN"):
             patcher = patch.dict("os.environ", {}, clear=False)
             patcher.start()

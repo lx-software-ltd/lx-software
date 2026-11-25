@@ -168,13 +168,10 @@ def run_review(payload: dict[str, Any]) -> None:
         import board_review_claims
 
         claim_note = board_review_claims.mismatch(table, task, raw)
+        if board_review_claims.sync_flag(task, bool(claim_note)):
+            board_store.put_task(table, task)
     except Exception as exc:
         _log_event("warning", tag="board_staff_claim_check_failed", error=str(exc)[:200])
-    if claim_note:
-        flags = [str(flag) for flag in (task.get("flags") or [])]
-        if "claimed_action_unverified" not in flags:
-            task["flags"] = [*flags, "claimed_action_unverified"]
-            board_store.put_task(table, task)
     quality = _catalog_quality_return(task, raw)
     if quality:
         apply_review(table, settings, task, verdict="return", notes=quality, by="manager")
@@ -333,13 +330,13 @@ def _should_hold_unverified_accept(table: Any, task: dict[str, Any]) -> bool:
     from board_staff import _CLAIMED_ACTION_RE, _EVIDENCE_REQUIRED_ORIGINS
 
     flags = {str(f) for f in (task.get("flags") or [])}
-    if "claimed_action_unverified" in flags:
-        return True
-    if "no_evidence" not in flags and "salvaged" not in flags:
-        return False
     if _is_review_headline_duty(task):
         return False
     if str((task.get("eventRef") or {}).get("kind") or "") in BOARD_CATALOG_EVENT_KINDS:
+        return False
+    if "claimed_action_unverified" in flags:
+        return True
+    if "no_evidence" not in flags and "salvaged" not in flags:
         return False
     if "salvaged" not in flags and _task_attempted_required_tools(table, task):
         return False

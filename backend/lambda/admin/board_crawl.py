@@ -69,11 +69,19 @@ def host_is_blocked(host: str) -> bool:
     hostname = (host or "").split(":")[0].split("%")[0].strip().lower()
     if not hostname or hostname in {"localhost", "localhost.localdomain"}:
         return True
-    try:
-        infos = socket.getaddrinfo(hostname, None)
-    except OSError:
-        # gaierror is an OSError. Lambda also raises errno 16 (EBUSY) from the
-        # resolver; that used to escape and fail the whole tool call.
+    # EINTR, EAGAIN, EBUSY. A busy resolver is retried once, then fail closed.
+    # Other OSErrors, including gaierror, stay blocked so a lookup cannot fail the tool.
+    infos = None
+    for attempt in range(2):
+        try:
+            infos = socket.getaddrinfo(hostname, None)
+            break
+        except OSError as exc:
+            if attempt == 0 and exc.errno in {4, 11, 16}:
+                time.sleep(0.2)
+                continue
+            return True
+    if not infos:
         return True
     for info in infos:
         raw_ip = info[4][0]
@@ -158,7 +166,10 @@ def page_text_cached(table: Any, url: str) -> str:
 
 
 def fetched_page_payload(table: Any, url: str, result: FetchResult, text: str) -> dict[str, Any]:
-    remember_page_text(table, result.final_url or url, text)
+    remember_page_text(table, url, text)
+    final = result.final_url or ""
+    if final and final != url:
+        remember_page_text(table, final, text)
     return {
         "status": result.status,
         "finalUrl": result.final_url,

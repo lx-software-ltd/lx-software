@@ -54,6 +54,18 @@ One pull request, as asked. `contracts/**` stays untouched. The red options in t
 
 Revert the pull request. No data migration. Cached `web:site-live` and `crawl:text:` rows expire on their TTL. Settings, including catalog auto-import, are not changed by this code.
 
+## Review fixes
+
+- A send, publish, or qualify claim is past tense, and a negation or "published contact" does not count. The flag is cleared when a later review has the successful call. Catalog sheets and the review headline are not parked for it.
+- Fetched page text is stored under the requested URL and the final URL. Each organisation is checked against its own official page. Address and phone that match the imported record count as supported. The street number is the one beside the street name. A price needs every currency amount. The same coordinates are allowed when the street number and street name agree (shop or floor may differ). An evidence miss parks `unverified` at once and does not spend `revalidateAttempts`.
+- The content readout reads the newest published rows.
+- A busy resolver (errno 16, EAGAIN, EINTR) is retried once inside `host_is_blocked`, then fails closed.
+- Unit tests stub the public-site probe. A failed probe is cached for 15 minutes. Maintenance is cached for 1 hour. A live result stays cached for a day.
+- Only a class veto (`class_once`) merges lesson drafts in the same hour.
+- The context pack reads the newest 1000 updates so a burst of system lines does not drop founder notes.
+- A catalog handoff is remembered on its own cache row, so a long delivered list does not open a second task.
+- `board_staff.py` keeps the pre-sweep formatting. The expiry sentence is the only change in that file.
+
 ## Open questions
 
 - CloudWatch was not read. The errno 16 path is fixed from the code that produces that message.

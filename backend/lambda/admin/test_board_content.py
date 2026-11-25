@@ -163,7 +163,12 @@ class ContentTests(BoardTestCase):
         sent_story = board_content.publish(self.table, self.settings, story["contentId"])
         self.assertTrue(sent_story.get("ok"))
         self.assertEqual(sent_story["platformPostId"], "ig-pub-1")
-        self.assertTrue(any(c[1].endswith("/media") and (c[2].get("body") or {}).get("media_type") == "STORIES" for c in self.graph.calls))
+        self.assertTrue(
+            any(
+                c[1].endswith("/media") and (c[2].get("body") or {}).get("media_type") == "STORIES"
+                for c in self.graph.calls
+            )
+        )
         capped = board_content.upsert_item(
             self.table,
             {
@@ -211,13 +216,19 @@ class ContentTests(BoardTestCase):
         )
         live["platformPostId"] = "fb-best"
         board_store.put_content(self.table, live)
-        with patch.object(board_tools, "execute_call", return_value=board_tools.ToolOutcome(status="held", result={"status": "held"}, summary="boost")) as boost:
+        with patch.object(
+            board_tools,
+            "execute_call",
+            return_value=board_tools.ToolOutcome(status="held", result={"status": "held"}, summary="boost"),
+        ) as boost:
             perf = board_content.write_performance(self.table, self.settings)
         self.assertGreaterEqual(perf["updated"], 1)
         self.assertTrue(boost.called)
 
     def test_hold_classification(self) -> None:
-        row = board_content.upsert_item(self.table, {"channel": "instagram", "copyEn": "x", "template": "news", "fields": {}})
+        row = board_content.upsert_item(
+            self.table, {"channel": "instagram", "copyEn": "x", "template": "news", "fields": {}}
+        )
         ctx = board_tools.ToolContext(table=self.table, settings=self.settings, persona_id="cmo", kind="task")
         action, key = board_holds.classify(
             board_tools.REGISTRY["content_publish"],
@@ -339,7 +350,7 @@ class ContentTests(BoardTestCase):
                         "slotAt": "2026-09-25T02:00:00Z",
                         "channel": "instagram",
                         "copyEn": "Second slot",
-                        "fields": "{\"title\": \"From string\"}",
+                        "fields": '{"title": "From string"}',
                     }
                 ]
             },
@@ -354,7 +365,7 @@ class ContentTests(BoardTestCase):
                 {
                     "summary": "Week staged",
                     "deliverableType": "json",
-                    "deliverable": "{\"items\":[]}",
+                    "deliverable": '{"items":[]}',
                     "evidence": [],
                     "confidence": "medium",
                 },
@@ -398,6 +409,31 @@ class ContentTests(BoardTestCase):
         updates = board_store.list_updates(self.table, limit=20)
         self.assertTrue(any("content-readout" in str(row.get("text") or "") for row in updates))
 
+    def test_a_new_post_is_visible_behind_a_long_archive(self) -> None:
+        import board_content_pause
+
+        for index in range(90):
+            board_store.put_content(
+                self.table,
+                {
+                    "contentId": f"old-{index}",
+                    "status": "published",
+                    "channel": "facebook",
+                    "slotAt": f"2020-01-01T00:{index // 60:02d}:{index % 60:02d}Z",
+                    "publishedAt": "2020-01-01T00:00:00Z",
+                },
+            )
+        board_store.put_content(
+            self.table,
+            {
+                "contentId": "new-post",
+                "status": "published",
+                "channel": "facebook",
+                "slotAt": board_store.now_iso(),
+                "publishedAt": board_store.now_iso(),
+            },
+        )
+        self.assertTrue(board_content_pause.published_recently(self.table))
 
 
 if __name__ == "__main__":
@@ -406,6 +442,7 @@ if __name__ == "__main__":
 from typing import TypeVar
 
 _T = TypeVar("_T")
+
 
 def _nn(value: _T | None) -> _T:
     assert value is not None

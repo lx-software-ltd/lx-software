@@ -12,7 +12,7 @@ from test_board import BoardTestCase
 class ContextUpdateTests(BoardTestCase):
     def test_system_lines_leave_the_founder_note_in_the_pack(self) -> None:
         board_store.add_update(self.table, text="Pause Facebook and Instagram.", owner_sub="founder")
-        for index in range(12):
+        for index in range(80):
             board_store.add_update(
                 self.table,
                 text=f"BREAKER tool:mail — trip {index}",

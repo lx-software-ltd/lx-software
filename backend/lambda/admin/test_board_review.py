@@ -531,6 +531,43 @@ class ReviewCompileTests(BoardTestCase):
         assert saved is not None
         self.assertEqual(saved["status"], "needs_owner")
         self.assertIn("claimed_action_unverified", saved.get("flags") or [])
+        board_store.add_tool_call(
+            self.table,
+            {"callId": "mail-2", "op": "mail_send", "status": "ok", "taskId": task["taskId"], "summary": "sent"},
+        )
+        saved["status"] = "review"
+        board_store.put_task(self.table, saved)
+        with (
+            patch("board_staff_review.board_budget.board_completion", return_value=Fake()),
+            patch("board_staff_review.board_budget.model_for", return_value="desk"),
+            patch("board_async.invoke_async", lambda payload, fallback=None: None),
+        ):
+            board_staff.run_review({"internal": "board_staff_review", "taskId": task["taskId"]})
+        cleared = board_store.get_task(self.table, task["taskId"])
+        assert cleared is not None
+        self.assertNotIn("claimed_action_unverified", cleared.get("flags") or [])
+        self.assertNotEqual(cleared["status"], "needs_owner")
+
+    def test_future_and_contact_wording_is_not_a_send_claim(self) -> None:
+        import board_review_claims
+
+        task = {"taskId": "t-plan", "summary": "Items will be published next week"}
+        self.assertEqual(board_review_claims.mismatch(self.table, task, "Record the published contact."), "")
+        task["summary"] = "Sent the pack"
+        self.assertIn("mail_send", board_review_claims.mismatch(self.table, task, ""))
+
+    def test_a_catalog_sheet_is_not_held_for_a_claim_flag(self) -> None:
+        import board_staff_review
+
+        catalog = {
+            "flags": ["claimed_action_unverified"],
+            "eventRef": {"kind": "catalog-enrich"},
+            "origin": "duty",
+            "brief": "publish the sheet",
+        }
+        self.assertFalse(board_staff_review._should_hold_unverified_accept(self.table, catalog))
+        other = {**catalog, "eventRef": {"kind": "manual"}, "origin": "chat", "brief": "note"}
+        self.assertTrue(board_staff_review._should_hold_unverified_accept(self.table, other))
 
     def test_expiring_approval_is_listed_and_expiry_is_not_a_decline(self) -> None:
         soon = (datetime.now(timezone.utc) + timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")

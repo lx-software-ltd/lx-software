@@ -404,16 +404,16 @@ def _open_or_append(
     return task
 
 
-def find_open_event_task(table: Any, kind: str, event_id: str) -> dict[str, Any] | None:
+def find_open_event_task(table: Any, kind: str, event_id: str, *, limit: int = 400) -> dict[str, Any] | None:
     for status in OPEN_TASK_STATUSES:
-        found = find_event_task(table, kind, event_id, status=status)
+        found = find_event_task(table, kind, event_id, status=status, limit=limit)
         if found:
             return found
     return None
 
 
-def find_event_task(table: Any, kind: str, event_id: str, *, status: str) -> dict[str, Any] | None:
-    for task in board_store.list_tasks(table, status, limit=400):
+def find_event_task(table: Any, kind: str, event_id: str, *, status: str, limit: int = 400) -> dict[str, Any] | None:
+    for task in board_store.list_tasks(table, status, limit=limit):
         ref = task.get("eventRef") or {}
         if ref.get("kind") == kind and str(ref.get("id") or "") == event_id:
             return task

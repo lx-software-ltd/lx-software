@@ -10,6 +10,9 @@ import board_store
 
 HOME_URL = "https://siutindei.com/"
 CACHE_NAME = "web:site-live"
+FAIL_TTL = 900
+MAINTENANCE_TTL = 3600
+LIVE_TTL = 86400
 _GTM_RE = re.compile(r"GTM-[A-Z0-9]+")
 MAINTENANCE_LINE = (
     "Public site is in pre-launch maintenance mode. GA4 reads zero until launch. "
@@ -33,13 +36,20 @@ def site_status(table: Any) -> dict[str, Any]:
         return {}
     hit = board_store.get_cache(table, CACHE_NAME)
     payload = hit.get("payload") if isinstance(hit, dict) else None
+    if isinstance(payload, dict) and payload.get("probe") == "failed":
+        return {}
     if isinstance(payload, dict) and "siteLive" in payload:
         return {"siteLive": bool(payload.get("siteLive")), "siteLiveReason": str(payload.get("siteLiveReason") or "")}
     probed = _probe()
     if probed is None:
+        try:
+            board_store.put_cache(table, CACHE_NAME, {"probe": "failed"}, ttl_seconds=FAIL_TTL)
+        except Exception:
+            return {}
         return {}
+    ttl = LIVE_TTL if probed.get("siteLive") else MAINTENANCE_TTL
     try:
-        board_store.put_cache(table, CACHE_NAME, probed, ttl_seconds=86400)
+        board_store.put_cache(table, CACHE_NAME, probed, ttl_seconds=ttl)
     except Exception:
         return probed
     return probed

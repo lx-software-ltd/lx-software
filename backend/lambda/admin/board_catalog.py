@@ -131,8 +131,8 @@ def compose_enrich_brief(
     return (
         f"Founder directive — CATALOG DESCRIBE {name}: write 40-word EN + 繁中 descriptions, "
         f"age_range and price_note for {listed} in {name} ({hint}). "
-        f"Copy name_en into verified_fields. Address, phone, lat and lng on the record are verified. "
-        f"Copy those and only add description, ages, hours and price. "
+        f"Copy name_en into verified_fields. Copy address, phone, lat and lng from the record. "
+        f"Put hours and price in verified_fields only when the official page shows them. "
         f"{pages_note}"
         f"Read only the official page. Leave unverified fields as unverified. "
         f"{contract}"
@@ -636,8 +636,6 @@ def handoff_commercial_providers(
             orgs = [row for row in raw if isinstance(row, dict)]
     created: list[dict[str, Any]] = []
     district = str(ref.get("district") or "")
-    from board_triage import find_event_task, find_open_event_task
-
     for org in orgs:
         if not is_commercial_org(org):
             continue
@@ -645,31 +643,29 @@ def handoff_commercial_providers(
         if not name:
             continue
         event_id = f"handoff:{_slug(name)}"
-        if find_open_event_task(table, "catalog-handoff", event_id):
-            continue
-        if find_event_task(table, "catalog-handoff", event_id, status="delivered"):
+        if board_catalog_rows.handoff_blocked(table, event_id):
             continue
         official_url = str(org.get("official_url") or org.get("website") or org.get("source_url") or "").strip()
         try:
-            created.append(
-                board_staff.create_task(
-                    table,
-                    settings,
-                    assignee="provider-success",
-                    origin="duty",
-                    brief=handoff_brief(name, district, official_url),
-                    deliverable_type="markdown",
-                    sla_hours=24,
-                    event_ref={
-                        "kind": "catalog-handoff",
-                        "id": event_id,
-                        "district": district,
-                        "name": name,
-                        **({"officialUrl": official_url} if official_url else {}),
-                    },
-                    created_by="board_catalog",
-                )
+            opened = board_staff.create_task(
+                table,
+                settings,
+                assignee="provider-success",
+                origin="duty",
+                brief=handoff_brief(name, district, official_url),
+                deliverable_type="markdown",
+                sla_hours=24,
+                event_ref={
+                    "kind": "catalog-handoff",
+                    "id": event_id,
+                    "district": district,
+                    "name": name,
+                    **({"officialUrl": official_url} if official_url else {}),
+                },
+                created_by="board_catalog",
             )
+            board_catalog_rows.remember_handoff(table, event_id, str(opened.get("taskId") or ""))
+            created.append(opened)
         except board_staff.StaffError as exc:
             _log_event("info", tag="board_catalog_handoff_skipped", name=name[:80], error=str(exc)[:200])
     return created

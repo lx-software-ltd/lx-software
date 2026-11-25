@@ -152,6 +152,7 @@ class StaffError(ValueError):
         self.code = code
 
 
+
 from board_staff_blobs import (  # noqa: E402
     _append_scratchpad,
     _blob_bucket,
@@ -278,7 +279,6 @@ __all__ = [
     "handle_tick",
 ]
 
-
 def env_enabled() -> bool:
     from config import env_flag
 
@@ -377,7 +377,9 @@ def _tier_budget(tier: str) -> float:
     return BOARD_STAFF_TASK_BUDGET_SENIOR_USD if tier == "senior" else BOARD_STAFF_TASK_BUDGET_DESK_USD
 
 
-def _resolve_assignee(table: Any, settings: dict[str, Any], assignee: str) -> tuple[str, str, str, str]:
+def _resolve_assignee(
+    table: Any, settings: dict[str, Any], assignee: str
+) -> tuple[str, str, str, str]:
     """Return (assignee, assigneeKind, managerId, tier)."""
     if board_personas.is_persona_id(assignee):
         return assignee, "persona", assignee, "desk"
@@ -554,6 +556,24 @@ def drain_queue(table: Any, settings: dict[str, Any]) -> int:
     return started
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _requeue_unstarted(table: Any, task_id: str) -> None:
     """Put a just-claimed running task back on the queue when the worker never started."""
     latest = board_store.get_task(table, task_id)
@@ -610,6 +630,10 @@ def _model_for_seat(settings: dict[str, Any], seat_id: str, kind: str) -> str:
     return board_budget.model_for(kind, settings)
 
 
+
+
+
+
 def run_step(payload: dict[str, Any]) -> None:
     if not board_store.event_targets_this_board(payload):
         return
@@ -648,14 +672,10 @@ def run_step(payload: dict[str, Any]) -> None:
     charter = board_store.load_charter(table)
     if task.get("assigneeKind") == "seat":
         seat = roster.get(str(task.get("assignee")))
-        manager = (
-            board_personas.effective_profile(
-                board_personas.persona_default(str(seat["reportsTo"])) or {},
-                persona_overrides.get(str(seat["reportsTo"])),
-            )
-            if seat
-            else None
-        )
+        manager = board_personas.effective_profile(
+            board_personas.persona_default(str(seat["reportsTo"])) or {},
+            persona_overrides.get(str(seat["reportsTo"])),
+        ) if seat else None
         lessons = _confirmed_lessons(table, str(task.get("assignee")))
         system = board_personas.render_seat_prompt(seat or {}, manager or {}, charter, lessons)
         persona_id = str(task.get("managerId") or "")
@@ -680,7 +700,7 @@ def run_step(payload: dict[str, Any]) -> None:
     ref = task.get("eventRef") or {}
     if str(task.get("origin") or "") == "event" and str(ref.get("kind") or "") == "mail":
         user += (
-            f"\nIf this inbound mail is a bounce, DMARC/SES report, or other automated notice "
+            f'\nIf this inbound mail is a bounce, DMARC/SES report, or other automated notice '
             f'that needs no reply, call task_finish with "{MAIL_ARCHIVE_FINISH_PREFIX} <reason>" '
             "instead of writing back."
         )
@@ -690,7 +710,6 @@ def run_step(payload: dict[str, Any]) -> None:
     model = str(payload.get("modelOverride") or "").strip() or _model_for_seat(settings, seat_id, kind)
     if model not in BOARD_STAFF_STEP_MODELS:
         model = _model_for_seat(settings, seat_id, kind)
-
     def _sink(usage: dict[str, Any]) -> None:
         board_store.add_staff_usage_day(table, seat_id or persona_id, {**usage, "calls": 1})
 
@@ -811,8 +830,14 @@ def _on_step_exception(
     if _is_retryable_step_error(exc) and not payload.get("retried"):
         settings = board_store.load_settings(table)
         seat_id = str(latest.get("assignee") or "")
-        current_model = str(payload.get("modelOverride") or "") or _model_for_seat(settings, seat_id, "standup")
-        retry_model = current_model if _seat_model_pinned(settings, seat_id) else _alternate_step_model(current_model)
+        current_model = str(payload.get("modelOverride") or "") or _model_for_seat(
+            settings, seat_id, "standup"
+        )
+        retry_model = (
+            current_model
+            if _seat_model_pinned(settings, seat_id)
+            else _alternate_step_model(current_model)
+        )
         _release_step_claim(table, latest, wanted)
         board_async.invoke_async(
             {
@@ -864,7 +889,11 @@ def _align_step_claim(task: dict[str, Any]) -> None:
 
 
 def _productive_calls(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [c for c in calls if str(c.get("op") or "") not in _IDLE_TOOL_OPS and str(c.get("status") or "") == "ok"]
+    return [
+        c
+        for c in calls
+        if str(c.get("op") or "") not in _IDLE_TOOL_OPS and str(c.get("status") or "") == "ok"
+    ]
 
 
 def _norm_plan(text: str) -> str:
@@ -922,6 +951,8 @@ def _maybe_archive_mail_from_finish(table: Any, task: dict[str, Any], deliverabl
     thread["archivedReason"] = deliverable.split(":", 1)[-1].strip()[:200]
     thread["updatedAt"] = board_store.now_iso()
     board_store.put_mail_thread(table, thread)
+
+
 
 
 def _call_fingerprint(call: dict[str, Any]) -> tuple[str, str]:
@@ -1069,9 +1100,7 @@ def _salvage_to_review(table: Any, latest: dict[str, Any], reason: str, note: st
         _stamp_parked(latest, reason=question)
         board_store.put_task(table, latest)
         _note_parent_if_child_needs_owner(table, latest)
-        _log_event(
-            "warning", tag="board_staff_salvaged_after_return", taskId=task_id, reason=reason[:200], chars=len(text)
-        )
+        _log_event("warning", tag="board_staff_salvaged_after_return", taskId=task_id, reason=reason[:200], chars=len(text))
         return True
     board_store.put_task(table, latest)
     settings = board_store.load_settings(table)
@@ -1176,18 +1205,16 @@ def _approval_outcome_note(approval: dict[str, Any]) -> str:
             "Do not propose it again. Continue with the remaining work or finish."
         )
     if status == "rejected":
-        if str(approval.get("decidedBySub") or "") == "system:expiry":
-            return f"APPROVAL: {label} expired without a decision.{reason} Do not propose it again. Finish with what you have."
-        return (
-            f"APPROVAL: founder rejected {label}.{reason} "
-            "Do not propose it again or any variant of it. Finish with what you have and say the proposal was declined."
-        )
+        expired = str(approval.get("decidedBySub") or "") == "system:expiry"
+        lead = f"{label} expired without a decision" if expired else f"founder rejected {label}"
+        extra = "" if expired else " or any variant of it"
+        end = "Finish with what you have." if expired else "Finish with what you have and say it was declined."
+        return f"APPROVAL: {lead}.{reason} Do not propose it again{extra}. {end}"
     err = str(approval.get("errorMessage") or "execution failed")[:300]
     return (
         f"APPROVAL: founder approved {label} but execution failed ({err}). "
         "Do not propose it again. Finish with what you have and report the failure."
     )
-
 
 def resume_after_approval(table: Any, settings: dict[str, Any], approval: dict[str, Any]) -> None:
     """Continue a task parked on a proposal once the founder decides it."""
@@ -1420,7 +1447,9 @@ def _is_idle_evidence_call(call: dict[str, Any]) -> bool:
     return str(call.get("op") or "") in _IDLE_TOOL_OPS
 
 
-def _evidence_catalog(table: Any, task: dict[str, Any]) -> tuple[set[str], dict[str, str], dict[str, str], set[str]]:
+def _evidence_catalog(
+    table: Any, task: dict[str, Any]
+) -> tuple[set[str], dict[str, str], dict[str, str], set[str]]:
     """Return (known ids, alias→canonical, canonical→op, idle aliases) in one scan."""
     known: set[str] = set()
     alias_to_id: dict[str, str] = {}
@@ -1508,7 +1537,9 @@ def _seed_content_plan_evidence(table: Any, task: dict[str, Any], ctx: ToolConte
     """Run GA4 reads the content-plan brief requires, before the model generates the week."""
     if not _is_content_plan(task):
         return ""
-    needed = _brief_required_evidence_tools(str(task.get("brief") or ""), offered=_offered_evidence_ops(ctx, task))
+    needed = _brief_required_evidence_tools(
+        str(task.get("brief") or ""), offered=_offered_evidence_ops(ctx, task)
+    )
     wanted = [op for op in needed if op in ("web_sessions", "web_conversions", "web_gtm_status")]
     if not wanted:
         return ""
@@ -1532,6 +1563,8 @@ def _seed_content_plan_evidence(table: Any, task: dict[str, Any], ctx: ToolConte
     note = "SEEDED EVIDENCE: " + "; ".join(lines)
     _append_scratchpad(task, note)
     return note + ". Cite these call ids in task_finish evidence."
+
+
 
 
 def _canonical_evidence_ids(table: Any, task: dict[str, Any], evidence: list[str]) -> list[str]:
@@ -1572,7 +1605,9 @@ def _offered_evidence_ops(ctx: ToolContext, task: dict[str, Any]) -> set[str]:
     return offered
 
 
-def preferred_assignee_for_brief(table: Any, settings: dict[str, Any], brief: str) -> str | None:
+def preferred_assignee_for_brief(
+    table: Any, settings: dict[str, Any], brief: str
+) -> str | None:
     """Active seat that should own a GA4 / visitor-source brief, if any."""
     lower = (brief or "").lower()
     if not any(_brief_has_alias(lower, alias) for alias in _GA4_ASSIGN_ALIASES):
@@ -1593,7 +1628,10 @@ def ga4_assignee_hint(table: Any, settings: dict[str, Any]) -> str:
         target = "business-analyst"
     else:
         target = "an executive with web read"
-    return f"GA4 / visitor sources / event tracking / GTM: assign {target}. Do not assign community-manager."
+    return (
+        f"GA4 / visitor sources / event tracking / GTM: assign {target}. "
+        "Do not assign community-manager."
+    )
 
 
 def _remaining_sla_hours(task: dict[str, Any]) -> int:
@@ -1606,7 +1644,57 @@ def _remaining_sla_hours(task: dict[str, Any]) -> int:
     return max(1, min(168, int(hours)))
 
 
+
+
+
+
+
+
 _PAGE_FETCH_NEED = ("fetch", "page", "official", "website", "url", "lcsd", "provider site")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 _DUTY_DATE_SUFFIX_RE = re.compile(r":\d{4}-\d{2}-\d{2}$")
@@ -1617,7 +1705,7 @@ _LENGTH_CUTOFF_NUDGE = (
 _CONTENT_PLAN_LENGTH_NUDGE = (
     "NUDGE: Your previous reply was cut off at the length limit. "
     "Do not send the whole week in one call. Call content_stage_items with at most "
-    '6 items, repeat until the week is staged, then task_finish with {"items":[]}.'
+    "6 items, repeat until the week is staged, then task_finish with {\"items\":[]}."
 )
 
 
@@ -1707,6 +1795,8 @@ def supersede_stale_failed_duties(table: Any) -> int:
     return cancelled
 
 
+
+
 def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, wanted: int) -> None:
     usage = result.usage or {}
     latest = board_store.get_task(table, task_id) or task
@@ -1750,7 +1840,9 @@ def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, 
     approval_ids = [
         str(c.get("approvalId"))
         for c in calls
-        if str(c.get("status") or "") == "pending_approval" and c.get("approvalId") and c.get("blocksTask") is not False
+        if str(c.get("status") or "") == "pending_approval"
+        and c.get("approvalId")
+        and c.get("blocksTask") is not False
     ]
     if approval_ids:
         # task_finish may already have moved the row to review; still park so
@@ -1837,9 +1929,7 @@ def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, 
 def _confirmed_lessons(table: Any, subject: str) -> list[str]:
     from contract_constants import BOARD_STAFF_LESSONS_PER_SEAT_IN_PROMPT
 
-    rows = board_store.list_lessons(
-        table, subject, limit=400
-    )  # newest first; unconfirmed rows must not crowd out confirmed ones
+    rows = board_store.list_lessons(table, subject, limit=400)  # newest first; unconfirmed rows must not crowd out confirmed ones
     out: list[str] = []
     for row in rows:
         if not row.get("confirmed"):
@@ -2009,8 +2099,12 @@ def _finish_blocked(
     """Park an honest 'cannot proceed' finish without manager review or a revision."""
     evidence = _block_evidence(ctx.table, task)
     if not evidence:
-        raise StaffError("status=blocked needs a recent refused tool call or a tripped tool breaker on this task")
-    reason = str(args.get("blockedReason") or args.get("reason") or args.get("summary") or deliverable).strip()[:300]
+        raise StaffError(
+            "status=blocked needs a recent refused tool call or a tripped tool breaker on this task"
+        )
+    reason = str(
+        args.get("blockedReason") or args.get("reason") or args.get("summary") or deliverable
+    ).strip()[:300]
     if not reason:
         raise StaffError("blocked finish needs a blockedReason")
     parked = f"blocked:tool:{evidence['toolId']}"
@@ -2061,7 +2155,9 @@ def op_task_finish(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
         deliverable = board_content.merge_plan_deliverable(ctx.task_id, deliverable)
     encoded = deliverable.encode("utf-8")
     if len(encoded) > BOARD_STAFF_DELIVERABLE_MAX_BYTES:
-        raise StaffError(f"deliverable is larger than {BOARD_STAFF_DELIVERABLE_MAX_BYTES} bytes; split it")
+        raise StaffError(
+            f"deliverable is larger than {BOARD_STAFF_DELIVERABLE_MAX_BYTES} bytes; split it"
+        )
     blocked_note = ""
     if status_arg == "blocked":
         if _block_evidence(ctx.table, task):
@@ -2078,7 +2174,8 @@ def op_task_finish(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
             )
         status_arg = ""
         blocked_note = (
-            "status=blocked needs a refused tool call or a tripped breaker; the deliverable was sent to review instead"
+            "status=blocked needs a refused tool call or a tripped breaker; "
+            "the deliverable was sent to review instead"
         )
         _log_event("info", tag="board_task_blocked_downgraded", taskId=ctx.task_id)
     if _deliverable_has_placeholders(deliverable):
@@ -2103,7 +2200,9 @@ def op_task_finish(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
             canonical.append(cid)
             seen_ids.add(cid)
     evidence = canonical
-    needed = _brief_required_evidence_tools(str(task.get("brief") or ""), offered=_offered_evidence_ops(ctx, task))
+    needed = _brief_required_evidence_tools(
+        str(task.get("brief") or ""), offered=_offered_evidence_ops(ctx, task)
+    )
     cited = {id_to_op[cid] for cid in evidence if cid in id_to_op}
     missing = [tool for tool in needed if tool not in cited]
     latest_calls = _latest_ok_calls_by_op(ctx.table, task) if missing else {}
@@ -2122,7 +2221,8 @@ def op_task_finish(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     if missing:
         borrowed = bool(task.get("helpTaskIds"))
         hint = (
-            " Cite the help task's EVIDENCE call ids from the scratchpad (or staff_get_deliverable)."
+            " Cite the help task's EVIDENCE call ids from the scratchpad "
+            "(or staff_get_deliverable)."
             if borrowed
             else " Call those tools first and pass their call ids in evidence."
         )
@@ -2206,6 +2306,32 @@ def op_task_finish(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def retry_task(table: Any, settings: dict[str, Any], task_id: str, by_sub: str) -> dict[str, Any]:
     """Re-queue a failed task with the same brief so the seat can try again."""
     task = board_store.get_task(table, task_id)
@@ -2248,7 +2374,10 @@ def retry_task(table: Any, settings: dict[str, Any], task_id: str, by_sub: str) 
     _cancel_open_help_children(table, task, by_sub)
     _clear_parked(task)
     task["helpRequests"] = 0
-    retry_banner = "RETRY — the notes below are from a failed attempt; verify state with tools before trusting them."
+    retry_banner = (
+        "RETRY — the notes below are from a failed attempt; verify state with tools "
+        "before trusting them."
+    )
     import_notes = [str(q) for q in (task.get("openQuestions") or []) if q]
     if import_notes and str((task.get("eventRef") or {}).get("kind") or "") in BOARD_CATALOG_EVENT_KINDS:
         retry_banner = retry_banner + " Importer: " + "; ".join(import_notes[:6])
@@ -2305,6 +2434,14 @@ def cancel_task(
     if notify_parent:
         _notify_parent_of_child(table, task, f"help unavailable: cancelled by {by_sub}")
     return task
+
+
+
+
+
+
+
+
 
 
 def list_tasks_for_api(
@@ -2364,14 +2501,7 @@ def context_staff_pack(table: Any) -> dict[str, Any]:
     inflight = []
     for status in ("queued", "running", "waiting_approval", "waiting_subtask", "review"):
         for t in board_store.list_tasks(table, status, limit=20):
-            inflight.append(
-                {
-                    "taskId": t.get("taskId"),
-                    "assignee": t.get("assignee"),
-                    "brief": str(t.get("brief") or "")[:80],
-                    "status": status,
-                }
-            )
+            inflight.append({"taskId": t.get("taskId"), "assignee": t.get("assignee"), "brief": str(t.get("brief") or "")[:80], "status": status})
     return {"staffDelivered": delivered[:10], "staffInFlight": inflight}
 
 

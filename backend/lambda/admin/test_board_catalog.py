@@ -831,7 +831,8 @@ class CatalogDutyTests(BoardTestCase):
         self.assertIn("research_fetch_page", created[0]["brief"])
         created[0]["status"] = "delivered"
         board_store.put_task(self.table, created[0])
-        again = board_catalog.handoff_commercial_providers(self.table, settings, task, sheet)
+        with patch.object(board_store, "list_tasks", return_value=[]):
+            again = board_catalog.handoff_commercial_providers(self.table, settings, task, sheet)
         self.assertEqual(again, [])
         self.assertTrue(board_catalog_rows.generic_host_root("https://lcsd.gov.hk/"))
         self.assertFalse(board_catalog_rows.generic_host_root("https://www.lcsd.gov.hk/en/parks/qbp.html"))

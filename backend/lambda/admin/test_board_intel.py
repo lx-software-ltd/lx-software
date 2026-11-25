@@ -123,6 +123,24 @@ class SsrfTests(BoardTestCase):
         self.assertTrue(board_crawl.host_is_blocked("127.0.0.1"))
         self.assertTrue(board_crawl.host_is_blocked("169.254.169.254"))
 
+    def test_a_busy_resolver_is_retried_once(self) -> None:
+        calls = {"n": 0}
+
+        def lookup(host: str, port: object) -> list:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise OSError(16, "Device or resource busy")
+            return [(board_crawl.socket.AF_INET, board_crawl.socket.SOCK_STREAM, 6, "", ("1.1.1.1", 0))]
+
+        with patch.object(board_crawl.time, "sleep"), patch.object(board_crawl.socket, "getaddrinfo", lookup):
+            self.assertFalse(board_crawl.host_is_blocked("example.com"))
+        self.assertEqual(calls["n"], 2)
+        with (
+            patch.object(board_crawl.time, "sleep"),
+            patch.object(board_crawl.socket, "getaddrinfo", side_effect=OSError(16, "busy")),
+        ):
+            self.assertTrue(board_crawl.host_is_blocked("example.com"))
+
     def test_fetch_page_requires_watchlist(self) -> None:
         os.environ["BOARD_STAFF_ENABLED"] = "true"
         settings = _enable_staff(self.table)

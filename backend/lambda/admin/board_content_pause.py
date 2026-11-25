@@ -49,8 +49,21 @@ def plan_brief(cfg: dict[str, Any], context: str) -> str:
 
 
 def published_recently(table: Any, *, days: int = 7) -> bool:
+    """True when a published item is inside the window.
+
+    The content index is oldest-slot first. Read it backwards so a long
+    archive does not hide this week's posts.
+    """
     cutoff = board_hk.to_iso(datetime.now(timezone.utc) - timedelta(days=days))
-    for row in board_store.list_content(table, "published", limit=80):
+    rows = board_store._query_all(
+        table,
+        IndexName="gsi1",
+        KeyConditionExpression="gsi1pk = :pk",
+        ExpressionAttributeValues={":pk": board_store.board_pk("content#published")},
+        ScanIndexForward=False,
+        Limit=80,
+    )
+    for row in rows:
         stamp = str(row.get("publishedAt") or "")
         if stamp and stamp >= cutoff:
             return True
