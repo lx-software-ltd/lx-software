@@ -425,9 +425,9 @@ def op_ig_insights(_ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
         if not linked or linked == configured:
             raise
     rows = graph_pages("GET", f"{linked}/insights", params, timeout=HTTP_TIMEOUT_SLOW_SECONDS)
-    payload = {"igUserId": linked, "configuredIgUserId": configured, "resolvedFrom": "page", "insights": rows}
-    payload.update(count=len(rows), ignoredMetrics=ignored)
-    return payload
+    return {
+        "igUserId": linked, "configuredIgUserId": configured, "resolvedFrom": "page",
+        "insights": rows, "count": len(rows), "ignoredMetrics": ignored}
 
 
 def op_list_comments(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:

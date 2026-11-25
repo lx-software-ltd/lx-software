@@ -47,7 +47,7 @@ def weekly_target(settings: dict[str, Any] | None) -> int:
         "qualifiedPerWeek"
     )
     try:
-        value = int(raw)
+        value = int(raw if raw is not None else "")
     except (TypeError, ValueError):
         return 15
     return value if value > 0 else 15

@@ -15,7 +15,8 @@ def public_for_score(prospect: dict[str, Any], *, website: str, pseud: Any) -> d
     ``category`` are enough for the lines that mention a Google rating,
     a venue, children's activities, or a restaurant.
     """
-    raw = prospect.get("raw") if isinstance(prospect.get("raw"), dict) else {}
+    stored = prospect.get("raw")
+    raw: dict[str, Any] = stored if isinstance(stored, dict) else {}
     review_count = raw.get("userRatingCount")
     if review_count is None:
         review_count = raw.get("reviewCount")

@@ -519,7 +519,7 @@ class ReviewCompileTests(BoardTestCase):
 
         class Fake:
             text = '{"verdict":"accept","notes":"Looks sent."}'
-            usage = {}
+            usage: dict[str, Any] = {}
 
         with (
             patch("board_staff_review.board_budget.board_completion", return_value=Fake()),
