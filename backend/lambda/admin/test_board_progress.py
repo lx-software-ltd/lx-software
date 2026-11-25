@@ -220,4 +220,3 @@ class ProgressSnapshotTests(BoardTestCase):
         tuned = {**self.settings, "boundaries": bounds}
         snap = board_progress.snapshot(self.table, tuned)
         self.assertEqual(snap["partnerships"]["weeklyTarget"], 50)
-
