@@ -52,7 +52,7 @@ function renderDrafts(path = "/") {
         <LinkedInDraftsSection
           settings={DEFAULT_LINKEDIN_SETTINGS}
           enabled
-          defaultModel="mistralai/mistral-medium-3"
+          defaultModel="mistralai/mistral-large-4-0"
         />
       </QueryClientProvider>
     </MemoryRouter>,
@@ -121,7 +121,7 @@ describe("LinkedIn draft scene", () => {
 
   it("names the draft model that writes the scene, expression, and caption", () => {
     renderDrafts("/?linkedin-post=li_hook");
-    expect(screen.getByText(/by mistralai\/mistral-medium-3/)).toBeInTheDocument();
+    expect(screen.getByText(/by mistralai\/mistral-large-4-0/)).toBeInTheDocument();
   });
 });
 

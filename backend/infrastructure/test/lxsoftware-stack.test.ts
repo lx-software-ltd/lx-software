@@ -1272,6 +1272,12 @@ describe("Siu Tin Dei Data API setup", () => {
     expect(template.toJSON().Parameters.SiutindeiDbSecretName).toBeDefined();
   });
 
+  test("OpenRouterModel defaults to Mistral Large 4", () => {
+    expect(template.toJSON().Parameters.OpenRouterModel.Default).toBe(
+      "mistralai/mistral-large-4-0",
+    );
+  });
+
   test("Secrets Manager reference parameters are NoEcho", () => {
     const params = template.toJSON().Parameters;
     for (const name of [

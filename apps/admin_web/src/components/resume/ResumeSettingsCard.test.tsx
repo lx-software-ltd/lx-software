@@ -9,7 +9,7 @@ const overview: ResumeOverview = {
   enabled: true,
   settings: DEFAULT_RESUME_SETTINGS,
   templateResumeId: "res_alex",
-  defaultModel: "mistralai/mistral-medium-3",
+  defaultModel: "mistralai/mistral-large-4-0",
   spendUsdMonth: 0.02,
   counts: { resumes: 1, postings: 1, applications: 1 },
   pdfCjk: false,

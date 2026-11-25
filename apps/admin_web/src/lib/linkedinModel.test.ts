@@ -112,10 +112,10 @@ describe("linkedin guardrails", () => {
 
   it("defaults the OpenRouter model to empty so the stack slug is used", () => {
     expect(DEFAULT_LINKEDIN_SETTINGS.model).toBe("");
-    expect(linkedinDraftModel(DEFAULT_LINKEDIN_SETTINGS, "mistralai/mistral-medium-3")).toBe(
-      "mistralai/mistral-medium-3",
+    expect(linkedinDraftModel(DEFAULT_LINKEDIN_SETTINGS, "mistralai/mistral-large-4-0")).toBe(
+      "mistralai/mistral-large-4-0",
     );
-    expect(linkedinDraftModel({ model: " openai/gpt-4.1-mini " }, "mistralai/mistral-medium-3")).toBe(
+    expect(linkedinDraftModel({ model: " openai/gpt-4.1-mini " }, "mistralai/mistral-large-4-0")).toBe(
       "openai/gpt-4.1-mini",
     );
   });

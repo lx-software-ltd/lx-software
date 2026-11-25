@@ -9,3 +9,4 @@ before any write. The zone map is [`docs/architecture/zones.md`](../architecture
 | [`linkedin-reach-rules.md`](linkedin-reach-rules.md) | LinkedIn reach rules |
 | [`2026-11-24-bandit-application-asserts.md`](2026-11-24-bandit-application-asserts.md) | Reviewed assert Bandit still reports in the GitHub client |
 | [`2026-11-25-board-sweep-fixes.md`](2026-11-25-board-sweep-fixes.md) | Executive Board fixes from the 2026-11-25 sweep |
+| [`2026-11-25-openrouter-mistral-large-4.md`](2026-11-25-openrouter-mistral-large-4.md) | Replace retired Medium 3 with Mistral Large 4 |
