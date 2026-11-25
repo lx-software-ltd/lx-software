@@ -813,6 +813,31 @@ class CatalogDutyTests(BoardTestCase):
         wanchai = board_catalog._index_imported_candidates(self.table).get("Wan Chai") or []  # noqa: SLF001
         self.assertIn("Harbour Road Playground", [row["name"] for row in wanchai])
 
+    def test_handoff_records_contact_and_skips_a_delivered_task(self) -> None:
+        import board_catalog_rows
+
+        settings = _enable(self.table)
+        board_store.save_staff_override(self.table, "provider-success", {"isActive": True})
+        task = {"eventRef": {"kind": "catalog-enrich", "district": "Eastern", "districtId": "eastern"}}
+        sheet = {
+            "organisations": [
+                {"name_en": "Kidz Club", "type": "class", "official_url": "https://kidzclub.example/eastern"}
+            ]
+        }
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            created = board_catalog.handoff_commercial_providers(self.table, settings, task, sheet)
+        self.assertEqual(len(created), 1)
+        self.assertNotIn("mail_send", created[0]["brief"])
+        self.assertIn("research_fetch_page", created[0]["brief"])
+        created[0]["status"] = "delivered"
+        board_store.put_task(self.table, created[0])
+        with patch.object(board_store, "list_tasks", return_value=[]):
+            again = board_catalog.handoff_commercial_providers(self.table, settings, task, sheet)
+        self.assertEqual(again, [])
+        self.assertTrue(board_catalog_rows.generic_host_root("https://lcsd.gov.hk/"))
+        self.assertFalse(board_catalog_rows.generic_host_root("https://www.lcsd.gov.hk/en/parks/qbp.html"))
+
+
 
 if __name__ == "__main__":
     unittest.main()

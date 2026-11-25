@@ -207,3 +207,16 @@ class ProgressSnapshotTests(BoardTestCase):
         snap = board_progress.snapshot(self.table, self.settings)
         self.assertTrue(snap["listings"]["error"])
         self.assertTrue(any(b["id"] == "listings-unavailable" for b in snap["bottlenecks"]))
+
+    def test_weekly_target_reads_qualified_per_week(self) -> None:
+        snap = board_progress.snapshot(self.table, self.settings)
+        self.assertEqual(snap["partnerships"]["weeklyTarget"], 15)
+        bounds = dict(self.settings["boundaries"])
+        outreach = dict(bounds["outreach"])
+        targets = dict(outreach.get("targets") or {})
+        targets["qualifiedPerWeek"] = 50
+        outreach["targets"] = targets
+        bounds["outreach"] = outreach
+        tuned = {**self.settings, "boundaries": bounds}
+        snap = board_progress.snapshot(self.table, tuned)
+        self.assertEqual(snap["partnerships"]["weeklyTarget"], 50)

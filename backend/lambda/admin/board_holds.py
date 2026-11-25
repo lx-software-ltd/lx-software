@@ -158,8 +158,8 @@ def _prospect_type_for_args(table: Any, args: dict[str, Any]) -> str:
 
 
 def hold_hours(table: Any, settings: dict[str, Any], action_class: str, class_key: str) -> int:
-    holds = ((settings.get("boundaries") or {}).get("holds") or {})
-    overrides = ((settings.get("boundaries") or {}).get("holdOverrides") or {})
+    holds = (settings.get("boundaries") or {}).get("holds") or {}
+    overrides = (settings.get("boundaries") or {}).get("holdOverrides") or {}
     default = int(holds.get(action_class, BOARD_STAFF_HOLD_DEFAULT_HOURS) or 0)
     breaker = (
         board_store.get_breaker(table, f"class:{class_key}")
@@ -325,11 +325,7 @@ def expire_stale(table: Any, settings: dict[str, Any], now_iso: str) -> int:
 def execute_due(table: Any, settings: dict[str, Any], now_iso: str, *, limit: int = 25) -> int:
     if not board_staff.enabled(settings):
         return 0
-    due = [
-        h
-        for h in board_store.list_holds(table, "scheduled", limit=200)
-        if str(h.get("executeAt") or "") <= now_iso
-    ]
+    due = [h for h in board_store.list_holds(table, "scheduled", limit=200) if str(h.get("executeAt") or "") <= now_iso]
     due.sort(key=lambda h: str(h.get("executeAt") or ""))
     ran = 0
     for hold in due[:limit]:
@@ -384,7 +380,9 @@ def _execute_one(table: Any, settings: dict[str, Any], hold: dict[str, Any]) -> 
         _finish_hold(table, hold, "failed", now, error=str(exc)[:400])
         return True
     if outcome.status == "error":
-        _finish_hold(table, hold, "failed", now, error=str(outcome.result.get("error") or "error")[:400], call_id=outcome.call_id)
+        _finish_hold(
+            table, hold, "failed", now, error=str(outcome.result.get("error") or "error")[:400], call_id=outcome.call_id
+        )
         return True
     _finish_hold(
         table,
@@ -479,7 +477,7 @@ def _finish_hold(
     _notify_code_sync_hold(table, hold)
 
 
-def veto(table: Any, hold_id: str, by_sub: str, reason: str) -> dict[str, Any]:
+def veto(table: Any, hold_id: str, by_sub: str, reason: str, *, class_once: bool = False) -> dict[str, Any]:
     hold = board_store.get_hold(table, hold_id)
     if not hold:
         raise HoldError("Hold not found")
@@ -498,7 +496,7 @@ def veto(table: Any, hold_id: str, by_sub: str, reason: str) -> dict[str, Any]:
     try:
         import board_lessons
 
-        board_lessons.create_from_veto(table, hold)
+        board_lessons.create_from_veto(table, hold, class_once=class_once)
     except Exception as exc:
         _log_event("warning", tag="board_lesson_from_veto_failed", error=str(exc)[:200])
     if hold.get("op") == "content_publish":
@@ -529,7 +527,7 @@ def veto_class_today(table: Any, class_key: str, by_sub: str) -> list[dict[str, 
             continue
         if str(hold.get("executeAt") or "") > cutoff:
             continue
-        out.append(veto(table, str(hold["holdId"]), by_sub, f"class veto {class_key}"))
+        out.append(veto(table, str(hold["holdId"]), by_sub, f"class veto {class_key}", class_once=True))
     return out
 
 
@@ -546,7 +544,7 @@ def record_ramp(table: Any, settings: dict[str, Any], class_key: str, *, vetoed:
     days[day] = slot
     recent = list(current.get("recent") or [])
     recent.append("veto" if vetoed else "action")
-    recent = recent[-BOARD_STAFF_RAMP_DEMOTE_WINDOW_ACTIONS :]
+    recent = recent[-BOARD_STAFF_RAMP_DEMOTE_WINDOW_ACTIONS:]
     doc = {
         "classKey": class_key,
         "actions": int(current.get("actions") or 0) + 1,
@@ -580,8 +578,10 @@ def ramp_state(table: Any, class_key: str) -> dict[str, Any]:
         "actions": window_actions,
         "vetoes": window_vetoes,
         "rate": rate,
-        "eligibleForPromotion": window_actions >= BOARD_STAFF_RAMP_MIN_ACTIONS and rate <= BOARD_STAFF_RAMP_PROMOTE_MAX_VETO_RATE,
-        "shouldDemote": len(recent) >= BOARD_STAFF_RAMP_DEMOTE_WINDOW_ACTIONS and recent_rate > BOARD_STAFF_RAMP_DEMOTE_VETO_RATE,
+        "eligibleForPromotion": window_actions >= BOARD_STAFF_RAMP_MIN_ACTIONS
+        and rate <= BOARD_STAFF_RAMP_PROMOTE_MAX_VETO_RATE,
+        "shouldDemote": len(recent) >= BOARD_STAFF_RAMP_DEMOTE_WINDOW_ACTIONS
+        and recent_rate > BOARD_STAFF_RAMP_DEMOTE_VETO_RATE,
         "totals": {"actions": current.get("actions") or 0, "vetoes": current.get("vetoes") or 0},
     }
 

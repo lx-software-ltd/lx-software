@@ -347,6 +347,26 @@ class BreakerRuleTests(BoardTestCase):
         self.assertFalse(board_breakers.is_tripped(self.table, "tool:research"))
 
 
+    def test_refused_recipient_does_not_trip_mail(self) -> None:
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        for i in range(12):
+            board_store.add_tool_call(
+                self.table,
+                {
+                    "callId": f"unsourced-{i}",
+                    "op": "mail_send",
+                    "toolId": "mail",
+                    "status": "error",
+                    "summary": "recipient not sourced",
+                    "resultPreview": "recipient not sourced",
+                    "createdAt": now,
+                },
+            )
+        tripped = board_breakers.evaluate(self.table, self.settings)
+        self.assertNotIn("tool:mail", tripped)
+
+
+
 class BreakerExecuteCallTests(ToolsTestCase):
     def setUp(self) -> None:
         super().setUp()

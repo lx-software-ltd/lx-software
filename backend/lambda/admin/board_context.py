@@ -23,6 +23,8 @@ import board_web
 
 MAX_BRIEF_CHARS = 12000
 MAX_UPDATES = 10
+MAX_SYSTEM_UPDATES = 5
+MAX_UPDATE_SCAN = 1000
 MAX_UPDATE_CHARS = 1500
 MAX_OPEN_ACTIONS = 40
 MAX_CLOSED_ACTIONS = 20
@@ -48,7 +50,7 @@ def build_context_pack(
     include_finance: bool | None = None,
 ) -> dict[str, Any]:
     brief = board_store.load_brief(table)
-    updates = board_store.list_updates(table, limit=MAX_UPDATES)
+    notes, system_updates = _split_updates(board_store.list_updates(table, limit=MAX_UPDATE_SCAN))
     actions = board_store.list_actions(table)
     open_actions = sorted(
         (a for a in actions if a.get("status") == "open"),
@@ -115,10 +117,8 @@ def build_context_pack(
     pack: dict[str, Any] = {
         "brief": _cap(str(brief.get("markdown") or ""), MAX_BRIEF_CHARS),
         "briefUpdatedAt": brief.get("updatedAt"),
-        "updates": [
-            {"createdAt": u.get("createdAt"), "text": _cap(str(u.get("text") or ""), MAX_UPDATE_CHARS)}
-            for u in updates
-        ],
+        "updates": [_update_line(u) for u in notes],
+        "systemUpdates": [_update_line(u) for u in system_updates],
         "openActions": [_action_summary(a) for a in open_actions],
         "closedActions": [_action_summary(a) for a in closed_actions],
         "lastMinutes": last_minutes,
@@ -151,6 +151,29 @@ def build_context_pack(
     pack["text"] = render_context_pack(pack)
     pack["hash"] = hashlib.sha256(pack["text"].encode("utf-8")).hexdigest()[:16]
     return pack
+
+
+def _update_kind(row: dict[str, Any]) -> str:
+    kind = str(row.get("kind") or "")
+    if kind in {"note", "system"}:
+        return kind
+    text = str(row.get("text") or "")
+    if text.startswith("Delegate ") or text.startswith("BREAKER ") or text.startswith("CONFIG"):
+        return "system"
+    return "note"
+
+
+def _split_updates(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    notes: list[dict[str, Any]] = []
+    system: list[dict[str, Any]] = []
+    for row in rows:
+        bucket = system if _update_kind(row) == "system" else notes
+        bucket.append(row)
+    return notes[:MAX_UPDATES], system[:MAX_SYSTEM_UPDATES]
+
+
+def _update_line(row: dict[str, Any]) -> dict[str, Any]:
+    return {"createdAt": row.get("createdAt"), "text": _cap(str(row.get("text") or ""), MAX_UPDATE_CHARS)}
 
 
 def _priority_rank(value: Any) -> int:
@@ -202,6 +225,15 @@ def render_context_pack(pack: dict[str, Any]) -> str:
     else:
         parts.append("(none)")
 
+    system_updates = pack.get("systemUpdates") or []
+    parts.append("")
+    parts.append("--- System log (newest first) ---")
+    if system_updates:
+        for u in system_updates:
+            parts.append(f"[{str(u.get('createdAt') or '')[:10]}] {u.get('text')}")
+    else:
+        parts.append("(none)")
+
     parts.append("")
     parts.append("--- Open action items from previous meetings ---")
     open_actions = pack.get("openActions") or []
@@ -210,8 +242,7 @@ def render_context_pack(pack: dict[str, Any]) -> str:
             note = f" Founder note: {a['note']}" if a.get("note") else ""
             due = f", due {str(a.get('dueAt') or '')[:10]}" if a.get("dueAt") else ""
             parts.append(
-                f"- [{a.get('priority')}] ({a.get('persona')}) {a.get('title')}"
-                f" — id {a.get('actionId')}{due}.{note}"
+                f"- [{a.get('priority')}] ({a.get('persona')}) {a.get('title')} — id {a.get('actionId')}{due}.{note}"
             )
     else:
         parts.append("(none)")
@@ -228,9 +259,7 @@ def render_context_pack(pack: dict[str, Any]) -> str:
     parts.append("")
     parts.append("--- Last meeting minutes ---")
     if last and isinstance(last.get("minutes"), dict):
-        parts.append(
-            _cap(render_minutes_brief(last["minutes"], created_at=last.get("createdAt")), MAX_MINUTES_CHARS)
-        )
+        parts.append(_cap(render_minutes_brief(last["minutes"], created_at=last.get("createdAt")), MAX_MINUTES_CHARS))
     else:
         parts.append("(no previous meeting)")
 
@@ -320,6 +349,12 @@ def render_context_pack(pack: dict[str, Any]) -> str:
         )
 
     web = pack.get("web") or {}
+    if web.get("siteLive") is False:
+        parts.append("")
+        parts.append(
+            "Public site is in pre-launch maintenance mode. GA4 reads zero until launch. "
+            "Do not open tracking, conversion or ad-performance actions."
+        )
     if web.get("sessions") is not None or web.get("fetchedAt"):
         parts.append("")
         parts.append(
@@ -354,15 +389,11 @@ def render_context_pack(pack: dict[str, Any]) -> str:
         if inflight:
             parts.append(f"In flight ({len(inflight)}):")
             for t in inflight[:10]:
-                parts.append(
-                    f"- [{t.get('status')}] ({t.get('assignee')}) {_cap(str(t.get('brief') or ''), 80)}"
-                )
+                parts.append(f"- [{t.get('status')}] ({t.get('assignee')}) {_cap(str(t.get('brief') or ''), 80)}")
         if delivered:
             parts.append("Recently delivered:")
             for t in delivered[:10]:
-                parts.append(
-                    f"- ({t.get('assignee')}) {_cap(str(t.get('summary') or ''), 120)}"
-                )
+                parts.append(f"- ({t.get('assignee')}) {_cap(str(t.get('summary') or ''), 120)}")
 
     finance = pack.get("finance")
     if finance:

@@ -443,6 +443,29 @@ class OutreachTests(BoardTestCase):
         self.assertEqual(action, "cold_outreach")
         self.assertEqual(key, "cold_outreach:venue")
 
+    def test_score_survives_a_busy_resolver(self) -> None:
+        row, _created = board_prospects.upsert(
+            self.table, name="Busy Hall", type="venue", website="https://busy.example"
+        )
+
+        class Fake:
+            text = '{"score": 55, "note": "Base score."}'
+
+        def busy(*_args, **_kwargs):
+            raise OSError(16, "Device or resource busy")
+
+        ctx = board_tools.ToolContext(table=self.table, settings=self.settings, persona_id="coo", kind="task")
+        with (
+            patch("socket.getaddrinfo", side_effect=busy),
+            patch("board_budget.board_completion", return_value=Fake()),
+            patch("board_budget.model_for", return_value="desk"),
+        ):
+            out = board_outreach.op_score_prospect(ctx, {"id": row["prospectId"]})
+        self.assertNotIn("error", out)
+        self.assertEqual(out["score"], 55)
+        self.assertIn("prospect", out)
+
+
 
 if __name__ == "__main__":
     unittest.main()

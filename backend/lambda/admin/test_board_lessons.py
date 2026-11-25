@@ -51,7 +51,13 @@ class LessonTests(BoardTestCase):
         board_lessons.confirm(self.table, lesson["lessonId"])
         texts = board_staff._confirmed_lessons(self.table, "content-marketer")
         self.assertIn("Always name the district and the date.", texts)
-        seat = {"id": "content-marketer", "title": "Content Marketer", "displayName": "Content", "reportsTo": "cmo", "brief": "Write posts."}
+        seat = {
+            "id": "content-marketer",
+            "title": "Content Marketer",
+            "displayName": "Content",
+            "reportsTo": "cmo",
+            "brief": "Write posts.",
+        }
         prompt = board_personas.render_seat_prompt(seat, {"displayName": "Maya", "title": "CMO"}, {}, texts)
         self.assertIn("STANDING INSTRUCTIONS FROM THE FOUNDER", prompt)
         self.assertIn("Always name the district and the date.", prompt)
@@ -101,7 +107,12 @@ class LessonTests(BoardTestCase):
             from_call = board_lessons.create_from_correction(self.table, "call-wrong", "Tone was wrong")
             from_task = board_lessons.create_from_return(
                 self.table,
-                {"taskId": "t1", "assignee": "support", "brief": "Reply to parent", "lastReview": {"notes": "Need the catalog fact"}},
+                {
+                    "taskId": "t1",
+                    "assignee": "support",
+                    "brief": "Reply to parent",
+                    "lastReview": {"notes": "Need the catalog fact"},
+                },
             )
         self.assertEqual(from_call["kind"], "correction")
         self.assertEqual(from_task["kind"], "return")
@@ -109,6 +120,51 @@ class LessonTests(BoardTestCase):
         dismissed = board_store.get_lesson(self.table, from_call["lessonId"])
         assert dismissed is not None
         self.assertTrue(dismissed.get("dismissed"))
+
+    def test_a_second_veto_in_the_hour_updates_the_draft(self) -> None:
+        class Fake:
+            text = '{"instruction":"Do not repeat this class."}'
+
+        first = {
+            "holdId": "h1",
+            "op": "content_publish",
+            "classKey": "publish:facebook",
+            "seatId": "content-marketer",
+            "summary": "Post one",
+            "vetoReason": "paused",
+        }
+        second = {**first, "holdId": "h2", "summary": "Post two"}
+        with (
+            patch.object(board_budget, "board_completion", return_value=Fake()),
+            patch.object(board_budget, "model_for", return_value="desk"),
+        ):
+            created = board_lessons.create_from_veto(self.table, first, class_once=True)
+            updated = board_lessons.create_from_veto(self.table, second, class_once=True)
+        self.assertEqual(created["lessonId"], updated["lessonId"])
+        self.assertIn("Post two", updated["what"])
+        rows = [row for row in board_lessons.list_lessons(self.table, "content-marketer") if row.get("kind") == "veto"]
+        self.assertEqual(len(rows), 1)
+
+    def test_two_ordinary_vetoes_stay_two_lessons(self) -> None:
+        class Fake:
+            text = '{"instruction":"Do not repeat this."}'
+
+        first = {
+            "holdId": "h1",
+            "op": "mail_send",
+            "classKey": "cold_outreach:provider",
+            "seatId": "provider-success",
+            "summary": "First letter",
+        }
+        second = {**first, "holdId": "h2", "summary": "Second letter"}
+        with (
+            patch.object(board_budget, "board_completion", return_value=Fake()),
+            patch.object(board_budget, "model_for", return_value="desk"),
+        ):
+            board_lessons.create_from_veto(self.table, first)
+            board_lessons.create_from_veto(self.table, second)
+        rows = [row for row in board_lessons.list_lessons(self.table, "provider-success") if row.get("kind") == "veto"]
+        self.assertEqual(len(rows), 2)
 
 
 if __name__ == "__main__":

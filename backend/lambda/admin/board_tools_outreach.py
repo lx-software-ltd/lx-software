@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from board_tools_core import (
@@ -24,40 +25,78 @@ def _outreach_search_places(ctx: ToolContext, args: dict[str, Any]) -> dict[str,
 
     return board_outreach.op_search_places(ctx, args)
 
+
 def _outreach_open_data(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     import board_outreach
 
     return board_outreach.op_open_data(ctx, args)
 
+
 def _outreach_list_prospects(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_hk
     import board_outreach
 
+    district = str(args.get("district") or "").strip()
+    if district:
+        mapped = board_hk.canonical_district(district)
+        if mapped != "unknown":
+            args = {**args, "district": mapped}
     return board_outreach.op_list_prospects(ctx, args)
+
 
 def _outreach_get_prospect(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     import board_outreach
 
     return board_outreach.op_get_prospect(ctx, args)
 
+
+_BRACKET_DISTRICT_RE = re.compile(r"\(([^)]+)\)")
+
+
+def _upsert_args(args: dict[str, Any]) -> dict[str, Any] | str:
+    """Use a Places address district, and reject a bracketed name from another district."""
+    import board_hk
+
+    district = str(args.get("district") or "")
+    address = str(args.get("address") or "")
+    named = board_hk.districts_named_in_address(address) if address else []
+    if len(named) == 1:
+        district = named[0]
+        args = {**args, "district": district}
+    claimed = board_hk.canonical_district(district) if district else "unknown"
+    for raw in _BRACKET_DISTRICT_RE.findall(str(args.get("name") or "")):
+        bracket = board_hk.canonical_district(raw.strip())
+        if bracket != "unknown" and claimed not in {"unknown", bracket}:
+            return f"name says {bracket} but district is {claimed}"
+    return args
+
+
 def _outreach_upsert_prospect(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     import board_outreach
 
-    return board_outreach.op_upsert_prospect(ctx, args)
+    guarded = _upsert_args(args)
+    if isinstance(guarded, str):
+        return {"error": guarded}
+    return board_outreach.op_upsert_prospect(ctx, guarded)
+
 
 def _outreach_score_prospect(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     import board_outreach
 
     return board_outreach.op_score_prospect(ctx, args)
 
+
 def _outreach_start_sequence(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     import board_outreach
 
     return board_outreach.op_start_sequence(ctx, args)
 
+
 def _outreach_send(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     import board_outreach
 
     return board_outreach.op_send(ctx, args)
+
 
 def _outreach_send_preview(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any] | None:
     """The email this call would send, in the mail-preview shape the owner's cards render.
@@ -103,6 +142,7 @@ def _outreach_send_preview(ctx: ToolContext, args: dict[str, Any]) -> dict[str, 
         "sendEnabled": board_mail.sending_enabled(),
     }
 
+
 def _outreach_personalisation_guard(_ctx: ToolContext, args: dict[str, Any]) -> str | None:
     import board_policy
 
@@ -111,10 +151,12 @@ def _outreach_personalisation_guard(_ctx: ToolContext, args: dict[str, Any]) -> 
         return "the draft promises a refund, a guarantee, or to hold a place"
     return None
 
+
 def _outreach_suppress(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     import board_outreach
 
     return board_outreach.op_suppress(ctx, args)
+
 
 def ops() -> list[ToolOp]:
     return [
@@ -159,6 +201,7 @@ def ops() -> list[ToolOp]:
                 {
                     "stage": _str_param("Optional stage filter.", max_len=20),
                     "type": _str_param("Optional type filter.", max_len=20),
+                    "district": _str_param("Optional district filter.", max_len=40),
                     "limit": _int_param("Max rows (1-50).", maximum=50),
                 }
             ),
@@ -190,6 +233,9 @@ def ops() -> list[ToolOp]:
                     "phone": _str_param("Public phone.", max_len=40),
                     "email": _str_param("Public email.", max_len=120),
                     "placeId": _str_param("Google place id.", max_len=80),
+                    "address": _str_param(
+                        "Places formatted address. Its district wins over the district argument.", max_len=300
+                    ),
                     "source": _str_param("Where this came from.", max_len=40),
                     "reason": REASON_PARAM,
                 },

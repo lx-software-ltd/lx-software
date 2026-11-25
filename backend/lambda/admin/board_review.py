@@ -10,6 +10,7 @@ from typing import Any
 
 import board_hk
 import board_mail
+import board_review_expiry
 import board_review_sample
 import board_staff
 import board_store
@@ -52,12 +53,10 @@ SECTION_LABELS = {
     "promotion": "Production promotion",
 }
 
-
 def _hkt_day_bounds(date_hkt: str) -> tuple[str, str]:
     start = datetime.fromisoformat(f"{date_hkt}T00:00:00").replace(tzinfo=board_hk.HKT)
     end = start + timedelta(days=1)
     return board_hk.to_iso(start), board_hk.to_iso(end)
-
 
 def _yesterday_hkt(date_hkt: str) -> str:
     day = datetime.fromisoformat(f"{date_hkt}T12:00:00").replace(tzinfo=board_hk.HKT)
@@ -297,7 +296,6 @@ def _promotion_section() -> dict[str, Any]:
         return {**preview, "fetchedAt": board_store.now_iso()}
     return {"error": "staging check returned no data", "fetchedAt": board_store.now_iso()}
 
-
 def compile(table: Any, settings: dict[str, Any], date_hkt: str) -> dict[str, Any]:
     narrative = _narrative(table, date_hkt)
     try:
@@ -321,6 +319,7 @@ def compile(table: Any, settings: dict[str, Any], date_hkt: str) -> dict[str, An
         "headline": headline_pack(table, settings, date_hkt),
         "narrative": narrative,
         "holdsDue": _holds_due(table),
+        "expiringApprovals": board_review_expiry.pending(table),
         "escalations": _escalations(table),
         "sample": _sample(table, settings, date_hkt),
         "breakers": breakers,
@@ -624,6 +623,7 @@ def _promotion_lines(review: dict[str, Any]) -> list[str]:
 def digest_section_lines(review: dict[str, Any]) -> list[tuple[str, str, list[str]]]:
     """(section id, title, body lines) — same data the Daily review page shows."""
     holds = [_hold_line(row) for row in _as_list(review.get("holdsDue"))[:DIGEST_LIST_LIMIT] if isinstance(row, dict)]
+    holds.extend(board_review_expiry.lines(_as_list(review.get("expiringApprovals"))))
     escalations = [
         _escalation_line(row) for row in _as_list(review.get("escalations"))[:DIGEST_LIST_LIMIT] if isinstance(row, dict)
     ]

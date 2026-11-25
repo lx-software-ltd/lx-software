@@ -163,7 +163,12 @@ class ContentTests(BoardTestCase):
         sent_story = board_content.publish(self.table, self.settings, story["contentId"])
         self.assertTrue(sent_story.get("ok"))
         self.assertEqual(sent_story["platformPostId"], "ig-pub-1")
-        self.assertTrue(any(c[1].endswith("/media") and (c[2].get("body") or {}).get("media_type") == "STORIES" for c in self.graph.calls))
+        self.assertTrue(
+            any(
+                c[1].endswith("/media") and (c[2].get("body") or {}).get("media_type") == "STORIES"
+                for c in self.graph.calls
+            )
+        )
         capped = board_content.upsert_item(
             self.table,
             {
@@ -211,13 +216,19 @@ class ContentTests(BoardTestCase):
         )
         live["platformPostId"] = "fb-best"
         board_store.put_content(self.table, live)
-        with patch.object(board_tools, "execute_call", return_value=board_tools.ToolOutcome(status="held", result={"status": "held"}, summary="boost")) as boost:
+        with patch.object(
+            board_tools,
+            "execute_call",
+            return_value=board_tools.ToolOutcome(status="held", result={"status": "held"}, summary="boost"),
+        ) as boost:
             perf = board_content.write_performance(self.table, self.settings)
         self.assertGreaterEqual(perf["updated"], 1)
         self.assertTrue(boost.called)
 
     def test_hold_classification(self) -> None:
-        row = board_content.upsert_item(self.table, {"channel": "instagram", "copyEn": "x", "template": "news", "fields": {}})
+        row = board_content.upsert_item(
+            self.table, {"channel": "instagram", "copyEn": "x", "template": "news", "fields": {}}
+        )
         ctx = board_tools.ToolContext(table=self.table, settings=self.settings, persona_id="cmo", kind="task")
         action, key = board_holds.classify(
             board_tools.REGISTRY["content_publish"],
@@ -339,7 +350,7 @@ class ContentTests(BoardTestCase):
                         "slotAt": "2026-09-25T02:00:00Z",
                         "channel": "instagram",
                         "copyEn": "Second slot",
-                        "fields": "{\"title\": \"From string\"}",
+                        "fields": '{"title": "From string"}',
                     }
                 ]
             },
@@ -354,7 +365,7 @@ class ContentTests(BoardTestCase):
                 {
                     "summary": "Week staged",
                     "deliverableType": "json",
-                    "deliverable": "{\"items\":[]}",
+                    "deliverable": '{"items":[]}',
                     "evidence": [],
                     "confidence": "medium",
                 },
@@ -364,6 +375,66 @@ class ContentTests(BoardTestCase):
         self.assertIn("Play at the park", raw)
         self.assertIn("facebook", raw)
 
+    def test_plan_sentence_follows_per_week_and_a_pause_skips_the_duty(self) -> None:
+        import board_content_pause
+
+        sentence = board_content_pause.social_sentence(board_content.content_cfg(self.settings))
+        self.assertEqual(
+            sentence,
+            "Social week is 21 items (7 facebook, 7 instagram, 7 instagram_story); seo items are extra.",
+        )
+        bounds = dict(self.settings["boundaries"])
+        content = dict(bounds["content"])
+        content["perWeek"] = {"facebook": 0, "instagram": 0, "instagram_story": 0, "seo": 0}
+        bounds["content"] = content
+        paused = {**self.settings, "boundaries": bounds}
+        self.assertIsNone(board_content.plan_week(self.table, paused))
+
+    def test_readout_skips_a_week_with_nothing_published(self) -> None:
+        board_store.save_staff_override(self.table, "growth-specialist", {"isActive": True})
+        self.assertIsNone(board_content.weekly_readout(self.table, self.settings))
+        updates = board_store.list_updates(self.table, limit=20)
+        self.assertFalse(any("content-readout" in str(row.get("text") or "") for row in updates))
+        board_store.put_content(
+            self.table,
+            {
+                "contentId": "published-1",
+                "status": "published",
+                "channel": "facebook",
+                "slotAt": "2026-11-20T02:00:00Z",
+                "publishedAt": board_store.now_iso(),
+            },
+        )
+        self.assertIsNone(board_content.weekly_readout(self.table, self.settings))
+        updates = board_store.list_updates(self.table, limit=20)
+        self.assertTrue(any("content-readout" in str(row.get("text") or "") for row in updates))
+
+    def test_a_new_post_is_visible_behind_a_long_archive(self) -> None:
+        import board_content_pause
+
+        for index in range(90):
+            board_store.put_content(
+                self.table,
+                {
+                    "contentId": f"old-{index}",
+                    "status": "published",
+                    "channel": "facebook",
+                    "slotAt": f"2020-01-01T00:{index // 60:02d}:{index % 60:02d}Z",
+                    "publishedAt": "2020-01-01T00:00:00Z",
+                },
+            )
+        board_store.put_content(
+            self.table,
+            {
+                "contentId": "new-post",
+                "status": "published",
+                "channel": "facebook",
+                "slotAt": board_store.now_iso(),
+                "publishedAt": board_store.now_iso(),
+            },
+        )
+        self.assertTrue(board_content_pause.published_recently(self.table))
+
 
 if __name__ == "__main__":
     unittest.main()
@@ -371,6 +442,7 @@ if __name__ == "__main__":
 from typing import TypeVar
 
 _T = TypeVar("_T")
+
 
 def _nn(value: _T | None) -> _T:
     assert value is not None

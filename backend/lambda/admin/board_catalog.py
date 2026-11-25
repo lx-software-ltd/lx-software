@@ -8,6 +8,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 import board_catalog_focus
+import board_catalog_rows
 import board_hk
 import board_staff
 import board_store
@@ -117,7 +118,9 @@ def compose_enrich_brief(
         org = str(page.get("name") or "").strip()
         url = str(page.get("url") or "").strip()
         if org and url:
-            page_bits.append(f"{org}: {url}")
+            keys = ("address", "phone", "lat", "lng")
+            known = " ".join(f"{key}={page[key]}" for key in keys if page.get(key))
+            page_bits.append(f"{org}: {url}" + (f" ({known})" if known else ""))
     pages_note = ""
     if page_bits:
         pages_note = (
@@ -128,7 +131,8 @@ def compose_enrich_brief(
     return (
         f"Founder directive — CATALOG DESCRIBE {name}: write 40-word EN + 繁中 descriptions, "
         f"age_range and price_note for {listed} in {name} ({hint}). "
-        f"The organisation names below are already verified — copy each name_en into verified_fields. "
+        f"Copy name_en into verified_fields. Copy address, phone, lat and lng from the record. "
+        f"Put hours and price in verified_fields only when the official page shows them. "
         f"{pages_note}"
         f"Read only the official page. Leave unverified fields as unverified. "
         f"{contract}"
@@ -332,7 +336,8 @@ def _index_imported_candidates(table: Any) -> dict[str, list[dict[str, str]]]:
         if cleaned.casefold() in names:
             return False
         names.add(cleaned.casefold())
-        bucket.append({"name": cleaned, "url": _usable_org_url(table, _org_page_url(cand))})
+        page = _usable_org_url(table, _org_page_url(cand))
+        bucket.append(board_catalog_rows.describe_candidate(cand, cleaned, page))
         return full()
 
     board_store.walk_candidates(table, "imported", visit)
@@ -357,7 +362,7 @@ def imported_orgs(
 
     def add(name: str, url: str) -> None:
         cleaned = " ".join(str(name or "").split()).strip()
-        if not cleaned or cleaned.casefold() in seen:
+        if not cleaned or cleaned.casefold() in seen or board_catalog_rows.generic_host_root(url):
             return
         seen.add(cleaned.casefold())
         found.append({"name": cleaned, "url": _usable_org_url(table, url)})
@@ -631,8 +636,6 @@ def handoff_commercial_providers(
             orgs = [row for row in raw if isinstance(row, dict)]
     created: list[dict[str, Any]] = []
     district = str(ref.get("district") or "")
-    from board_triage import find_open_event_task
-
     for org in orgs:
         if not is_commercial_org(org):
             continue
@@ -640,54 +643,44 @@ def handoff_commercial_providers(
         if not name:
             continue
         event_id = f"handoff:{_slug(name)}"
-        if find_open_event_task(table, "catalog-handoff", event_id):
+        if board_catalog_rows.handoff_blocked(table, event_id):
             continue
         official_url = str(org.get("official_url") or org.get("website") or org.get("source_url") or "").strip()
         try:
-            created.append(
-                board_staff.create_task(
-                    table,
-                    settings,
-                    assignee="provider-success",
-                    origin="duty",
-                    brief=handoff_brief(name, district, official_url),
-                    deliverable_type="markdown",
-                    sla_hours=24,
-                    event_ref={
-                        "kind": "catalog-handoff",
-                        "id": event_id,
-                        "district": district,
-                        "name": name,
-                        **({"officialUrl": official_url} if official_url else {}),
-                    },
-                    created_by="board_catalog",
-                )
+            opened = board_staff.create_task(
+                table,
+                settings,
+                assignee="provider-success",
+                origin="duty",
+                brief=handoff_brief(name, district, official_url),
+                deliverable_type="markdown",
+                sla_hours=24,
+                event_ref={
+                    "kind": "catalog-handoff",
+                    "id": event_id,
+                    "district": district,
+                    "name": name,
+                    **({"officialUrl": official_url} if official_url else {}),
+                },
+                created_by="board_catalog",
             )
+            board_catalog_rows.remember_handoff(table, event_id, str(opened.get("taskId") or ""))
+            created.append(opened)
         except board_staff.StaffError as exc:
             _log_event("info", tag="board_catalog_handoff_skipped", name=name[:80], error=str(exc)[:200])
     return created
 
 
 def handoff_brief(name: str, district: str, official_url: str) -> str:
-    """Brief for a provider-success onboarding handoff.
-
-    The sheet carries no mailbox for the org, so the brief says where the
-    address comes from and what to do when there is none. Without that the
-    seat invented ``contact#N`` aliases (holds that failed at execution) or
-    asked for help every attempt.
-    """
+    """Record the published contact. The task does not send mail."""
     where = f" ({official_url})" if official_url else ""
     return (
-        f"Send the Siu Tin Dei provider onboarding link to {name} in {district} "
-        f"and ask them to add photos, prices and opening hours on their listing. "
-        f"Do not write the listing yourself.\n\n"
-        f"Contact: the board has no mailbox for {name}. Fetch their official page{where} "
-        f"with research_fetch_page and use a contact email printed on it as a full address "
-        f"in mail_send (it goes to the founder for approval). Do not use a contact#N alias "
-        f"unless it came from a mail thread you read on this task, and do not call "
-        f"task_request_help for this. If the page shows no email, call task_finish once "
-        f"(no status field) with a short deliverable: no published email, plus the phone "
-        f"number or contact form URL you found, citing the research_fetch_page call as evidence."
+        f"Record how a parent would reach {name} in {district}. "
+        f"Fetch their official page{where} with research_fetch_page. "
+        f"Call task_finish once (no status field) with the published email, phone or "
+        f"contact form URL copied from that page, citing the research_fetch_page call. "
+        f"do not call task_request_help for this. If the page shows no contact, say so. "
+        f"Do not write the listing and do not invent an onboarding link."
     )[:4000]
 
 

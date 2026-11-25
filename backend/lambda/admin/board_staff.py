@@ -1205,16 +1205,16 @@ def _approval_outcome_note(approval: dict[str, Any]) -> str:
             "Do not propose it again. Continue with the remaining work or finish."
         )
     if status == "rejected":
-        return (
-            f"APPROVAL: founder rejected {label}.{reason} "
-            "Do not propose it again or any variant of it. Finish with what you have and say the proposal was declined."
-        )
+        expired = str(approval.get("decidedBySub") or "") == "system:expiry"
+        lead = f"{label} expired without a decision" if expired else f"founder rejected {label}"
+        extra = "" if expired else " or any variant of it"
+        end = "Finish with what you have." if expired else "Finish with what you have and say it was declined."
+        return f"APPROVAL: {lead}.{reason} Do not propose it again{extra}. {end}"
     err = str(approval.get("errorMessage") or "execution failed")[:300]
     return (
         f"APPROVAL: founder approved {label} but execution failed ({err}). "
         "Do not propose it again. Finish with what you have and report the failure."
     )
-
 
 def resume_after_approval(table: Any, settings: dict[str, Any], approval: dict[str, Any]) -> None:
     """Continue a task parked on a proposal once the founder decides it."""

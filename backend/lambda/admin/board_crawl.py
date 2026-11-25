@@ -69,9 +69,19 @@ def host_is_blocked(host: str) -> bool:
     hostname = (host or "").split(":")[0].split("%")[0].strip().lower()
     if not hostname or hostname in {"localhost", "localhost.localdomain"}:
         return True
-    try:
-        infos = socket.getaddrinfo(hostname, None)
-    except socket.gaierror:
+    # EINTR, EAGAIN, EBUSY. A busy resolver is retried once, then fail closed.
+    # Other OSErrors, including gaierror, stay blocked so a lookup cannot fail the tool.
+    infos = None
+    for attempt in range(2):
+        try:
+            infos = socket.getaddrinfo(hostname, None)
+            break
+        except OSError as exc:
+            if attempt == 0 and exc.errno in {4, 11, 16}:
+                time.sleep(0.2)
+                continue
+            return True
+    if not infos:
         return True
     for info in infos:
         raw_ip = info[4][0]
@@ -125,6 +135,47 @@ def _remember_fetch_status(table: Any, url: str, status: int) -> None:
         )
     except Exception:
         return
+
+
+def remember_page_text(table: Any, url: str, text: str) -> None:
+    """Keep fetched page text so a later sheet check can ground verified fields."""
+    if table is None or not url or not str(text or "").strip():
+        return
+    try:
+        board_store.put_cache(
+            table,
+            f"crawl:text:{url_digest(url)}",
+            {"text": str(text)[:8000]},
+            ttl_seconds=7 * 86400,
+        )
+    except Exception:
+        return
+
+
+def page_text_cached(table: Any, url: str) -> str:
+    if table is None or not url:
+        return ""
+    try:
+        hit = board_store.get_cache(table, f"crawl:text:{url_digest(url)}")
+    except Exception:
+        return ""
+    payload = hit.get("payload") if isinstance(hit, dict) else None
+    if isinstance(payload, dict):
+        return str(payload.get("text") or "")
+    return ""
+
+
+def fetched_page_payload(table: Any, url: str, result: FetchResult, text: str) -> dict[str, Any]:
+    remember_page_text(table, url, text)
+    final = result.final_url or ""
+    if final and final != url:
+        remember_page_text(table, final, text)
+    return {
+        "status": result.status,
+        "finalUrl": result.final_url,
+        "text": text[:8000],
+        "hash": result.hash,
+    }
 
 
 def fetch_status_cached(table: Any, url: str) -> int | None:
@@ -226,7 +277,11 @@ def _fetch_once(url: str, *, max_bytes: int, timeout: int) -> FetchResult:
     else:
         raise TimeoutError(str(last_os or "fetch failed")[:200])
     text = raw[:max_bytes].decode("utf-8", errors="replace")
-    body_hash = hashlib.sha256(normalise(html_to_text(text) if "html" in ctype.lower() or "<html" in text[:200].lower() else text).encode("utf-8")).hexdigest()
+    body_hash = hashlib.sha256(
+        normalise(html_to_text(text) if "html" in ctype.lower() or "<html" in text[:200].lower() else text).encode(
+            "utf-8"
+        )
+    ).hexdigest()
     return FetchResult(status=status, final_url=final, content_type=ctype, text=text, hash=body_hash)
 
 

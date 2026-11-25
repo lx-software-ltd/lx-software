@@ -122,11 +122,7 @@ def new_id() -> str:
 
 
 def _strip_keys(item: dict[str, Any]) -> dict[str, Any]:
-    return {
-        k: v
-        for k, v in item.items()
-        if k not in ("pk", "sk", "gsi1pk", "gsi1sk")
-    }
+    return {k: v for k, v in item.items() if k not in ("pk", "sk", "gsi1pk", "gsi1sk")}
 
 
 def _get_state(table: Any, suffix: str) -> dict[str, Any] | None:
@@ -139,9 +135,7 @@ def _get_state(table: Any, suffix: str) -> dict[str, Any] | None:
 
 
 def _put_state(table: Any, suffix: str, doc: dict[str, Any]) -> None:
-    table.put_item(
-        Item={"pk": board_pk(suffix), "sk": "STATE", **_to_ddb_nested(doc)}
-    )
+    table.put_item(Item={"pk": board_pk(suffix), "sk": "STATE", **_to_ddb_nested(doc)})
 
 
 def _put_state_if_version(table: Any, suffix: str, doc: dict[str, Any], *, attr: str, expected: Any) -> bool:
@@ -187,14 +181,13 @@ def _query_all(table: Any, **kwargs: Any) -> list[dict[str, Any]]:
 # Settings
 # ---------------------------------------------------------------------------
 
+
 def default_tool_matrix() -> dict[str, dict[str, str]]:
     """Contract defaults: ``{toolId: {personaId: level}}``."""
     out: dict[str, dict[str, str]] = {}
     for tool in BOARD_TOOL_DEFINITIONS:
         defaults = tool.get("defaults") or {}
-        out[str(tool["id"])] = {
-            pid: str(defaults.get(pid) or "off") for pid in BOARD_PERSONA_IDS
-        }
+        out[str(tool["id"])] = {pid: str(defaults.get(pid) or "off") for pid in BOARD_PERSONA_IDS}
     return out
 
 
@@ -219,9 +212,7 @@ def default_spend_caps() -> dict[str, float]:
     from contract_constants import BOARD_META_ADS_DAILY_CAP_USD, BOARD_META_ADS_MONTHLY_CAP_USD
 
     return {
-        "metaAdsDailyUsd": _env_cap(
-            "META_ADS_DAILY_CAP_USD", float(BOARD_META_ADS_DAILY_CAP_USD), ADS_DAILY_CAP_MAX
-        ),
+        "metaAdsDailyUsd": _env_cap("META_ADS_DAILY_CAP_USD", float(BOARD_META_ADS_DAILY_CAP_USD), ADS_DAILY_CAP_MAX),
         "metaAdsMonthlyUsd": _env_cap(
             "META_ADS_MONTHLY_CAP_USD", float(BOARD_META_ADS_MONTHLY_CAP_USD), ADS_MONTHLY_CAP_MAX
         ),
@@ -474,8 +465,7 @@ def default_boundaries() -> dict[str, Any]:
         "reply": {
             "languages": ["en", "zh-HK"],
             "tone": (
-                "Warm, plain, brief. Never promise refunds, legal positions, "
-                "or availability the catalog does not show."
+                "Warm, plain, brief. Never promise refunds, legal positions, or availability the catalog does not show."
             ),
             "quietHoursHkt": [22, 8],
             "maxOutboundPerChannelPerDay": {"mail": 60, "whatsapp": 60, "meta": 100},
@@ -676,9 +666,7 @@ def normalize_boundaries(raw: Any) -> dict[str, Any]:
             out["outreach"]["fitRubric"] = outreach["fitRubric"].strip()[:8000]
         types = outreach.get("typesEnabled")
         if isinstance(types, list):
-            out["outreach"]["typesEnabled"] = [
-                t for t in (str(x) for x in types) if t in BOARD_STAFF_PROSPECT_TYPES
-            ]
+            out["outreach"]["typesEnabled"] = [t for t in (str(x) for x in types) if t in BOARD_STAFF_PROSPECT_TYPES]
         districts = outreach.get("districtsFirst")
         if isinstance(districts, list):
             out["outreach"]["districtsFirst"] = [str(x) for x in districts if isinstance(x, str)][:20]
@@ -726,9 +714,7 @@ def normalize_boundaries(raw: Any) -> dict[str, Any]:
             except (TypeError, ValueError):
                 pass
         if isinstance(content.get("assistedChannels"), list):
-            out["content"]["assistedChannels"] = [
-                str(x) for x in content["assistedChannels"] if isinstance(x, str)
-            ][:8]
+            out["content"]["assistedChannels"] = [str(x) for x in content["assistedChannels"] if isinstance(x, str)][:8]
     intel = raw.get("intel")
     if isinstance(intel, dict) and isinstance(intel.get("newsletterMailbox"), str):
         out["intel"]["newsletterMailbox"] = intel["newsletterMailbox"].strip()[:200]
@@ -771,9 +757,7 @@ def load_settings(table: Any) -> dict[str, Any]:
         }
     models = stored.get("models")
     if isinstance(models, dict):
-        merged["models"] = {
-            k: str(models.get(k) or "") for k in ("chat", "standup", "deepDive")
-        }
+        merged["models"] = {k: str(models.get(k) or "") for k in ("chat", "standup", "deepDive")}
     merged["tools"] = normalize_tools_config(stored.get("tools"))
     merged["staff"] = normalize_staff_config(stored.get("staff"))
     merged["review"] = normalize_review_config(stored.get("review"))
@@ -857,6 +841,7 @@ def ensure_autonomy_defaults(table: Any) -> dict[str, Any]:
 # Charter, member overrides, brief
 # ---------------------------------------------------------------------------
 
+
 def load_charter(table: Any) -> dict[str, Any]:
     stored = _get_state(table, "charter") or {}
     return {
@@ -886,7 +871,7 @@ def load_member_overrides(table: Any) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     for item in items:
         sk = str(item.get("sk") or "")
-        persona_id = sk[len("MEMBER#"):] if sk.startswith("MEMBER#") else ""
+        persona_id = sk[len("MEMBER#") :] if sk.startswith("MEMBER#") else ""
         if persona_id:
             out[persona_id] = _strip_keys(item)
     return out
@@ -924,12 +909,14 @@ def save_brief(table: Any, *, markdown: str, owner_sub: str | None) -> dict[str,
 # Owner updates
 # ---------------------------------------------------------------------------
 
-def add_update(table: Any, *, text: str, owner_sub: str | None) -> dict[str, Any]:
+
+def add_update(table: Any, *, text: str, owner_sub: str | None, kind: str = "note") -> dict[str, Any]:
     created = now_iso()
     update_id = new_id()
     doc = {
         "updateId": update_id,
         "text": text,
+        "kind": "system" if kind == "system" else "note",
         "createdAt": created,
         "ownerSub": owner_sub or "",
     }
@@ -951,15 +938,13 @@ def list_updates(table: Any, *, limit: int = 20) -> list[dict[str, Any]]:
         ScanIndexForward=False,
         Limit=limit,
     )
-    return [
-        {k: v for k, v in _strip_keys(i).items() if k != "ownerSub"}
-        for i in items[:limit]
-    ]
+    return [{k: v for k, v in _strip_keys(i).items() if k != "ownerSub"} for i in items[:limit]]
 
 
 # ---------------------------------------------------------------------------
 # Meetings
 # ---------------------------------------------------------------------------
+
 
 def meeting_key(meeting_id: str) -> dict[str, str]:
     return {"pk": board_pk(f"meeting#{meeting_id}"), "sk": "META"}
@@ -1012,8 +997,7 @@ def claim_meeting_phase(
             Key=meeting_key(meeting_id),
             UpdateExpression="SET phaseState = :running, phaseStartedAt = :now, updatedAt = :now",
             ConditionExpression=(
-                "#st = :active AND phase = :expected AND "
-                "(phaseState <> :running OR phaseStartedAt < :stale)"
+                "#st = :active AND phase = :expected AND (phaseState <> :running OR phaseStartedAt < :stale)"
             ),
             ExpressionAttributeNames={"#st": "status"},
             ExpressionAttributeValues={
@@ -1058,6 +1042,7 @@ def list_turns(table: Any, meeting_id: str) -> list[dict[str, Any]]:
 # Action items
 # ---------------------------------------------------------------------------
 
+
 def put_action(table: Any, doc: dict[str, Any]) -> None:
     table.put_item(
         Item={
@@ -1089,6 +1074,7 @@ def list_actions(table: Any) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # Chat threads and jobs
 # ---------------------------------------------------------------------------
+
 
 def chat_pk(persona_id: str) -> str:
     return board_pk(f"chat#{persona_id}")
@@ -1218,6 +1204,7 @@ def append_decision_log(table: Any, entries: list[dict[str, Any]]) -> None:
     merged = (load_decision_log(table) + entries)[-MAX_DECISION_LOG_ENTRIES:]
     _put_state(table, "decision-log", {"entries": merged, "updatedAt": now_iso()})
 
+
 def load_repo_snapshot(table: Any) -> dict[str, Any] | None:
     return _get_state(table, "repo-snapshot")
 
@@ -1245,6 +1232,7 @@ def load_usage_day(table: Any, date_iso: str | None = None) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Tool approvals and audit log
 # ---------------------------------------------------------------------------
+
 
 def approval_key(approval_id: str) -> dict[str, str]:
     return {"pk": board_pk("approvals"), "sk": f"APPROVAL#{approval_id}"}
@@ -1349,6 +1337,7 @@ def list_tool_calls_for_task(table: Any, task_id: str, *, limit: int = 400) -> l
 # Mail index
 # ---------------------------------------------------------------------------
 
+
 def _mail_expires_at() -> int:
     return int(time.time()) + BOARD_MAIL_MESSAGE_TTL_DAYS * 86400
 
@@ -1415,7 +1404,6 @@ def put_mail_message(table: Any, doc: dict[str, Any]) -> None:
     )
 
 
-
 def list_mail_messages(table: Any, thread_id: str) -> list[dict[str, Any]]:
     """Oldest first."""
     items = _query_all(
@@ -1428,7 +1416,6 @@ def list_mail_messages(table: Any, thread_id: str) -> list[dict[str, Any]]:
 
 def _msgid_key(digest: str) -> dict[str, str]:
     return {"pk": board_pk("mail#msgids"), "sk": f"MSGID#{digest}"}
-
 
 
 def put_mail_msgid(table: Any, digest: str, *, thread_id: str, message_id: str) -> bool:
@@ -1504,15 +1491,12 @@ def get_cache(table: Any, name: str) -> dict[str, Any] | None:
     return doc
 
 
-
 def add_usage_day(table: Any, usage: dict[str, Any], *, calls: int = 1) -> None:
     from decimal import Decimal
 
     table.update_item(
         Key={"pk": board_pk(usage_day_key()), "sk": "STATE"},
-        UpdateExpression=(
-            "ADD promptTokens :p, completionTokens :c, totalTokens :t, cost :cost, calls :calls"
-        ),
+        UpdateExpression=("ADD promptTokens :p, completionTokens :c, totalTokens :t, cost :cost, calls :calls"),
         ExpressionAttributeValues={
             ":p": int(usage.get("promptTokens") or 0),
             ":c": int(usage.get("completionTokens") or 0),
@@ -1600,6 +1584,7 @@ def record_ads_spend(
 # Meta (Page / Instagram / WhatsApp) index
 # ---------------------------------------------------------------------------
 
+
 def _meta_expires_at() -> int:
     return int(time.time()) + BOARD_MAIL_MESSAGE_TTL_DAYS * 86400
 
@@ -1678,6 +1663,7 @@ def list_meta_messages(table: Any, thread_id: str) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # Staff overrides, tasks, holds, usage
 # ---------------------------------------------------------------------------
+
 
 def staff_override_suffix(seat_id: str) -> str:
     return f"staff#{seat_id}"
@@ -1795,7 +1781,12 @@ def list_tasks(
     for st in statuses:
         key = {":pk": board_pk(f"tasks#{st}")}
         rows = _query_all(
-            table, IndexName="gsi1", KeyConditionExpression="gsi1pk = :pk", ExpressionAttributeValues=key, ScanIndexForward=False, Limit=limit
+            table,
+            IndexName="gsi1",
+            KeyConditionExpression="gsi1pk = :pk",
+            ExpressionAttributeValues=key,
+            ScanIndexForward=False,
+            Limit=limit,
         )
         items.extend(_strip_keys(i) for i in rows)
     items.sort(key=lambda t: str(t.get("slaAt") or t.get("createdAt") or ""), reverse=True)
@@ -2442,7 +2433,9 @@ def get_newsletter_sub(table: Any, digest: str, list_name: str | None = None) ->
     return None
 
 
-def list_newsletter_subs(table: Any, list_name: str, *, limit: int = 500, cursor: str | None = None) -> tuple[list[dict[str, Any]], str | None]:
+def list_newsletter_subs(
+    table: Any, list_name: str, *, limit: int = 500, cursor: str | None = None
+) -> tuple[list[dict[str, Any]], str | None]:
     params: dict[str, Any] = {
         "IndexName": "gsi1",
         "KeyConditionExpression": "gsi1pk = :pk",

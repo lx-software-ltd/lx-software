@@ -20,9 +20,7 @@ from contract_constants import (
 )
 from http_common import _audit, _json_response, _parse_json_body
 
-FOCUS_FIELDS = frozenset(
-    {"districtsFirst", "typesEnabled", "qualifiedPerWeek", "microBatchEnabled", "autoImport"}
-)
+FOCUS_FIELDS = frozenset({"districtsFirst", "typesEnabled", "qualifiedPerWeek", "microBatchEnabled", "autoImport"})
 _MAX_DISTRICTS = 8
 
 
@@ -46,7 +44,7 @@ def record_rejection(table: Any, user_sub: str | None, approval_id: str, note: s
     if not _is_key_actor(user_sub):
         return
     text = f"Delegate {user_sub} rejected approval {approval_id}: {note.strip()}"
-    board_store.add_update(table, text=text[:BOARD_MAX_UPDATE_LEN], owner_sub=user_sub)
+    board_store.add_update(table, text=text[:BOARD_MAX_UPDATE_LEN], owner_sub=user_sub, kind="system")
 
 
 def _note_from(body: dict[str, Any]) -> str | None:
@@ -85,7 +83,7 @@ def cancel_task(event: dict[str, Any], task_id: str, user_sub: str | None) -> di
         return _json_response(400, {"message": message})
     if _is_key_actor(user_sub):
         text = f"Delegate {user_sub} dismissed task {task_id}: {note}"
-        board_store.add_update(table, text=text[:BOARD_MAX_UPDATE_LEN], owner_sub=user_sub)
+        board_store.add_update(table, text=text[:BOARD_MAX_UPDATE_LEN], owner_sub=user_sub, kind="system")
     _audit(user_sub, "BOARD_TASK_CANCEL", task_id, event)
     return _json_response(200, {"task": board_staff.public_task(task)})
 
@@ -170,7 +168,7 @@ def _apply(current: dict[str, Any], checked: dict[str, Any]) -> dict[str, Any]:
 
 
 def _focus_view(settings: dict[str, Any]) -> dict[str, Any]:
-    outreach = ((settings.get("boundaries") or {}).get("outreach") or {})
+    outreach = (settings.get("boundaries") or {}).get("outreach") or {}
     catalog = settings.get("catalog") or {}
     return {
         "districtsFirst": list(outreach.get("districtsFirst") or []),
@@ -197,7 +195,9 @@ def focus(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:
     who = user_sub or "owner"
     prefix = "Delegate" if _is_key_actor(user_sub) else "Owner"
     summary = ", ".join(f"{key}={checked[key]}" for key in checked)
-    board_store.add_update(table, text=f"{prefix} {who} set {summary}"[:BOARD_MAX_UPDATE_LEN], owner_sub=user_sub)
+    board_store.add_update(
+        table, text=f"{prefix} {who} set {summary}"[:BOARD_MAX_UPDATE_LEN], owner_sub=user_sub, kind="system"
+    )
     _audit(user_sub, "BOARD_SETTINGS_FOCUS", ",".join(checked), event)
     return _json_response(200, {"changed": sorted(checked), "focus": _focus_view(saved)})
 

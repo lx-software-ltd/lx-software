@@ -39,11 +39,22 @@ def qualified_this_week(table: Any, now: datetime | None = None) -> list[dict[st
     return out
 
 
-def prorated_target(settings: dict[str, Any], now: datetime | None = None) -> int:
-    weekly = int(
-        (((settings.get("boundaries") or {}).get("outreach") or {}).get("targets") or {}).get("qualifiedPerWeek")
-        or 15
+QUALIFY_TASK_CAP = 8
+
+
+def weekly_target(settings: dict[str, Any] | None) -> int:
+    raw = ((((settings or {}).get("boundaries") or {}).get("outreach") or {}).get("targets") or {}).get(
+        "qualifiedPerWeek"
     )
+    try:
+        value = int(raw if raw is not None else "")
+    except (TypeError, ValueError):
+        return 15
+    return value if value > 0 else 15
+
+
+def prorated_target(settings: dict[str, Any], now: datetime | None = None) -> int:
+    weekly = weekly_target(settings)
     local = board_hk.as_hkt(now or datetime.now())
     # Monday = day 1 of 7.
     return max(1, int(round(weekly * (local.weekday() + 1) / 7)))
@@ -78,7 +89,10 @@ def _maybe_raise_cap(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
         or rates["complaintRate"] >= BOARD_STAFF_COMPLAINT_RATE_BREAKER
     ):
         return settings
-    if rates["bounceRate"] >= BOARD_STAFF_BOUNCE_RATE_BREAKER or rates["complaintRate"] >= BOARD_STAFF_COMPLAINT_RATE_BREAKER:
+    if (
+        rates["bounceRate"] >= BOARD_STAFF_BOUNCE_RATE_BREAKER
+        or rates["complaintRate"] >= BOARD_STAFF_COMPLAINT_RATE_BREAKER
+    ):
         return settings
     new_cap = min(BOARD_STAFF_OUTREACH_DAILY_CAP_MAX, cap + BOARD_STAFF_OUTREACH_DAILY_CAP_STEP)
     if new_cap == cap:
@@ -98,6 +112,22 @@ def _maybe_raise_cap(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
     return board_store.save_settings_retry(table, apply_raise)
 
 
+def _gaps_for_districts(payload: Any, districts: list[str]) -> list[dict[str, Any]]:
+    wanted = {board_hk.canonical_district(name) for name in districts}
+    wanted.discard("unknown")
+    raw = payload.get("gaps") if isinstance(payload, dict) else None
+    if not isinstance(raw, list):
+        raw = payload if isinstance(payload, list) else []
+    kept: list[dict[str, Any]] = []
+    for row in raw:
+        if not isinstance(row, dict):
+            continue
+        label = board_hk.canonical_district(str(row.get("district") or ""))
+        if label in wanted:
+            kept.append(row)
+    return kept
+
+
 def check(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
     if not board_staff.enabled(settings):
         return {"ok": False, "reason": "staff disabled"}
@@ -112,15 +142,28 @@ def check(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
     types = ", ".join(outreach.get("typesEnabled") or [])
     districts = ", ".join(outreach.get("districtsFirst") or [])
     gaps = board_store.get_cache(table, "intel:gaps")
-    gap_text = ""
-    if gaps and isinstance(gaps.get("payload"), dict):
-        # json.dumps, not str(): Dynamo numbers come back as Decimal and the
-        # brief used to read "Decimal('2')".
-        gap_text = json.dumps(gaps["payload"].get("gaps") or gaps["payload"], ensure_ascii=False, default=str)[:800]
+    gap_rows = _gaps_for_districts(
+        gaps.get("payload") if gaps and isinstance(gaps.get("payload"), dict) else None,
+        list(outreach.get("districtsFirst") or []),
+    )
+    # json.dumps, not str(): Dynamo numbers come back as Decimal and the
+    # brief used to read "Decimal('2')".
+    gap_clause = ""
+    if gap_rows:
+        gap_clause = (
+            " Gaps in these districts only: " + json.dumps(gap_rows, ensure_ascii=False, default=str)[:800] + "."
+        )
     if shortfall:
+        asked = min(shortfall, QUALIFY_TASK_CAP)
         brief = (
-            f"Find and qualify {shortfall} prospects of types {types} in districts {districts} "
-            f"using gaps {gap_text or '(none cached)'}; use open data first, Places second, search third"
+            f"Find and qualify {asked} prospects of types {types} in districts {districts}. "
+            f"The week is still short by {shortfall}; this task asks for {asked}.\n"
+            f"1. Call outreach_list_prospects with district set to each named district and list what is already stored.\n"
+            f"2. Find candidates whose address is in {districts}. Use open data first, Places second, search third.\n"
+            f"3. Call outreach_upsert_prospect. The district argument must be the district in the address.\n"
+            f"4. Call outreach_score_prospect with each returned id.\n"
+            f"5. Call task_finish with a table of id, name, score and stage copied from the tool results."
+            f"{gap_clause}"
         )
         try:
             from board_triage import find_open_event_task

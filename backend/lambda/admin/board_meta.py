@@ -30,6 +30,7 @@ from urllib.parse import parse_qs
 
 import board_deadline
 import board_mail
+import board_meta_metrics
 import board_meta_token
 import board_pii
 import board_store
@@ -395,7 +396,6 @@ def ingest_webhook(table: Any, payload: dict[str, Any]) -> dict[str, Any]:
 
     return board_meta_ingest.ingest_webhook(table, payload)
 
-
 # ---------------------------------------------------------------------------
 # Reads
 # ---------------------------------------------------------------------------
@@ -404,30 +404,30 @@ def op_page_insights(_ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     pid = str(args.get("pageId") or page_id())
     if not pid:
         raise MetaError("META_PAGE_ID is not set.")
-    # Meta retired ``page_engaged_users`` (2024) and ``page_impressions*`` (2025-11); one bad metric fails the call.
-    metric = str(args.get("metric") or "page_media_view,page_total_media_view_unique,page_post_engagements")
+    metric, ignored = board_meta_metrics.choose(args.get("metric"), kind="page")
     params = {"metric": metric, "period": "day"}
     rows = graph_pages("GET", f"{pid}/insights", params, timeout=HTTP_TIMEOUT_SLOW_SECONDS)
-    return {"pageId": pid, "insights": rows, "count": len(rows)}
+    return {"pageId": pid, "insights": rows, "count": len(rows), "ignoredMetrics": ignored}
 
 
 def op_ig_insights(_ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     configured = str(args.get("igUserId") or ig_user_id())
     if not configured:
         raise MetaError("META_IG_USER_ID is not set.")
-    # ``impressions`` left IG Insights in 2025; account metrics need ``metric_type``.
-    metric = str(args.get("metric") or "reach,views,profile_views")
+    metric, ignored = board_meta_metrics.choose(args.get("metric"), kind="ig")
     params = {"metric": metric, "period": "day", "metric_type": "total_value"}
     try:
         rows = graph_pages("GET", f"{configured}/insights", params, timeout=HTTP_TIMEOUT_SLOW_SECONDS)
-        return {"igUserId": configured, "insights": rows, "count": len(rows)}
+        return {"igUserId": configured, "insights": rows, "count": len(rows), "ignoredMetrics": ignored}
     except MetaError as exc:
         # "nonexisting field (insights)": the id is not an IG professional account for this token.
         linked = board_meta_token.linked_ig_user_id() if "nonexisting field" in str(exc) else ""
         if not linked or linked == configured:
             raise
     rows = graph_pages("GET", f"{linked}/insights", params, timeout=HTTP_TIMEOUT_SLOW_SECONDS)
-    return {"igUserId": linked, "configuredIgUserId": configured, "resolvedFrom": "page", "insights": rows, "count": len(rows)}
+    return {
+        "igUserId": linked, "configuredIgUserId": configured, "resolvedFrom": "page",
+        "insights": rows, "count": len(rows), "ignoredMetrics": ignored}
 
 
 def op_list_comments(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:

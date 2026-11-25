@@ -26,7 +26,7 @@ def ops() -> list[ToolOp]:
             name="meta_page_insights",
             tool_id="meta",
             kind="read",
-            description="Facebook Page daily insights (impressions, engaged users).",
+            description="Facebook Page daily insights (media views, reach, post engagements). Retired names are ignored.",
             parameters=_obj({"metric": _str_param("Comma-separated insight metrics.", max_len=120)}),
             run=board_meta.op_page_insights,
             summarize=_summ("Read Page insights"),
@@ -36,7 +36,7 @@ def ops() -> list[ToolOp]:
             name="meta_ig_insights",
             tool_id="meta",
             kind="read",
-            description="Instagram daily insights (impressions, reach, profile views).",
+            description="Instagram daily insights (reach, views, profile views). Retired names are ignored.",
             parameters=_obj({"metric": _str_param("Comma-separated insight metrics.", max_len=120)}),
             run=board_meta.op_ig_insights,
             summarize=_summ("Read Instagram insights"),
@@ -188,7 +188,10 @@ def ops() -> list[ToolOp]:
             description="Reply to a Page DM. Act only to allow-listed recipients.",
             parameters=_obj(
                 {
-                    "threadId": _str_param("Stored DM thread id (preferred; the recipient is taken from it). One of threadId or recipientId is required.", max_len=40),
+                    "threadId": _str_param(
+                        "Stored DM thread id (preferred; the recipient is taken from it). One of threadId or recipientId is required.",
+                        max_len=40,
+                    ),
                     "recipientId": _str_param("Page-scoped user id, only when no thread is stored.", max_len=64),
                     "message": _str_param("Reply text.", max_len=1000),
                     "reason": REASON_PARAM,
@@ -210,7 +213,10 @@ def ops() -> list[ToolOp]:
             description="Reply on WhatsApp. Act only inside the 24-hour window to an allow-listed number; otherwise propose a template.",
             parameters=_obj(
                 {
-                    "threadId": _str_param("Stored WhatsApp thread id (preferred; the number is taken from it). One of threadId or to is required.", max_len=40),
+                    "threadId": _str_param(
+                        "Stored WhatsApp thread id (preferred; the number is taken from it). One of threadId or to is required.",
+                        max_len=40,
+                    ),
                     "to": _str_param("WhatsApp number (E.164), only when no thread is stored.", max_len=20),
                     "message": _str_param("Reply text (session message).", max_len=1000),
                     "template": _str_param("Pre-approved template name when the window is closed.", max_len=80),
@@ -273,8 +279,12 @@ def ops() -> list[ToolOp]:
             parameters=_obj(
                 {
                     "providerEmail": _str_param("Provider address.", max_len=120),
-                    "providerPhone": _str_param("Provider WhatsApp number (E.164) for a template hand-off.", max_len=20),
-                    "template": _str_param("Approved WhatsApp template name (required with providerPhone).", max_len=80),
+                    "providerPhone": _str_param(
+                        "Provider WhatsApp number (E.164) for a template hand-off.", max_len=20
+                    ),
+                    "template": _str_param(
+                        "Approved WhatsApp template name (required with providerPhone).", max_len=80
+                    ),
                     "language": _str_param("Template language code.", max_len=8),
                     "parentEmail": _str_param("Parent address.", max_len=120),
                     "summary": _str_param("What the parent asked for.", max_len=800),
