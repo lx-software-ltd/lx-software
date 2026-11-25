@@ -6,6 +6,7 @@
   "lxsoftware:ApiCustomDomainName": "api.lx-software.com",
   "lxsoftware:ApiCustomDomainCertificateArn": "<FROM_GITHUB_SECRET: CDK_PARAM_API_CUSTOM_DOMAIN_CERTIFICATE_ARN>",
   "lxsoftware:OpenRouterApiKeySecretArn": "<FROM_GITHUB_SECRET: CDK_PARAM_OPENROUTER_API_KEY_SECRET_ARN>",
+  "lxsoftware:OpenRouterModel": "mistralai/mistral-large-4-0",
   "lxsoftware:SiutindeiBoardMailSendingEnabled": "true",
   "lxsoftware:SiutindeiBoardStaffEnabled": "true",
   "lxsoftware:LxSoftwareLinkedinEnabled": "true",

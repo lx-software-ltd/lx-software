@@ -15,6 +15,7 @@ def _install_stubs() -> None:
     if "boto3" not in sys.modules:
         sys.modules["boto3"] = MagicMock()
     if "botocore" not in sys.modules:
+
         class _Exceptions(types.ModuleType):
             ClientError: type[Exception]
 
@@ -273,6 +274,7 @@ class TestParseStatementFromAsset(unittest.TestCase):
                 {
                     "OPENROUTER_API_KEY_SECRET_ARN": "arn:aws:secretsmanager:eu-west-1:1:secret:fake",  # nosec B105
                     "OPENROUTER_API_KEY": "",
+                    "OPENROUTER_MODEL": "",
                 },
                 clear=False,
             ),
@@ -292,6 +294,8 @@ class TestParseStatementFromAsset(unittest.TestCase):
         self.assertEqual(len(result["lines"]), 1)
         self.assertEqual(result["lines"][0]["currency"], "GBP")
         body = json.loads(captured["body"].decode("utf-8"))
+        self.assertEqual(parser._DEFAULT_MODEL, "mistralai/mistral-large-4-0")
+        self.assertEqual(body["model"], parser._DEFAULT_MODEL)
         self.assertIn("plugins", body, "PDF requests must include the file-parser plugin")
         self.assertEqual(body["plugins"][0]["id"], "file-parser")
         self.assertEqual(body["messages"][1]["content"][1]["type"], "file")

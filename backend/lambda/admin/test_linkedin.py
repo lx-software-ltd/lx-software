@@ -1127,9 +1127,9 @@ class LinkedInHttpTests(unittest.TestCase):
             self.assertEqual(created["statusCode"], 403)
 
     def test_settings_put_stores_model_and_overview_exposes_default(self) -> None:
-        with patch.dict("os.environ", {"OPENROUTER_MODEL": "mistralai/mistral-medium-3"}):
+        with patch.dict("os.environ", {"OPENROUTER_MODEL": "mistralai/mistral-large-4-0"}):
             overview = lambda_handler(_event("/lx-software/linkedin"), None)
-            self.assertEqual(_body(overview)["defaultModel"], "mistralai/mistral-medium-3")
+            self.assertEqual(_body(overview)["defaultModel"], "mistralai/mistral-large-4-0")
             saved = lambda_handler(
                 _event(
                     "/lx-software/linkedin/settings",
@@ -3769,9 +3769,11 @@ class LinkedInImageTests(unittest.TestCase):
         self.assertEqual(_body(response)["job"]["status"], "failed")
         self.assertIn("timed out", _body(response)["job"]["error"])
 
+
 from typing import TypeVar
 
 _T = TypeVar("_T")
+
 
 def _nn(value: _T | None) -> _T:
     assert value is not None

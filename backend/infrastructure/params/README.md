@@ -91,7 +91,7 @@ parameters to enable it:
   `contracts/openrouter-apps.json`). Mint with
   `python3 scripts/mint-openrouter-app-keys.py`. Leave empty to disable PDF
   parsing and the Executive Board LLM.
-- **`lxsoftware:OpenRouterModel`** — model slug (default `mistralai/mistral-medium-3`).
+- **`lxsoftware:OpenRouterModel`** — model slug (default `mistralai/mistral-large-4-0`).
   Pick a model that supports the `file-parser` plugin / file inputs.
 - **`lxsoftware:OpenRouterPdfEngine`** — `pdf-text` (free, text-based PDFs),
   `mistral-ocr` (scanned PDFs, paid), or `native` (model-native parsing).

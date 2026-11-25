@@ -67,7 +67,7 @@ function overview(voiceNotes: string): LinkedInOverview {
     spendUsdMonth: 0,
     nextSlots: [],
     builtinForbidden: [],
-    defaultModel: "mistralai/mistral-medium-3",
+    defaultModel: "mistralai/mistral-large-4-0",
     recommendedVoice: RECOMMENDED_LINKEDIN_VOICE,
     storyVoices: LINKEDIN_STORY_VOICES,
   };
@@ -133,7 +133,7 @@ describe("LinkedIn draft model hint", () => {
     expect(
       screen.getByText(/Writes each post and, when pictures are on, the scene, expression, and caption/),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Leave blank for mistralai\/mistral-medium-3/)).toBeInTheDocument();
+    expect(screen.getByText(/Leave blank for mistralai\/mistral-large-4-0/)).toBeInTheDocument();
     expect(screen.getByText(/Draws the panel. Scene, expression, and caption use the Model field above/)).toBeInTheDocument();
   });
 });

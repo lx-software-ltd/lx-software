@@ -358,7 +358,7 @@ describe("mockAdminFetch", () => {
       defaultModel: string;
     };
     expect(overview.settings.model).toBe("");
-    expect(overview.defaultModel).toBe("mistralai/mistral-medium-3");
+    expect(overview.defaultModel).toBe("mistralai/mistral-large-4-0");
     const put = await mockAdminFetch("/lx-software/linkedin/settings", {
       method: "PUT",
       body: JSON.stringify({

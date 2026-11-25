@@ -107,7 +107,7 @@ function overview() {
     spendUsdMonth: 0,
     nextSlots: nextSlots(state.linkedin.settings, new Date(), 8, taken),
     builtinForbidden: ["lx software"],
-    defaultModel: "mistralai/mistral-medium-3",
+    defaultModel: "mistralai/mistral-large-4-0",
     recommendedVoice: RECOMMENDED_LINKEDIN_VOICE,
     storyVoices: LINKEDIN_STORY_VOICES,
     styleExampleMax: STYLE_EXAMPLE_MAX,

@@ -249,7 +249,7 @@ function initialMockState(): MockState {
       enabled: true,
       settings: structuredClone(DEFAULT_RESUME_SETTINGS),
       templateResumeId: "res_alex",
-      defaultModel: "mistralai/mistral-medium-3",
+      defaultModel: "mistralai/mistral-large-4-0",
       spendUsdMonth: 0.02,
       pdfCjk: false,
       resumes: [sampleResume()],

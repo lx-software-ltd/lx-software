@@ -25,7 +25,7 @@ from contract_constants import FINANCE_LINE_TYPES, SUPPORTED_FINANCE_CURRENCIES
 
 _PDF_PLUGIN_ID = "file-parser"
 _DEFAULT_PDF_ENGINE = "mistral-ocr"
-_DEFAULT_MODEL = "mistralai/mistral-medium-3"
+_DEFAULT_MODEL = "mistralai/mistral-large-4-0"
 _DEFAULT_MAX_FILE_BYTES = 15 * 1024 * 1024
 _DEFAULT_TIMEOUT_SECONDS = 60
 

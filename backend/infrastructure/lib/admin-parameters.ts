@@ -113,7 +113,7 @@ export function defineAdminParameters(scope: cdk.Stack) {
 
   const openRouterModel = new cdk.CfnParameter(scope, "OpenRouterModel", {
     type: "String",
-    default: "mistralai/mistral-medium-3",
+    default: "mistralai/mistral-large-4-0",
     description:
       "OpenRouter model slug used when extracting statement lines from uploaded PDFs.",
   });

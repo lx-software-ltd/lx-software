@@ -138,7 +138,7 @@ test.describe("admin viewport smoke", () => {
     await expect(page.getByLabel("Slot hour (HKT)")).toHaveValue("8");
     await page.goto("/lx-software?tab=linkedin&section=drafts&linkedin-post=li_hook");
     await expect(page.getByLabel("Scene")).toBeVisible();
-    await expect(page.getByText(/by mistralai\/mistral-medium-3/)).toBeVisible();
+    await expect(page.getByText(/by mistralai\/mistral-large-4-0/)).toBeVisible();
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });
 
