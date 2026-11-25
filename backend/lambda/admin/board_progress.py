@@ -14,6 +14,7 @@ import board_content
 import board_hk
 import board_product
 import board_store
+import board_targets
 from contract_constants import (
     BOARD_CATALOG_LAUNCH_LISTING_TARGET,
     BOARD_STAFF_CONTENT_CHANNELS,
@@ -22,6 +23,8 @@ from contract_constants import (
 from http_common import _utc_iso_z
 
 PARTNERSHIP_WEEKLY_TARGET = 15
+
+
 STALL_EDIT_DAYS = 7
 LOW_COMPLETENESS = 0.5
 UNLINKED_DISTRICT_LABEL = "No venue linked"
@@ -46,7 +49,7 @@ def snapshot(table: Any, settings: dict[str, Any] | None = None) -> dict[str, An
     now = datetime.now(timezone.utc)
     listings = _listings(table, settings)
     signings = _signings(table, settings)
-    partnerships = _partnerships(table, now)
+    partnerships = _partnerships(table, now, settings)
     content = _content_pack(table, now)
     return {
         "fetchedAt": _utc_iso_z(now),
@@ -154,10 +157,7 @@ def _listings(table: Any, settings: dict[str, Any] | None) -> dict[str, Any]:
                 )
                 if row.get(key) is not None and row[key] < LOW_COMPLETENESS
             ]
-            detail = (
-                f"{row['activities']} listings · completeness "
-                f"{_pct(row.get('completenessAvg'))}"
-            )
+            detail = f"{row['activities']} listings · completeness {_pct(row.get('completenessAvg'))}"
             if missing:
                 detail += " · missing " + ", ".join(missing)
             gaps.append(
@@ -242,7 +242,7 @@ def _signings(table: Any, settings: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
-def _partnerships(table: Any, now: datetime) -> dict[str, Any]:
+def _partnerships(table: Any, now: datetime, settings: dict[str, Any] | None = None) -> dict[str, Any]:
     by_stage = {stage: 0 for stage in BOARD_STAFF_PROSPECT_STAGES}
     stalled: list[dict[str, Any]] = []
     qualified_this_week = 0
@@ -276,7 +276,7 @@ def _partnerships(table: Any, now: datetime) -> dict[str, Any]:
     return {
         "byStage": by_stage,
         "qualifiedThisWeek": qualified_this_week,
-        "weeklyTarget": PARTNERSHIP_WEEKLY_TARGET,
+        "weeklyTarget": board_targets.weekly_target(settings),
         "needsContact": needs_contact,
         "stalled": stalled[:MAX_STALLED_ROWS],
     }
@@ -362,11 +362,7 @@ def _bottlenecks(
                 }
             )
         gap = next(
-            (
-                row
-                for row in (listings.get("gaps") or [])
-                if row.get("label") != UNLINKED_DISTRICT_LABEL
-            ),
+            (row for row in (listings.get("gaps") or []) if row.get("label") != UNLINKED_DISTRICT_LABEL),
             None,
         )
         if gap:

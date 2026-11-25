@@ -54,7 +54,7 @@ def note_config_gap(table: Any, *, gap_id: str, reason: str) -> dict[str, Any] |
     others.append(row)
     board_store.put_cache(table, _CONFIG_GAPS_CACHE, {"items": others[-20:]}, ttl_seconds=40 * 86400)
     try:
-        board_store.add_update(table, text=f"CONFIG {gap_id} — {reason}"[:400], owner_sub=None)
+        board_store.add_update(table, text=f"CONFIG {gap_id} — {reason}"[:400], owner_sub=None, kind="system")
     except Exception as exc:
         _log_event("warning", tag="board_config_gap_update_failed", error=str(exc)[:200])
     return row

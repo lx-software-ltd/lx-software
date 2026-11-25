@@ -1189,7 +1189,6 @@ def _clear_handoff_ttl(task: dict[str, Any]) -> None:
     task["finishedAt"] = None
     task.pop("expiresAt", None)
 
-
 def _park_needs_owner(table: Any, task: dict[str, Any], now: str, *, phase: str, questions: list[str]) -> dict[str, Any]:
     task["status"] = "needs_owner"
     task["importPhase"] = phase
@@ -1209,7 +1208,6 @@ def _park_needs_owner(table: Any, task: dict[str, Any], now: str, *, phase: str,
         except Exception:
             logging.getLogger(__name__).debug("suppressed", exc_info=True)
     return task
-
 
 def _set_awaiting(table: Any, task: dict[str, Any], now: str, *, phase: str) -> dict[str, Any]:
     task["status"] = "awaiting_import"
@@ -1327,7 +1325,9 @@ def _apply_preview_outcome(
                 phase="rejected",
                 questions=[f"siutindei dry-run rejected {failed} organisation(s)"] + _result_errors(dry.get("results") or []),
             )
-        return _set_awaiting(table, task, now, phase="validated")
+        import board_catalog_evidence
+
+        return board_catalog_evidence.commit_validated(table, task, now, _set_awaiting, _park_needs_owner)
     if not preview.get("ok"):
         errors = list(dry.get("errors") or [])
         if preview.get("error"):
@@ -1380,7 +1380,7 @@ def _result_errors(results: list[Any]) -> list[str]:
     return lines[:12]
 
 
-_IMPORT_PARK_PHASES = ("collision", "rejected", "partial", "failed", "invalid")
+_IMPORT_PARK_PHASES = ("collision", "rejected", "partial", "failed", "invalid", "unverified")
 
 
 def _payload_orgs(task: dict[str, Any], payload: dict[str, Any], *, force: bool) -> list[dict[str, Any]]:

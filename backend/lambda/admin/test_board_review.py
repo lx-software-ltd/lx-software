@@ -487,6 +487,82 @@ class ReviewCompileTests(BoardTestCase):
         self.assertEqual(task["origin"], "duty")
         self.assertIn("three-sentence headline", task["brief"])
 
+    def test_sent_claim_with_a_failed_mail_call_is_not_accepted(self) -> None:
+        os.environ.pop("ASSETS_BUCKET_NAME", None)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        with patch("board_async.invoke_async", lambda payload, fallback=None: None):
+            task = board_staff.create_task(
+                self.table,
+                self.settings,
+                assignee="content-marketer",
+                origin="owner",
+                brief="Record the published contact.",
+                deliverable_type="markdown",
+                created_by="admin",
+            )
+        key = board_staff._deliverable_key(task["taskId"], "markdown")
+        board_staff._blob_put(key, b"Sent the onboarding link to the museum.")
+        task["deliverableKey"] = key
+        task["status"] = "review"
+        task["summary"] = "Sent the onboarding link"
+        board_store.put_task(self.table, task)
+        board_store.add_tool_call(
+            self.table,
+            {
+                "callId": "mail-1",
+                "op": "mail_send",
+                "status": "error",
+                "taskId": task["taskId"],
+                "summary": "recipient not sourced",
+            },
+        )
+
+        class Fake:
+            text = '{"verdict":"accept","notes":"Looks sent."}'
+            usage = {}
+
+        with (
+            patch("board_staff_review.board_budget.board_completion", return_value=Fake()),
+            patch("board_staff_review.board_budget.model_for", return_value="desk"),
+            patch("board_async.invoke_async", lambda payload, fallback=None: None),
+        ):
+            board_staff.run_review({"internal": "board_staff_review", "taskId": task["taskId"]})
+        saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
+        self.assertEqual(saved["status"], "needs_owner")
+        self.assertIn("claimed_action_unverified", saved.get("flags") or [])
+
+    def test_expiring_approval_is_listed_and_expiry_is_not_a_decline(self) -> None:
+        soon = (datetime.now(timezone.utc) + timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        board_store.put_approval(
+            self.table,
+            {
+                "approvalId": "soon-1",
+                "status": "pending",
+                "op": "content_publish",
+                "summary": "Stanley hello",
+                "createdAt": board_store.now_iso(),
+                "autoRejectAt": soon,
+                "arguments": {},
+                "context": {},
+            },
+        )
+        with patch.object(board_github, "_request", side_effect=AssertionError("compile must not call GitHub")):
+            review = board_review.compile(self.table, self.settings, board_hk.today_hkt())
+        self.assertIn("expires", review["digestHtml"])
+        self.assertIn("Stanley hello", review["digestHtml"])
+        note = board_staff._approval_outcome_note(
+            {
+                "status": "rejected",
+                "op": "content_publish",
+                "summary": "Stanley hello",
+                "decidedBySub": "system:expiry",
+                "note": "Expired after 168h without a founder decision.",
+            }
+        )
+        self.assertIn("expired without a decision", note)
+        self.assertNotIn("declined", note)
+
 
 if __name__ == "__main__":
     unittest.main()

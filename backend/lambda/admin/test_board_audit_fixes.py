@@ -32,9 +32,7 @@ from test_board import BoardTestCase
 
 def _enable_staff(table: Any, **staff: Any) -> dict[str, Any]:
     settings = board_store.load_settings(table)
-    settings["staff"] = board_store.normalize_staff_config(
-        {**(settings.get("staff") or {}), "enabled": True, **staff}
-    )
+    settings["staff"] = board_store.normalize_staff_config({**(settings.get("staff") or {}), "enabled": True, **staff})
     return board_store.save_settings(table, settings)
 
 
@@ -281,7 +279,9 @@ class IdleAndDateTests(BoardTestCase):
         self.assertTrue(board_staff._plans_similar("Search GitHub for the issue", "Search github for the issue."))
         self.assertFalse(board_staff._plans_similar("Search GitHub", "Publish the weekend guide"))
         self.assertGreaterEqual(
-            board_staff._token_overlap("Call 10 activity providers Book calls", "Call 10 activity providers Book calls now"),
+            board_staff._token_overlap(
+                "Call 10 activity providers Book calls", "Call 10 activity providers Book calls now"
+            ),
             0.6,
         )
         self.assertFalse(
@@ -481,12 +481,8 @@ class LessonAndReviewTests(BoardTestCase):
 
         with patch("board_lessons.board_budget.board_completion", side_effect=fake_complete):
             first = board_lessons.create_from_return(self.table, task)
-            again = board_lessons.create_from_return(
-                self.table, {**task, "lastReview": {"notes": "Still missing"}}
-            )
-            skipped = board_lessons.create_from_return(
-                self.table, {**task, "taskId": "t2", "flags": ["salvaged"]}
-            )
+            again = board_lessons.create_from_return(self.table, {**task, "lastReview": {"notes": "Still missing"}})
+            skipped = board_lessons.create_from_return(self.table, {**task, "taskId": "t2", "flags": ["salvaged"]})
         self.assertEqual(first["lessonId"], again["lessonId"])
         self.assertEqual(skipped, {})
 
@@ -577,9 +573,7 @@ class LessonAndReviewTests(BoardTestCase):
         self.assertIn("reports received in the last 24 h", text)
 
     def test_headline_mail_counts_archived(self) -> None:
-        board_store.put_mail_thread(
-            self.table, {"threadId": "m-arch", "subject": "DMARC", "disposition": "archived"}
-        )
+        board_store.put_mail_thread(self.table, {"threadId": "m-arch", "subject": "DMARC", "disposition": "archived"})
         board_store.put_mail_thread(
             self.table, {"threadId": "m-out", "subject": "Hi", "disposition": "", "lastDirection": "out"}
         )
@@ -640,9 +634,7 @@ class LessonAndReviewTests(BoardTestCase):
         task["status"] = "review"
         task["flags"] = ["no_evidence"]
         board_store.put_task(self.table, task)
-        out = board_staff.apply_review(
-            self.table, self.settings, task, verdict="accept", notes="concise", by="manager"
-        )
+        out = board_staff.apply_review(self.table, self.settings, task, verdict="accept", notes="concise", by="manager")
         self.assertEqual(out["status"], "delivered")
 
     def test_narrative_uses_accepted_needs_owner_headline(self) -> None:
@@ -707,8 +699,20 @@ class LessonAndReviewTests(BoardTestCase):
 
     def test_weekly_readout_skips_when_meta_and_ga4_unconfigured(self) -> None:
         board_store.save_staff_override(self.table, "growth-specialist", {"isActive": True})
+        board_store.put_content(
+            self.table,
+            {
+                "contentId": "published-readout",
+                "status": "published",
+                "channel": "facebook",
+                "slotAt": "2026-11-20T02:00:00Z",
+                "publishedAt": board_store.now_iso(),
+            },
+        )
         with (
-            patch.object(board_content, "_readout_unconfigured_reason", return_value="Meta page/IG and GA4 not configured"),
+            patch.object(
+                board_content, "_readout_unconfigured_reason", return_value="Meta page/IG and GA4 not configured"
+            ),
             patch.object(board_async, "invoke_async", side_effect=lambda payload, *, fallback=None: None),
         ):
             out = board_content.weekly_readout(self.table, self.settings)
@@ -723,9 +727,7 @@ class LessonAndReviewTests(BoardTestCase):
 
     def test_weekly_readout_skips_when_growth_specialist_inactive(self) -> None:
         board_store.save_staff_override(self.table, "growth-specialist", {"isActive": False})
-        with patch.object(
-            board_content, "_readout_unconfigured_reason", return_value="should not run"
-        ):
+        with patch.object(board_content, "_readout_unconfigured_reason", return_value="should not run"):
             out = board_content.weekly_readout(self.table, self.settings)
         self.assertIsNone(out)
         self.assertEqual(board_duties.list_config_gaps(self.table), [])
@@ -764,7 +766,9 @@ class WatchPlacesTargetTests(BoardTestCase):
         self.assertTrue(board_watch._rejected_tld("kids.tw"))
         self.assertFalse(board_watch._has_hk_signal({"title": "Best camps"}, "kids.sg"))
         self.assertTrue(board_watch._has_hk_signal({"title": "Kids camp Hong Kong"}, "playhouse.com"))
-        self.assertEqual(board_watch._candidate_name({"title": "10 Best Kids Activities in Hong Kong"}, "play.hk"), "play.hk")
+        self.assertEqual(
+            board_watch._candidate_name({"title": "10 Best Kids Activities in Hong Kong"}, "play.hk"), "play.hk"
+        )
 
     def test_places_drops_non_hk_and_sends_rectangle(self) -> None:
         os.environ["GOOGLE_PLACES_KEY"] = "test-places-key"
@@ -868,7 +872,9 @@ class ProseToolCallAndStuckTests(BoardTestCase):
         )
         with patch.object(board_meeting, "start_meeting", side_effect=board_meeting.MeetingError("busy")):
             self.assertIsNone(board_meeting.maybe_retry_failed_schedule(self.table, settings))
-        self.assertTrue(str(_nn(board_store.get_meeting(self.table, "m-fail2"))["retriedByMeetingId"]).startswith("skipped:"))
+        self.assertTrue(
+            str(_nn(board_store.get_meeting(self.table, "m-fail2"))["retriedByMeetingId"]).startswith("skipped:")
+        )
         with patch.object(board_meeting, "start_meeting") as start_again:
             self.assertIsNone(board_meeting.maybe_retry_failed_schedule(self.table, settings))
             start_again.assert_not_called()
@@ -1388,6 +1394,7 @@ if __name__ == "__main__":
 from typing import TypeVar
 
 _T = TypeVar("_T")
+
 
 def _nn(value: _T | None) -> _T:
     assert value is not None

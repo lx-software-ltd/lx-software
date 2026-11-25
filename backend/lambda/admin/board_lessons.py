@@ -62,6 +62,32 @@ def _desk_instruction(
 _SKIP_RETURN_FLAGS = frozenset({"no_evidence", "salvaged"})
 
 
+def _recent_class_draft(table: Any, subject: str, class_key: str) -> dict[str, Any] | None:
+    from datetime import datetime, timedelta, timezone
+
+    from timeutil import format_iso_millis
+
+    cutoff = format_iso_millis(datetime.now(timezone.utc) - timedelta(hours=1))
+    for row in board_store.list_lessons(table, subject or None, limit=80):
+        if row.get("confirmed") or row.get("dismissed") or str(row.get("kind") or "") != "veto":
+            continue
+        if str(row.get("subject") or "") != subject or str(row.get("classKey") or "") != class_key:
+            continue
+        if str(row.get("createdAt") or "") >= cutoff:
+            return row
+    return None
+
+
+def _extend_class_draft(table: Any, existing: dict[str, Any], hold: dict[str, Any]) -> dict[str, Any]:
+    extra = str(hold.get("summary") or hold.get("op") or "").strip()
+    what = str(existing.get("what") or "")
+    if extra and extra not in what:
+        existing["what"] = f"{what}; {extra}"[:400]
+    existing["updatedAt"] = board_store.now_iso()
+    board_store.put_lesson(table, existing)
+    return existing
+
+
 def _write(
     table: Any,
     *,
@@ -100,7 +126,13 @@ def _write(
     return doc
 
 
-def create_from_veto(table: Any, hold: dict[str, Any]) -> dict[str, Any]:
+def create_from_veto(table: Any, hold: dict[str, Any], *, class_once: bool = False) -> dict[str, Any]:
+    subject = str(hold.get("seatId") or hold.get("personaId") or "")
+    class_key = str(hold.get("classKey") or hold.get("actionClass") or "")
+    existing = _recent_class_draft(table, subject, class_key)
+    if existing is not None:
+        return _extend_class_draft(table, existing, hold)
+    _ = class_once
     settings = board_store.load_settings(table)
     what = str(hold.get("summary") or hold.get("op") or "held action")
     preview = json.dumps(hold.get("preview") or hold.get("arguments") or {}, default=str)[:1500]

@@ -31,10 +31,7 @@ from secret_store import read_secret_raw
 GA4_ORIGIN = "https://analyticsdata.googleapis.com"
 GTM_ORIGIN = "https://tagmanager.googleapis.com"
 TOKEN_URL = "https://oauth2.googleapis.com/token"  # nosec B105
-SCOPES = (
-    "https://www.googleapis.com/auth/analytics.readonly "
-    "https://www.googleapis.com/auth/tagmanager.readonly"
-)
+SCOPES = "https://www.googleapis.com/auth/analytics.readonly https://www.googleapis.com/auth/tagmanager.readonly"
 SESSIONS_CACHE = "web:sessions"
 CONVERSIONS_CACHE = "web:conversions"
 GTM_CACHE = "web:gtm"
@@ -412,19 +409,27 @@ def refresh_caches(table: Any) -> dict[str, str]:
 
 
 def op_sessions(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
+    import board_web_live
+
     if not property_ids():
         raise WebError("GA4_PROPERTY_IDS is not set.")
     if args.get("propertyId"):
-        return fetch_sessions(property_filter=str(args.get("propertyId") or ""), limit=_limit(args))
-    return _read(ctx.table, SESSIONS_CACHE, lambda: fetch_sessions(limit=_limit(args)))
+        result = fetch_sessions(property_filter=str(args.get("propertyId") or ""), limit=_limit(args))
+    else:
+        result = _read(ctx.table, SESSIONS_CACHE, lambda: fetch_sessions(limit=_limit(args)))
+    return board_web_live.annotate(ctx.table, result)
 
 
 def op_conversions(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
+    import board_web_live
+
     if not property_ids():
         raise WebError("GA4_PROPERTY_IDS is not set.")
     if args.get("propertyId"):
-        return fetch_conversions(property_filter=str(args.get("propertyId") or ""), limit=_limit(args))
-    return _read(ctx.table, CONVERSIONS_CACHE, lambda: fetch_conversions(limit=_limit(args)))
+        result = fetch_conversions(property_filter=str(args.get("propertyId") or ""), limit=_limit(args))
+    else:
+        result = _read(ctx.table, CONVERSIONS_CACHE, lambda: fetch_conversions(limit=_limit(args)))
+    return board_web_live.annotate(ctx.table, result)
 
 
 def op_gtm_status(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
@@ -436,11 +441,14 @@ def op_gtm_status(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
 
 
 def digest_for_context(table: Any) -> dict[str, Any]:
+    import board_web_live
+
     if table is None:
         return {}
+    live = board_web_live.for_context(table)
     hit = _cached(table, SESSIONS_CACHE)
     if not hit:
-        return {}
+        return live
     sessions = 0
     users = 0
     for prop in hit.get("properties") or []:
@@ -455,4 +463,5 @@ def digest_for_context(table: Any) -> dict[str, Any]:
         "users": users,
         "properties": hit.get("count") or 0,
         "fetchedAt": hit.get("fetchedAt"),
+        **live,
     }

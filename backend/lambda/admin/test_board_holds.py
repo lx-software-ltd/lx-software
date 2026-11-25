@@ -307,6 +307,26 @@ class ExecuteDueAndVetoTests(BoardTestCase):
         self.assertEqual(stored["status"], "failed")
         self.assertIn("thread changed", str(stored.get("result") or ""))
 
+    def test_class_veto_drafts_one_lesson(self) -> None:
+        import board_budget
+        import board_lessons
+
+        self._scheduled_action()
+        self._scheduled_action()
+
+        class Fake:
+            text = '{"instruction":"One lesson for the class."}'
+
+        with (
+            patch.object(board_budget, "board_completion", return_value=Fake()),
+            patch.object(board_budget, "model_for", return_value="desk"),
+        ):
+            vetoed = board_holds.veto_class_today(self.table, "internal", "owner")
+        self.assertGreaterEqual(len(vetoed), 2)
+        drafts = [row for row in board_lessons.list_lessons(self.table) if row.get("kind") == "veto"]
+        self.assertEqual(len(drafts), 1)
+
+
 
 class RampTests(BoardTestCase):
     def test_promotion_and_demotion_thresholds(self) -> None:

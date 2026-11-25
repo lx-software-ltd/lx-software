@@ -31,12 +31,14 @@ def _review_flag_line(task: dict[str, Any]) -> str:
         extra += " — runner brief may not match the GitHub issue title"
     return f"FLAGS: {', '.join(flags)}{extra}\n"
 
+
 def _reviewer_id(task: dict[str, Any]) -> str:
     if task.get("assigneeKind") == "persona" and task.get("assignee") == BOARD_CHAIR_DEFAULT:
         return "cfo"
     if task.get("assigneeKind") == "persona":
         return BOARD_CHAIR_DEFAULT
     return str(task.get("managerId") or BOARD_CHAIR_DEFAULT)
+
 
 def _catalog_quality_return(task: dict[str, Any], raw: str) -> str:
     kind = str(((task or {}).get("eventRef") or {}).get("kind") or "")
@@ -47,9 +49,7 @@ def _catalog_quality_return(task: dict[str, Any], raw: str) -> str:
 
         sheet = board_catalog_import.parse_sheet(raw)
         kept, dropped = board_catalog_import.keep_quality_orgs(sheet)
-        issues = board_catalog_import.sheet_quality_issues(
-            kept if kept.get("organisations") else sheet
-        )
+        issues = board_catalog_import.sheet_quality_issues(kept if kept.get("organisations") else sheet)
     except Exception as exc:
         return f"Catalog sheet does not parse: {exc}"[:300]
     if kept.get("organisations") and not issues:
@@ -63,12 +63,14 @@ def _catalog_quality_return(task: dict[str, Any], raw: str) -> str:
         return prefix + ", ".join(dropped[:6])
     return prefix + "; ".join(issues[:6])
 
+
 def _review_user_prompt(
     task: dict[str, Any],
     raw: str,
     evidence_lines: list[str],
     *,
     catalog_note: str = "",
+    claim_note: str = "",
 ) -> str:
     """User message for the manager review call."""
     catalog_line = (catalog_note.strip() + "\n") if catalog_note.strip() else ""
@@ -80,6 +82,7 @@ def _review_user_prompt(
         f"{_review_flag_line(task)}"
         f"Evidence:\n" + ("\n".join(evidence_lines) or "(none)") + "\n\n"
         f"{catalog_line}"
+        f"{(claim_note.strip() + chr(10)) if claim_note.strip() else ''}"
         f"Deliverable:\n{raw}\n\n"
         "Books of record: there is no QuickBooks or Xero. This board is Siu Tin Dei "
         "only. For receivables aging, accept a report backed by finance_aging_report "
@@ -111,8 +114,10 @@ def _review_user_prompt(
         'Return JSON {"verdict":"accept"|"return","notes":"…"}.'
     )
 
+
 def run_review(payload: dict[str, Any]) -> None:
     from board_staff import _blob_get, _blob_put, enabled
+
     if not board_store.event_targets_this_board(payload):
         return
     table = board_store.records_table()
@@ -158,6 +163,18 @@ def run_review(payload: dict[str, Any]) -> None:
                 board_store.put_task(table, task)
     except Exception as exc:
         _log_event("warning", tag="board_staff_catalog_keep_failed", error=str(exc)[:200])
+    claim_note = ""
+    try:
+        import board_review_claims
+
+        claim_note = board_review_claims.mismatch(table, task, raw)
+    except Exception as exc:
+        _log_event("warning", tag="board_staff_claim_check_failed", error=str(exc)[:200])
+    if claim_note:
+        flags = [str(flag) for flag in (task.get("flags") or [])]
+        if "claimed_action_unverified" not in flags:
+            task["flags"] = [*flags, "claimed_action_unverified"]
+            board_store.put_task(table, task)
     quality = _catalog_quality_return(task, raw)
     if quality:
         apply_review(table, settings, task, verdict="return", notes=quality, by="manager")
@@ -172,10 +189,8 @@ def run_review(payload: dict[str, Any]) -> None:
         via = str((child or {}).get("assignee") or "helper")
         for call in board_store.list_tool_calls_for_task(table, str(hid)):
             if str(call.get("callId")) in cited:
-                evidence_lines.append(
-                    f"- {call.get('op')} (via {via}, task {hid}): {call.get('summary')}"
-                )
-    prompt = _review_user_prompt(task, raw, evidence_lines, catalog_note=catalog_note)
+                evidence_lines.append(f"- {call.get('op')} (via {via}, task {hid}): {call.get('summary')}")
+    prompt = _review_user_prompt(task, raw, evidence_lines, catalog_note=catalog_note, claim_note=claim_note)
     system = board_personas.render_system_prompt(profile, charter)
     model = board_budget.model_for("standup", settings)
     completion = board_budget.board_completion(
@@ -206,6 +221,7 @@ def run_review(payload: dict[str, Any]) -> None:
         verdict = "return"
     apply_review(table, settings, task, verdict=verdict, notes=notes, by="manager")
 
+
 def apply_review(
     table: Any,
     settings: dict[str, Any],
@@ -216,6 +232,7 @@ def apply_review(
     by: str,
 ) -> dict[str, Any]:
     from board_staff import _align_step_claim, _append_scratchpad, run_step
+
     now = board_store.now_iso()
     seq = int(task.get("reviews") or 0) + 1
     review = {"seq": seq, "verdict": verdict, "notes": notes, "at": now, "by": by}
@@ -267,8 +284,10 @@ def apply_review(
     _note_parent_if_child_needs_owner(table, task)
     return task
 
+
 def _task_attempted_required_tools(table: Any, task: dict[str, Any]) -> bool:
     from board_staff import _IDLE_TOOL_OPS, _brief_required_evidence_tools
+
     """True when the seat called every tool the brief names, even if those calls errored."""
     needed = _brief_required_evidence_tools(str(task.get("brief") or ""))
     if not needed:
@@ -283,12 +302,15 @@ def _task_attempted_required_tools(table: Any, task: dict[str, Any]) -> bool:
             ops.add(op)
     return all(tool in ops for tool in needed)
 
+
 def note_parent_if_child_needs_owner(table: Any, task: dict[str, Any]) -> None:
     """Public wrapper so catalog import can park a help child without calling a private."""
     _note_parent_if_child_needs_owner(table, task)
 
+
 def _note_parent_if_child_needs_owner(table: Any, task: dict[str, Any]) -> None:
     from board_staff import _note_parent_child_waiting
+
     if not task.get("parentTaskId") or task.get("status") != "needs_owner":
         return
     notes = str((task.get("lastReview") or {}).get("notes") or "").strip()
@@ -301,13 +323,18 @@ def _note_parent_if_child_needs_owner(table: Any, task: dict[str, Any]) -> None:
         reason=f"help task {task.get('taskId')} needs founder review",
     )
 
+
 def _is_review_headline_duty(task: dict[str, Any]) -> bool:
     ref = task.get("eventRef") or {}
     return ref.get("kind") == "duty" and str(ref.get("id") or "").startswith("review-headline:")
 
+
 def _should_hold_unverified_accept(table: Any, task: dict[str, Any]) -> bool:
     from board_staff import _CLAIMED_ACTION_RE, _EVIDENCE_REQUIRED_ORIGINS
+
     flags = {str(f) for f in (task.get("flags") or [])}
+    if "claimed_action_unverified" in flags:
+        return True
     if "no_evidence" not in flags and "salvaged" not in flags:
         return False
     if _is_review_headline_duty(task):
@@ -320,6 +347,7 @@ def _should_hold_unverified_accept(table: Any, task: dict[str, Any]) -> bool:
         return True
     brief = str(task.get("brief") or "")
     return bool(_CLAIMED_ACTION_RE.search(brief))
+
 
 def _task_has_open_approvals(table: Any, task: dict[str, Any]) -> bool:
     task_id = str(task.get("taskId") or "")
@@ -336,6 +364,7 @@ def _task_has_open_approvals(table: Any, task: dict[str, Any]) -> bool:
             return True
     return False
 
+
 def _should_close_linked_action(table: Any, task: dict[str, Any]) -> bool:
     flags = {str(f) for f in (task.get("flags") or [])}
     if flags & {"no_evidence", "salvaged", "staging_behind", "sync_scheduled"}:
@@ -344,8 +373,10 @@ def _should_close_linked_action(table: Any, task: dict[str, Any]) -> bool:
         return False
     return True
 
+
 def _mark_delivered(table: Any, task: dict[str, Any], now: str) -> dict[str, Any]:
     from board_staff import _resume_parent_after_help
+
     """Persist a delivered task, TTL, linked-action close, and parent/duty hooks."""
     task["status"] = "delivered"
     task["finishedAt"] = now
@@ -406,8 +437,10 @@ def _mark_delivered(table: Any, task: dict[str, Any], now: str) -> dict[str, Any
             _log_event("warning", tag="board_code_review_deliver_failed", error=str(exc)[:200])
     return task
 
+
 def _accept_task(table: Any, task: dict[str, Any], now: str, *, bypass_unverified: bool = False) -> dict[str, Any]:
     from board_staff import _blob_get
+
     last = task.get("lastReview") or {}
     if last.get("verdict") and last.get("verdict") != "accept":
         task["status"] = "needs_owner"
@@ -420,9 +453,7 @@ def _accept_task(table: Any, task: dict[str, Any], now: str, *, bypass_unverifie
     if ref.get("kind") == "ops" and str(ref.get("id") or "") == "rebase-staging":
         import board_code
 
-        return board_code.accept_sync_staging_task(
-            table, task, now, bypass_unverified=bypass_unverified
-        )
+        return board_code.accept_sync_staging_task(table, task, now, bypass_unverified=bypass_unverified)
     if not bypass_unverified and _should_hold_unverified_accept(table, task):
         task["status"] = "needs_owner"
         task["finishedAt"] = None
@@ -452,8 +483,12 @@ def _accept_task(table: Any, task: dict[str, Any], now: str, *, bypass_unverifie
             return board_catalog_import._set_awaiting(table, task, now, phase="pending")
     return _mark_delivered(table, task, now)
 
-def owner_review(table: Any, settings: dict[str, Any], task_id: str, verdict: str, notes: str, by_sub: str) -> dict[str, Any]:
+
+def owner_review(
+    table: Any, settings: dict[str, Any], task_id: str, verdict: str, notes: str, by_sub: str
+) -> dict[str, Any]:
     from board_staff import StaffError
+
     task = board_store.get_task(table, task_id)
     if not task:
         raise StaffError("Task not found")

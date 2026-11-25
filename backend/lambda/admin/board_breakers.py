@@ -25,6 +25,7 @@ _IGNORABLE_TOOL_ERROR_MARKERS = (
     "deliverable is larger than",
     "wait for it to resume before continuing",
     "fetch cap",
+    "recipient not sourced",
 )
 _INTERNAL_TOOLS = frozenset({"task"})
 _TOOL_TRIP_ERRORS = 10
@@ -57,7 +58,7 @@ def trip(table: Any, name: str, reason: str) -> dict[str, Any]:
     }
     board_store.put_breaker(table, name, doc)
     try:
-        board_store.add_update(table, text=f"BREAKER {name} — {reason}", owner_sub=None)
+        board_store.add_update(table, text=f"BREAKER {name} — {reason}", owner_sub=None, kind="system")
     except Exception as exc:
         _log_event("warning", tag="board_breaker_update_failed", error=str(exc)[:200], name=name)
     _log_event("warning", tag="board_breaker_tripped", name=name, reason=str(reason)[:200])
@@ -81,7 +82,7 @@ def reset(table: Any, name: str, by_sub: str) -> dict[str, Any]:
     }
     board_store.put_breaker(table, name, doc)
     try:
-        board_store.add_update(table, text=f"BREAKER {name} reset ({by_sub})", owner_sub=None)
+        board_store.add_update(table, text=f"BREAKER {name} reset ({by_sub})", owner_sub=None, kind="system")
     except Exception as exc:
         _log_event("warning", tag="board_breaker_reset_update_failed", error=str(exc)[:200], name=name)
     _log_event("info", tag="board_breaker_reset", name=name, by=by_sub)
@@ -291,9 +292,7 @@ def evaluate(table: Any, settings: dict[str, Any]) -> list[str]:
         floor = reset_at.get(tool_id) or ""
         if floor and created and created <= floor:
             continue
-        preview = " ".join(
-            str(call.get(k) or "") for k in ("resultPreview", "summary", "error")
-        ).lower()
+        preview = " ".join(str(call.get(k) or "") for k in ("resultPreview", "summary", "error")).lower()
         if any(marker in preview for marker in _IGNORABLE_TOOL_ERROR_MARKERS):
             continue
         if not tool_id or tool_id in _INTERNAL_TOOLS:

@@ -110,6 +110,31 @@ class LessonTests(BoardTestCase):
         assert dismissed is not None
         self.assertTrue(dismissed.get("dismissed"))
 
+    def test_a_second_veto_in_the_hour_updates_the_draft(self) -> None:
+        class Fake:
+            text = '{"instruction":"Do not repeat this class."}'
+
+        first = {
+            "holdId": "h1",
+            "op": "content_publish",
+            "classKey": "publish:facebook",
+            "seatId": "content-marketer",
+            "summary": "Post one",
+            "vetoReason": "paused",
+        }
+        second = {**first, "holdId": "h2", "summary": "Post two"}
+        with (
+            patch.object(board_budget, "board_completion", return_value=Fake()),
+            patch.object(board_budget, "model_for", return_value="desk"),
+        ):
+            created = board_lessons.create_from_veto(self.table, first)
+            updated = board_lessons.create_from_veto(self.table, second)
+        self.assertEqual(created["lessonId"], updated["lessonId"])
+        self.assertIn("Post two", updated["what"])
+        rows = [row for row in board_lessons.list_lessons(self.table, "content-marketer") if row.get("kind") == "veto"]
+        self.assertEqual(len(rows), 1)
+
+
 
 if __name__ == "__main__":
     unittest.main()

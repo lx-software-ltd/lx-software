@@ -287,9 +287,7 @@ def op_venues(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
 
         canonical = board_hk.canonical_district(raw_district)
         if canonical == "unknown":
-            raise ResearchError(
-                f"Unknown Hong Kong district '{district}'. Use one of: {', '.join(HK_DISTRICTS)}."
-            )
+            raise ResearchError(f"Unknown Hong Kong district '{district}'. Use one of: {', '.join(HK_DISTRICTS)}.")
         district = canonical.lower()
     kind_of = str(args.get("kind") or "children's activity venue").strip()[:80]
     where = f" in {district}" if district else " Hong Kong"
@@ -513,14 +511,13 @@ def op_fetch_page(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     ctype = str(result.content_type or "").split(";", 1)[0].strip().lower()
     if ctype and not any(ctype.startswith(allowed) for allowed in _RESEARCH_FETCH_TYPES):
         return _page_error(f"content type {ctype} is not text/html or text/plain")
-    text = board_crawl.html_to_text(result.text) if "html" in ctype or "<html" in result.text[:200].lower() else result.text
+    text = (
+        board_crawl.html_to_text(result.text)
+        if "html" in ctype or "<html" in result.text[:200].lower()
+        else result.text
+    )
     if not str(text or "").strip():
         return _page_error("empty page body")
     if rules and not rules.get("urls") and rules.get("names") and not _page_mentions_org(text, rules["names"]):
         return _page_error("page does not mention an organisation on this enrich sheet")
-    return {
-        "status": result.status,
-        "finalUrl": result.final_url,
-        "text": text[:8000],
-        "hash": result.hash,
-    }
+    return board_crawl.fetched_page_payload(getattr(ctx, "table", None), url, result, text)

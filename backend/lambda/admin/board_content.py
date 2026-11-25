@@ -372,17 +372,11 @@ def plan_week(table: Any, settings: dict[str, Any]) -> dict[str, Any] | None:
     if find_open_event_task(table, "duty", f"content-plan:{today}"):
         return None
     cfg = content_cfg(settings)
-    context = _plan_context(table, settings)
-    brief = (
-        "Plan next week's content calendar as JSON {\"items\":[...]} with slotAt, channel, "
-        f"pillar, copyEn, copyZh, hashtags, template, fields, linkPath. Pillars: {cfg.get('pillars')}. "
-        f"Per week: {cfg.get('perWeek')}. Windows HKT: {cfg.get('windowsHkt')}. "
-        "Social week is 21 items (7 facebook, 7 instagram, 7 instagram_story); seo items are extra. "
-        "Stage it with content_stage_items in batches of at most 6 items, then task_finish "
-        "with {\"items\":[]}. Staged items are merged into the deliverable. Do not put the "
-        "full week in one task_finish. Do not invent photos of children.\n\n"
-        + context
-    )
+    import board_content_pause
+
+    if board_content_pause.skip_plan(cfg):
+        return None
+    brief = board_content_pause.plan_brief(cfg, _plan_context(table, settings))
     try:
         return board_staff.create_task(
             table,
@@ -682,6 +676,10 @@ def weekly_readout(table: Any, settings: dict[str, Any]) -> dict[str, Any] | Non
     from board_triage import find_open_event_task
 
     if find_open_event_task(table, "duty", f"content-readout:{today}"):
+        return None
+    import board_content_pause
+
+    if not board_content_pause.published_recently(table):
         return None
     skip = _readout_unconfigured_reason()
     if skip:

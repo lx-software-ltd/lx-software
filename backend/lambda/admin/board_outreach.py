@@ -650,6 +650,7 @@ def op_list_prospects(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
             ctx.table,
             stage=str(args.get("stage") or "") or None,
             ptype=str(args.get("type") or "") or None,
+            district=str(args.get("district") or "") or None,
             limit=limit,
         )
     except board_prospects.ProspectError as exc:
@@ -684,14 +685,9 @@ def op_upsert_prospect(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
 
 
 def op_score_prospect(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
-    row = board_store.get_prospect(ctx.table, str(args.get("id") or args.get("prospectId") or ""))
-    if not row:
-        return {"error": "prospect not found"}
-    score_n, note = board_prospects.score(ctx.table, ctx.settings, row)
-    row = board_prospects.qualify(ctx.table, ctx.settings, row)
-    board_prospects.find_contact(ctx.table, ctx.settings, row)
-    row = board_store.get_prospect(ctx.table, str(row.get("prospectId") or "")) or row
-    return {"score": score_n, "note": note, "prospect": board_prospects.mask_row(ctx.table, row)}
+    import board_prospect_facts
+
+    return board_prospect_facts.score_and_qualify(ctx, args)
 
 
 def op_start_sequence(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:

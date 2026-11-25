@@ -212,7 +212,9 @@ def upsert_prospect(table: Any, row: dict[str, Any]) -> tuple[dict[str, Any], bo
         phone=str(row.get("phone") or ""),
         email=str(row.get("email") or row.get("contact") or ""),
         place_id=str(row.get("placeId") or row.get("place_id") or ""),
-        raw=_g if isinstance(_g := row.get("raw"), dict) else {k: v for k, v in row.items() if k not in {"name", "type"}},
+        raw=_g
+        if isinstance(_g := row.get("raw"), dict)
+        else {k: v for k, v in row.items() if k not in {"name", "type"}},
     )
 
 
@@ -263,7 +265,9 @@ def score(table: Any, settings: dict[str, Any], prospect: dict[str, Any]) -> tup
     import board_budget
     import board_pii as pii
 
-    rubric = str(((settings.get("boundaries") or {}).get("outreach") or {}).get("fitRubric") or board_store.DEFAULT_FIT_RUBRIC)
+    rubric = str(
+        ((settings.get("boundaries") or {}).get("outreach") or {}).get("fitRubric") or board_store.DEFAULT_FIT_RUBRIC
+    )
     homepage = ""
     website = str(prospect.get("website") or "")
     if website:
@@ -273,15 +277,9 @@ def score(table: Any, settings: dict[str, Any], prospect: dict[str, Any]) -> tup
         except Exception as exc:
             _log_event("warning", tag="board_prospect_homepage_failed", error=str(exc)[:200])
     pseud = pii.Pseudonymizer(table)
-    public = {
-        "name": prospect.get("name"),
-        "type": prospect.get("type"),
-        "district": prospect.get("district"),
-        "website": website,
-        "rating": (prospect.get("raw") or {}).get("rating"),
-        "email": pseud.alias_for_address(str(prospect.get("email") or "")),
-        "phone": pseud.alias_for("phone", str(prospect.get("phone") or "")) if prospect.get("phone") else "",
-    }
+    import board_prospect_facts
+
+    public = board_prospect_facts.public_for_score(prospect, website=website, pseud=pseud)
     try:
         pseud.save()
     except Exception as exc:
@@ -294,12 +292,17 @@ def score(table: Any, settings: dict[str, Any], prospect: dict[str, Any]) -> tup
                     "role": "system",
                     "content": (
                         "Score this organisation for Siu Tin Dei using the rubric: start at 50, then apply only the adjustments the facts support. "
+                        "rating, reviewCount, placesTypes, source and category are stored facts. Apply the rubric lines they support with no homepage: "
+                        "a rating with at least 10 reviews can stand in for a working website on the cap of 70; placesTypes and category can show children's activities, a venue or a restaurant. "
+                        "Do not treat a missing homepage as a dead listing. "
                         'Reply with JSON only: {"score": <integer 0-100>, "note": "<one sentence naming the adjustments>"}.'
                     ),
                 },
                 {
                     "role": "user",
-                    "content": json.dumps({"rubric": rubric, "prospect": public, "homepage": homepage[:4000] or _HOMEPAGE_UNREAD}),
+                    "content": json.dumps(
+                        {"rubric": rubric, "prospect": public, "homepage": homepage[:4000] or _HOMEPAGE_UNREAD}
+                    ),
                 },
             ],
             model=board_budget.model_for("standup", settings),
@@ -578,11 +581,7 @@ def list_for_api(
 
 
 def needs_contact(table: Any, *, limit: int = 40) -> list[dict[str, Any]]:
-    rows = [
-        r
-        for r in board_store.list_prospects(table, "qualified", limit=200)
-        if not r.get("contact")
-    ]
+    rows = [r for r in board_store.list_prospects(table, "qualified", limit=200) if not r.get("contact")]
     return [public_row(r) for r in rows[:limit]]
 
 

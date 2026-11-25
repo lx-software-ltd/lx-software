@@ -364,6 +364,41 @@ class ContentTests(BoardTestCase):
         self.assertIn("Play at the park", raw)
         self.assertIn("facebook", raw)
 
+    def test_plan_sentence_follows_per_week_and_a_pause_skips_the_duty(self) -> None:
+        import board_content_pause
+
+        sentence = board_content_pause.social_sentence(board_content.content_cfg(self.settings))
+        self.assertEqual(
+            sentence,
+            "Social week is 21 items (7 facebook, 7 instagram, 7 instagram_story); seo items are extra.",
+        )
+        bounds = dict(self.settings["boundaries"])
+        content = dict(bounds["content"])
+        content["perWeek"] = {"facebook": 0, "instagram": 0, "instagram_story": 0, "seo": 0}
+        bounds["content"] = content
+        paused = {**self.settings, "boundaries": bounds}
+        self.assertIsNone(board_content.plan_week(self.table, paused))
+
+    def test_readout_skips_a_week_with_nothing_published(self) -> None:
+        board_store.save_staff_override(self.table, "growth-specialist", {"isActive": True})
+        self.assertIsNone(board_content.weekly_readout(self.table, self.settings))
+        updates = board_store.list_updates(self.table, limit=20)
+        self.assertFalse(any("content-readout" in str(row.get("text") or "") for row in updates))
+        board_store.put_content(
+            self.table,
+            {
+                "contentId": "published-1",
+                "status": "published",
+                "channel": "facebook",
+                "slotAt": "2026-11-20T02:00:00Z",
+                "publishedAt": board_store.now_iso(),
+            },
+        )
+        self.assertIsNone(board_content.weekly_readout(self.table, self.settings))
+        updates = board_store.list_updates(self.table, limit=20)
+        self.assertTrue(any("content-readout" in str(row.get("text") or "") for row in updates))
+
+
 
 if __name__ == "__main__":
     unittest.main()

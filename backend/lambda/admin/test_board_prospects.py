@@ -187,6 +187,39 @@ class QualifyTests(BoardTestCase):
         ids = {r["prospectId"] for r in first["prospects"] + second["prospects"]}
         self.assertEqual(len(ids), 30)
 
+    def test_score_payload_includes_places_rating_without_a_website(self) -> None:
+        row, _created = board_prospects.upsert(
+            self.table,
+            name="Harbour Hall",
+            type="venue",
+            district="Southern",
+            source="places",
+            raw={"rating": 4.6, "userRatingCount": 18, "types": ["school"], "category": "playgroup"},
+        )
+        seen: dict[str, Any] = {}
+
+        class Fake:
+            text = '{"score": 62, "note": "Rating stands in for a homepage."}'
+
+        def fake_completion(**kwargs: Any) -> Fake:
+            seen.update(kwargs)
+            return Fake()
+
+        with (
+            patch("board_budget.board_completion", side_effect=fake_completion),
+            patch("board_budget.model_for", return_value="desk"),
+        ):
+            score, _note = board_prospects.score(self.table, self.settings, row)
+        self.assertEqual(score, 62)
+        public = json.loads(seen["messages"][1]["content"])["prospect"]
+        self.assertEqual(public["rating"], 4.6)
+        self.assertEqual(public["reviewCount"], 18)
+        self.assertEqual(public["placesTypes"], ["school"])
+        self.assertEqual(public["source"], "places")
+        self.assertEqual(public["category"], "playgroup")
+        self.assertIn("stored facts", seen["messages"][0]["content"])
+
+
 
 if __name__ == "__main__":
     unittest.main()

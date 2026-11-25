@@ -52,11 +52,7 @@ def archive_reason(thread: dict[str, Any], message: dict[str, Any]) -> str:
         return "list-unsubscribe"
     sender = str((message.get("from") or {}).get("address") or message.get("from") or "")
     local = sender.split("@", 1)[0].strip().lower()
-    if (
-        local in board_mail.ARCHIVE_LOCAL_PARTS
-        or local.startswith("noreply")
-        or local.startswith("bounce")
-    ):
+    if local in board_mail.ARCHIVE_LOCAL_PARTS or local.startswith("noreply") or local.startswith("bounce"):
         return f"no-action sender {local or 'unknown'}"
     mailbox = str(thread.get("mailbox") or "")
     mailbox_local = mailbox.split("@", 1)[0].strip().lower()
@@ -140,9 +136,7 @@ def on_mail_ingested(
     board_store.put_mail_thread(table, thread)
     assignee, sla = _route_mail(thread, message, classified)
     brief_source = dict(thread)
-    brief_source["subject"] = _mask_prompt_text(
-        table, str(thread.get("subject") or message.get("subject") or "")
-    )
+    brief_source["subject"] = _mask_prompt_text(table, str(thread.get("subject") or message.get("subject") or ""))
     brief = render_event_brief("mail", brief_source, message, classified)
     extra_ref = {"prospectId": prospect_id} if prospect_id else None
     return _open_or_append(
@@ -161,7 +155,9 @@ def on_mail_ingested(
     )
 
 
-def on_meta_event(table: Any, settings: dict[str, Any], thread: dict[str, Any], msg: dict[str, Any]) -> dict[str, Any] | None:
+def on_meta_event(
+    table: Any, settings: dict[str, Any], thread: dict[str, Any], msg: dict[str, Any]
+) -> dict[str, Any] | None:
     import board_meta_triage
 
     return board_meta_triage.on_message(table, settings, thread, msg)
@@ -288,7 +284,9 @@ def render_event_brief(kind: str, source: dict[str, Any], message: dict[str, Any
         stars = source.get("rating") or source.get("stars") or ""
         return f"Reply to a {stars}-star store review. Intent={classified.get('intent')}."
     channel = str(message.get("channel") or source.get("channel") or "meta")
-    return f"Reply to inbound {channel} message. Audience={classified.get('audience')}; intent={classified.get('intent')}."
+    return (
+        f"Reply to inbound {channel} message. Audience={classified.get('audience')}; intent={classified.get('intent')}."
+    )
 
 
 def _keyword_hit(text: str, keywords: list[Any]) -> tuple[bool, str]:
@@ -408,10 +406,17 @@ def _open_or_append(
 
 def find_open_event_task(table: Any, kind: str, event_id: str) -> dict[str, Any] | None:
     for status in OPEN_TASK_STATUSES:
-        for task in board_store.list_tasks(table, status):
-            ref = task.get("eventRef") or {}
-            if ref.get("kind") == kind and str(ref.get("id") or "") == event_id:
-                return task
+        found = find_event_task(table, kind, event_id, status=status)
+        if found:
+            return found
+    return None
+
+
+def find_event_task(table: Any, kind: str, event_id: str, *, status: str) -> dict[str, Any] | None:
+    for task in board_store.list_tasks(table, status, limit=400):
+        ref = task.get("eventRef") or {}
+        if ref.get("kind") == kind and str(ref.get("id") or "") == event_id:
+            return task
     return None
 
 
@@ -436,7 +441,9 @@ def _send_ack(
     payload["templateId"] = "ack_escalation"
     payload.setdefault("reason", "escalation acknowledgement")
     manager = str(task.get("managerId") or "coo")
-    display = next((p.get("shortName") or manager for p in board_personas.effective_roster({}) if p["id"] == manager), manager)
+    display = next(
+        (p.get("shortName") or manager for p in board_personas.effective_roster({}) if p["id"] == manager), manager
+    )
     try:
         import board_async
 
