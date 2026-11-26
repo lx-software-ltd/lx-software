@@ -185,6 +185,29 @@ _LEGACY_PREFIX = (
 # One deploy of the previous board URL. Callers still send camelCase.
 _LEGACY_BOARD = "/public/siu-tin-dei/board"
 _LEGACY_BOARD_TARGET = "/v1/partner/siutindei/board"
+# Old gateway paths that remain until their replacement has been deployed and
+# the following stage has deleted them. The last stage removes this block.
+_CUTOVER_EXACT = {
+    "/aws/usage.pdf": "/v1/admin/aws/usage/pdf",
+    "/fx/v2/rates": "/v1/admin/fx/rates",
+    "/public/fx/v2/rates": "/v1/partner/fx/rates",
+    "/public/newsletter/subscribe": "/v1/public/newsletter/subscribe",
+}
+_CUTOVER_PREFIX = (
+    ("/public/lx-software", "/v1/partner/lx-software"),
+    ("/public/finance", "/v1/partner/finance"),
+    ("/public/records", "/v1/partner/records"),
+    ("/siu-tin-dei", "/v1/admin/siutindei"),
+    ("/evolve-sprouts", "/v1/admin/evolvesprouts"),
+    ("/lx-software", "/v1/admin/lx-software"),
+    ("/openrouter", "/v1/admin/openrouter"),
+    ("/assets", "/v1/admin/assets"),
+    ("/records", "/v1/admin/records"),
+    ("/finance", "/v1/admin/finance"),
+    ("/banking", "/v1/admin/banking"),
+    ("/aws", "/v1/admin/aws"),
+    ("/me", "/v1/admin/me"),
+)
 _WIRE_CONTRACT: dict[str, Any] | None = None
 
 
@@ -192,8 +215,31 @@ def _legacy_board(path: str) -> bool:
     return path == _LEGACY_BOARD or path.startswith(_LEGACY_BOARD + "/")
 
 
+def _prefix_rewrite(path: str, old: str, new: str) -> str | None:
+    if path == old:
+        return new
+    if path.startswith(old + "/"):
+        return new + path[len(old) :]
+    return None
+
+
+def _cutover_http_path(path: str) -> str:
+    mapped = _CUTOVER_EXACT.get(path)
+    if mapped:
+        return mapped
+    for old, new in _CUTOVER_PREFIX:
+        rewritten = _prefix_rewrite(path, old, new)
+        if rewritten:
+            return rewritten
+    return path
+
+
 def legacy_http_path(path: str) -> str:
-    """Map a route that stays forever onto the path the table matches."""
+    """Map a gateway path onto the path the route table matches.
+
+    Forever keepers stay mapped after the cutover. The other old paths stay
+    mapped only while those routes are still on the gateway.
+    """
     mapped = _LEGACY_EXACT.get(path)
     if mapped:
         return mapped
@@ -202,7 +248,7 @@ def legacy_http_path(path: str) -> str:
     for old, new in _LEGACY_PREFIX:
         if path.startswith(old):
             return new + path[len(old) :]
-    return path
+    return _cutover_http_path(path)
 
 
 def http_audience(path: str) -> tuple[str, str]:

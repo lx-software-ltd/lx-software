@@ -71,6 +71,39 @@ class RouteTableTests(unittest.TestCase):
         self.assertEqual(http_audience("/health")[0], "none")
         self.assertEqual(http_audience("/v1/admin/finance"), ("admin", "/finance"))
 
+    def test_old_gateway_paths_map_onto_the_route_table(self) -> None:
+        cases = {
+            "/me": ("admin", "/me"),
+            "/finance": ("admin", "/finance"),
+            "/finance/quotes": ("admin", "/finance/quotes"),
+            "/aws/usage.pdf": ("admin", "/aws/usage/pdf"),
+            "/aws/usage": ("admin", "/aws/usage"),
+            "/fx/v2/rates": ("admin", "/fx/rates"),
+            "/siu-tin-dei": ("admin", "/siutindei"),
+            "/siu-tin-dei/board/actions": ("admin", "/siutindei/board/actions"),
+            "/evolve-sprouts": ("admin", "/evolvesprouts"),
+            "/evolve-sprouts/summary": ("admin", "/evolvesprouts/summary"),
+            "/lx-software": ("admin", "/lx-software"),
+            "/lx-software/linkedin": ("admin", "/lx-software/linkedin"),
+            "/lx-software/resume/overview": ("admin", "/lx-software/resume/overview"),
+            "/public/finance": ("partner", "/v1/partner/finance"),
+            "/public/finance/quotes": ("partner", "/v1/partner/finance/quotes"),
+            "/public/records": ("partner", "/v1/partner/records"),
+            "/public/fx/v2/rates": ("partner", "/v1/partner/fx/rates"),
+            "/public/lx-software/linkedin/posts": ("partner", "/v1/partner/lx-software/linkedin/posts"),
+            "/public/newsletter/subscribe": ("public", "/v1/public/newsletter/subscribe"),
+            "/webhooks/meta": ("webhooks", "/webhooks/meta"),
+            "/webhooks/meta/siutindei": ("webhooks", "/webhooks/meta/siutindei"),
+            "/public/outreach/unsubscribe/tok": ("public", "/v1/public/outreach/unsubscribe/tok"),
+            "/public/newsletter/confirm/tok": ("public", "/v1/public/newsletter/confirm/tok"),
+            "/public/newsletter/unsubscribe/tok": ("public", "/v1/public/newsletter/unsubscribe/tok"),
+            "/public/siu-tin-dei/board": ("partner", "/v1/partner/siutindei/board"),
+            "/public/siu-tin-dei/board/actions/a1": ("partner", "/v1/partner/siutindei/board/actions/a1"),
+        }
+        for path, expected in cases.items():
+            self.assertEqual(http_audience(path), expected, path)
+        self.assertEqual(http_audience("/public/siu-tin-dei/boardroom")[0], "unknown")
+
     def test_internal_workers_from_handler_tests_are_registered(self) -> None:
         self.assertIn("parse_statement_async", EARLY_INTERNAL)
         self.assertIn("resume_extract", EARLY_INTERNAL)

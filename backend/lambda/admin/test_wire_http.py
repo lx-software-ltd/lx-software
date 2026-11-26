@@ -141,6 +141,15 @@ class WireHttpTest(unittest.TestCase):
         self.assertEqual(body["next_cursor"], "n1")
         self.assertNotIn("nextCursor", body)
 
+    def test_an_old_finance_path_still_converts_response_keys(self) -> None:
+        def respond(_event: dict) -> dict:
+            return _json_response(200, {"incomeRecords": []})
+
+        out = apply_wire(_http("GET", "/finance"), respond)
+        body = json.loads(out["body"])
+        self.assertIn("income_records", body)
+        self.assertNotIn("incomeRecords", body)
+
     def test_the_legacy_board_path_keeps_camel_case_and_the_new_path_does_not(self) -> None:
         def respond(_event: dict) -> dict:
             return _json_response(200, {"nextCursor": "n1", "items": []})
