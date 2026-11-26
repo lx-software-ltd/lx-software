@@ -1155,11 +1155,11 @@ organisations.
 3. Put a 40-character letters-and-digits string in the GitHub secret
    `SIUTINDEI_BOARD_META_VERIFY_TOKEN` on the `production` environment,
    run **Deploy Backend**, then confirm the handshake: open
-   `https://<admin-api>/webhooks/meta/siutindei?hub.mode=subscribe&hub.verify_token=<token>&hub.challenge=123`
+   `https://api.lx-software.com/v1/webhooks/meta/siutindei?hub.mode=subscribe&hub.verify_token=<token>&hub.challenge=123`
    in a private window. The page must show `123`. `forbidden` means the
    token is not on the Lambda yet. Then subscribe the app to
-   `GET/POST https://<admin-api>/webhooks/meta/siutindei` (legacy
-   `/webhooks/meta` still works) with that same token.
+   `GET/POST https://api.lx-software.com/v1/webhooks/meta/siutindei` and
+   `GET/POST https://api.lx-software.com/v1/webhooks/meta` with that same token.
 4. Set the `SiutindeiBoardMeta*` ids. Production already sets Page and
    Instagram in `params/production.json`. Until then `meta` tools return
    "not configured". `MetaIgUserId` must be the Graph

@@ -184,9 +184,14 @@ export function defineAdminHttpApi(
     httpApi.apiEndpoint,
   ).toString();
   const adminApiBaseUrl = defaultPublicBaseUrl;
+  const cfnApi = httpApi.node.defaultChild as apigwv2.CfnApi;
+  cfnApi.addPropertyOverride(
+    "DisableExecuteApiEndpoint",
+    cdk.Fn.conditionIf(apiDomain.useApiCustomDomain.logicalId, true, false),
+  );
   const cspApiConnectOrigin = cdk.Fn.conditionIf(
     apiDomain.useApiCustomDomain.logicalId,
-    cdk.Fn.join(" ", [apiDomain.url, httpApi.apiEndpoint]),
+    apiDomain.url,
     httpApi.apiEndpoint,
   ).toString();
   adminFn.addEnvironment(

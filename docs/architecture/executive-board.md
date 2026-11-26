@@ -411,8 +411,7 @@ One Business-type app under the Siu Tin Dei Business Manager with a System
 User token (`…-meta-token`) and app secret (`…-meta-app-secret`).
 `GET/POST https://api.lx-software.com/v1/webhooks/meta/siutindei` and
 `GET/POST https://api.lx-software.com/v1/webhooks/meta` are the callback
-URLs. The old `/webhooks/meta/siutindei` and `/webhooks/meta` paths still
-answer. They are **non-JWT** routes: GET answers the verify
+URLs. They are **non-JWT** routes: GET answers the verify
 handshake (`SiutindeiBoardMetaVerifyToken`), POST checks
 `X-Hub-Signature-256`, stores the message (full text, plus a masked copy)
 and returns 200. Triage and media download run on `board_meta_after_ingest`,

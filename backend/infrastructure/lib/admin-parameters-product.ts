@@ -123,7 +123,7 @@ export function defineProductParameters(scope: cdk.Stack) {
     default: "",
     noEcho: true,
     description:
-      "Verify token Meta sends on GET /webhooks/meta/siutindei (hub.verify_token). Leave blank to keep the handshake rejected.",
+      "Verify token Meta sends on GET /v1/webhooks/meta/siutindei (hub.verify_token). Leave blank to keep the handshake rejected.",
   });
   const metaPageId = new cdk.CfnParameter(scope, "SiutindeiBoardMetaPageId", {
     type: "String",

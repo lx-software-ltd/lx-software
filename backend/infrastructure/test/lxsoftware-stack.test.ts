@@ -270,10 +270,6 @@ describe("HTTP API routes", () => {
     "GET /health",
     // Meta verify handshake + HMAC-signed webhook deliveries; the handler
     // validates hub.verify_token / X-Hub-Signature-256 itself.
-    "GET /webhooks/meta",
-    "POST /webhooks/meta",
-    "GET /webhooks/meta/siutindei",
-    "POST /webhooks/meta/siutindei",
     "GET /v1/webhooks/meta",
     "POST /v1/webhooks/meta",
     "GET /v1/webhooks/meta/siutindei",
@@ -479,7 +475,9 @@ describe("API custom domain", () => {
     expect(serialized).toContain('""');
 
     const api = Object.values(resourcesOfType("AWS::ApiGatewayV2::Api"))[0];
-    expect(api.Properties?.DisableExecuteApiEndpoint).toBeUndefined();
+    expect(api.Properties?.DisableExecuteApiEndpoint).toEqual({
+      "Fn::If": ["UseApiCustomDomain", true, false],
+    });
     const withBaseUrl = Object.values(resourcesOfType("AWS::Lambda::Function")).filter(
       (fn) => fn.Properties?.Environment?.Variables?.PUBLIC_API_BASE_URL !== undefined,
     );
@@ -497,27 +495,11 @@ describe("HTTP API stage throttling", () => {
     template.hasResourceProperties("AWS::ApiGatewayV2::Stage", {
       StageName: "$default",
       RouteSettings: Match.objectLike({
-        "POST /webhooks/meta": {
-          ThrottlingRateLimit: 10,
-          ThrottlingBurstLimit: 20,
-        },
-        "GET /webhooks/meta": {
-          ThrottlingRateLimit: 10,
-          ThrottlingBurstLimit: 20,
-        },
         "POST /v1/webhooks/meta": {
           ThrottlingRateLimit: 10,
           ThrottlingBurstLimit: 20,
         },
         "GET /v1/webhooks/meta": {
-          ThrottlingRateLimit: 10,
-          ThrottlingBurstLimit: 20,
-        },
-        "POST /webhooks/meta/siutindei": {
-          ThrottlingRateLimit: 10,
-          ThrottlingBurstLimit: 20,
-        },
-        "GET /webhooks/meta/siutindei": {
           ThrottlingRateLimit: 10,
           ThrottlingBurstLimit: 20,
         },
@@ -622,7 +604,7 @@ describe("HTTP API stage throttling", () => {
     const webhookRouteIds = Object.entries(resourcesOfType("AWS::ApiGatewayV2::Route"))
       .filter(([, r]) => String(r.Properties?.RouteKey).includes("/webhooks/meta"))
       .map(([id]) => id);
-    expect(webhookRouteIds).toHaveLength(8);
+    expect(webhookRouteIds).toHaveLength(4);
     const dependsOn = asArray<string>(stage.DependsOn);
     for (const id of webhookRouteIds) {
       expect(dependsOn).toContain(id);

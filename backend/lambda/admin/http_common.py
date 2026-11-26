@@ -129,10 +129,6 @@ def _route(event: dict[str, Any]) -> tuple[str, str]:
 
 
 # Links already sent keep these paths. Subscribe moved and has no old copy.
-_LEGACY_EXACT = {
-    "/webhooks/meta": "/v1/webhooks/meta",
-    "/webhooks/meta/siutindei": "/v1/webhooks/meta/siutindei",
-}
 _LEGACY_PREFIX = (
     ("/public/outreach/unsubscribe/", "/v1/public/outreach/unsubscribe/"),
     ("/public/newsletter/confirm/", "/v1/public/newsletter/confirm/"),
@@ -142,9 +138,6 @@ _LEGACY_PREFIX = (
 
 def legacy_http_path(path: str) -> str:
     """Map a route that stays forever onto the path the table matches."""
-    mapped = _LEGACY_EXACT.get(path)
-    if mapped:
-        return mapped
     for old, new in _LEGACY_PREFIX:
         if path.startswith(old):
             return new + path[len(old) :]

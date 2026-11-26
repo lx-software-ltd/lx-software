@@ -93,7 +93,7 @@ parameters use `noEcho: true`; S3 remains private behind CloudFront.
   `PublicApiWritesEnabled` stack parameter; owner-only routes stay JWT-only.
   Key management: [`../deployment/admin-website.md`](../deployment/admin-website.md)
   → "Public API keys".
-- Routes with **no authorizer**: `GET/POST https://api.lx-software.com/v1/webhooks/meta/siutindei` and `GET/POST https://api.lx-software.com/v1/webhooks/meta` (the old `/webhooks/meta/siutindei` and `/webhooks/meta` paths still answer) verified by the Meta verify token and
+- Routes with **no authorizer**: `GET/POST https://api.lx-software.com/v1/webhooks/meta/siutindei` and `GET/POST https://api.lx-software.com/v1/webhooks/meta` verified by the Meta verify token and
   `X-Hub-Signature-256`. The webhook stores the message text and returns
   before any model call. Persona tools and public-API keys without
   `siutindei-pii` read a sender alias, no display name or handle, and text
