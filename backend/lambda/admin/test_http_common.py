@@ -19,6 +19,7 @@ from http_common import (  # noqa: E402
     _parse_json_body,
     _read_http_error,
     bind_request_id,
+    request_id_scope,
 )
 
 
@@ -66,6 +67,44 @@ class ErrorBodyTests(unittest.TestCase):
         response = _json_response(404, {"message": "Not found"})
         self.assertNotIn("x-request-id", response["headers"])
         self.assertEqual(json.loads(response["body"])["code"], "not_found")
+
+    def test_a_second_invocation_does_not_report_the_first_request_id(self) -> None:
+        def invoke(event: dict) -> dict:
+            with request_id_scope(event):
+                return _json_response(404, {"message": "Not found"})
+
+        first = invoke({"requestContext": {"requestId": "req-first"}})
+        self.assertEqual(json.loads(first["body"])["request_id"], "req-first")
+        self.assertEqual(first["headers"]["x-request-id"], "req-first")
+        # A later read in this process, before the next bind, must not keep req-first.
+        between = _json_response(500, {"message": "later"})
+        self.assertNotIn("req-first", between["body"])
+        self.assertNotIn("x-request-id", between["headers"])
+        second = invoke({})
+        body = json.loads(second["body"])
+        self.assertEqual(body["request_id"], "")
+        self.assertNotIn("req-first", second["body"])
+        self.assertNotIn("x-request-id", second["headers"])
+
+    def test_a_conflicting_code_or_status_is_replaced_by_the_problem_value(self) -> None:
+        # No handler error body sets these today. A provider number or a
+        # record status must not stay in the problem members.
+        response = _json_response(
+            400,
+            {"message": "Bad request", "reason": "field", "code": 190, "status": "APPROVED"},
+        )
+        body = json.loads(response["body"])
+        self.assertEqual(body["message"], "Bad request")
+        self.assertEqual(body["reason"], "field")
+        self.assertEqual(body["code"], "invalid_request")
+        self.assertEqual(body["status"], 400)
+
+    def test_an_existing_problem_code_and_status_are_kept(self) -> None:
+        response = _json_response(400, {"message": "Bad request", "code": "invalid_request", "status": 400})
+        body = json.loads(response["body"])
+        self.assertEqual(body["code"], "invalid_request")
+        self.assertEqual(body["status"], 400)
+        self.assertEqual(body["message"], "Bad request")
 
 
 class _UnreadableHTTPError(urllib.error.HTTPError):

@@ -13,3 +13,4 @@ before any write. The zone map is [`docs/architecture/zones.md`](../architecture
 | [`2026-11-25-code-scanning-alerts.md`](2026-11-25-code-scanning-alerts.md) | Clear the open Semgrep alerts on usage-pull logs and fixed HTTPS clients |
 | [`2026-11-26-semgrep-category.md`](2026-11-26-semgrep-category.md) | Upload Semgrep to the category the open alerts already use |
 | [`api-standard.md`](api-standard.md) | One API shape: `/v1/<audience>/`, bearer tokens, snake_case on the wire |
+| [`2026-11-26-request-id-problem-code.md`](2026-11-26-request-id-problem-code.md) | Reset the request id per invocation and keep only a matching problem code |

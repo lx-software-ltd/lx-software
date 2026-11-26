@@ -92,8 +92,8 @@ from http_common import (
     _require_admin,
     _route,
     _utc_iso_z,
-    bind_request_id,
     not_found,
+    request_id_scope,
 )
 from openrouter_usage import USAGE_PK_PREFIX, handle_usage_get
 from parse_jobs import (
@@ -1331,16 +1331,16 @@ def _dispatch_http(event):
 
 
 def lambda_handler(event, context):
-    if isinstance(event, dict):
-        early = EARLY_INTERNAL.get(event.get("internal"))
-        if early is not None:
-            return early(event)
-    sqs = _handle_sqs_batch(event)
-    if sqs is not None:
-        return sqs
-    if isinstance(event, dict):
-        late = LATE_INTERNAL.get(event.get("internal"))
-        if late is not None:
-            return late(event)
-    bind_request_id(event)
-    return _dispatch_http(event)
+    with request_id_scope(event):
+        if isinstance(event, dict):
+            early = EARLY_INTERNAL.get(event.get("internal"))
+            if early is not None:
+                return early(event)
+        sqs = _handle_sqs_batch(event)
+        if sqs is not None:
+            return sqs
+        if isinstance(event, dict):
+            late = LATE_INTERNAL.get(event.get("internal"))
+            if late is not None:
+                return late(event)
+        return _dispatch_http(event)
