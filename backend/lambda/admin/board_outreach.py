@@ -24,7 +24,7 @@ import boto3
 from contract_constants import (
     BOARD_STAFF_OUTREACH_MAX_TOUCHES,
 )
-from http_common import _log_event, html_headers
+from http_common import _log_event, html_headers, plain_headers
 
 CONFIG_SET = "lxsoftware-admin-siutindei-outreach"
 REPLY_TO_LOCAL = "partnerships"
@@ -523,7 +523,7 @@ def handle_unsubscribe(event: dict[str, Any], method: str, token: str) -> dict[s
     if _rate_limited(table, ip):
         if method == "GET":
             return _html_response(429, "<!doctype html><html><body><p>Too many requests.</p></body></html>")
-        return {"statusCode": 429, "headers": {"content-type": "text/plain"}, "body": ""}
+        return {"statusCode": 429, "headers": plain_headers(), "body": ""}
     try:
         pid = parse_unsub_token(token)
     except OutreachError:
@@ -531,12 +531,12 @@ def handle_unsubscribe(event: dict[str, Any], method: str, token: str) -> dict[s
     if not pid:
         if method == "GET":
             return _html_response(400, "<!doctype html><html><body><p>This unsubscribe link is not valid.</p></body></html>")
-        return {"statusCode": 400, "headers": {"content-type": "text/plain"}, "body": ""}
+        return {"statusCode": 400, "headers": plain_headers(), "body": ""}
     prospect = board_store.get_prospect(table, pid)
     email = str((prospect or {}).get("contact") or (prospect or {}).get("email") or "")
     suppress(table, email=email, prospect=prospect, reason="unsubscribe")
     if method == "POST":
-        return {"statusCode": 200, "headers": {"content-type": "text/plain"}, "body": ""}
+        return {"statusCode": 200, "headers": plain_headers(), "body": ""}
     return _html_response(
         200,
         "<!doctype html><html><body><p>You will not hear from us again.</p></body></html>",

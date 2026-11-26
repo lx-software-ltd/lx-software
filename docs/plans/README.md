@@ -14,3 +14,4 @@ before any write. The zone map is [`docs/architecture/zones.md`](../architecture
 | [`2026-11-26-semgrep-category.md`](2026-11-26-semgrep-category.md) | Upload Semgrep to the category the open alerts already use |
 | [`api-standard.md`](api-standard.md) | One API shape: `/v1/<audience>/`, bearer tokens, snake_case on the wire |
 | [`2026-11-26-request-id-problem-code.md`](2026-11-26-request-id-problem-code.md) | Reset the request id per invocation and keep only a matching problem code |
+| [`2026-11-26-request-id-on-plain-text.md`](2026-11-26-request-id-on-plain-text.md) | Put the request id on newsletter, outreach, and Meta plain-text responses |
