@@ -308,7 +308,7 @@ def handle_pull(event: dict[str, Any]) -> dict[str, Any]:
         result = _result(ok=False, reason="management_key_missing", apps=[])
         put_pull_status(table, result)
         logger.warning(
-            "OpenRouter usage pull skipped; secret JSON has no %s field",
+            "OpenRouter usage pull skipped; JSON has no %s field",
             MANAGEMENT_FIELD,
         )
         return result

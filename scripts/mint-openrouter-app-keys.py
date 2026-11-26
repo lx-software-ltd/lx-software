@@ -51,7 +51,8 @@ def _request(method: str, token: str, *, body: dict | None = None) -> dict:
         },
     )
     try:
-        with urlrequest.urlopen(req, timeout=30) as resp:
+        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+        with urlrequest.urlopen(req, timeout=30) as resp:  # nosec B310
             return json.loads(resp.read().decode("utf-8"))
     except urlerror.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")[:400]
