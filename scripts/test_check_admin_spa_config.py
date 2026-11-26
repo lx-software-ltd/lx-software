@@ -10,7 +10,9 @@ import unittest
 import urllib.error
 import urllib.request
 from contextlib import redirect_stderr, redirect_stdout
+from http.client import HTTPResponse
 from pathlib import Path
+from typing import cast
 from unittest.mock import patch
 
 _PATH = Path(__file__).resolve().parent / "check_admin_spa_config.py"
@@ -71,10 +73,10 @@ class CheckAdminSpaConfigTest(unittest.TestCase):
 
     def test_http_redirect_is_refused_without_a_network(self) -> None:
         class _ToHttp(urllib.request.HTTPSHandler):
-            def https_open(self, _req: urllib.request.Request) -> _Resp:
+            def https_open(self, _req: urllib.request.Request) -> HTTPResponse:
                 headers = email.message.Message()
                 headers["Location"] = "http://evil.example/config.json"
-                return _Resp(302, headers)
+                return cast(HTTPResponse, _Resp(302, headers))
 
         def opener() -> urllib.request.OpenerDirector:
             return urllib.request.build_opener(check._HttpsOnlyRedirect, _ToHttp)
@@ -86,9 +88,12 @@ class CheckAdminSpaConfigTest(unittest.TestCase):
 
     def test_oversized_body_is_refused_without_a_network(self) -> None:
         class _Huge(urllib.request.HTTPSHandler):
-            def https_open(self, _req: urllib.request.Request) -> _Resp:
+            def https_open(self, _req: urllib.request.Request) -> HTTPResponse:
                 headers = email.message.Message()
-                return _Resp(200, headers, b"{" + b"x" * (check._MAX_CONFIG_BYTES + 1))
+                return cast(
+                    HTTPResponse,
+                    _Resp(200, headers, b"{" + b"x" * (check._MAX_CONFIG_BYTES + 1)),
+                )
 
         def opener() -> urllib.request.OpenerDirector:
             return urllib.request.build_opener(check._HttpsOnlyRedirect, _Huge)
