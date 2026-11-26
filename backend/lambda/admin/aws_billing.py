@@ -311,11 +311,14 @@ def pdf_filename(from_day: str) -> str:
 
 
 def _pdf_response(data: bytes, filename: str) -> dict[str, Any]:
+    from http_common import request_id_headers
+
     return {
         "statusCode": 200,
         "headers": {
             "Content-Type": "application/pdf",
             "Content-Disposition": f'attachment; filename="{filename}"',
+            **request_id_headers(),
         },
         "isBase64Encoded": True,
         "body": base64.b64encode(data).decode("ascii"),

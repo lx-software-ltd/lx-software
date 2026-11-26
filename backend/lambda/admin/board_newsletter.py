@@ -16,7 +16,7 @@ import board_pii
 import board_staff
 import board_store
 from contract_constants import BOARD_STAFF_NEWSLETTER_LISTS
-from http_common import _json_response, _log_event, _parse_json_body
+from http_common import _json_response, _log_event, _parse_json_body, html_headers, plain_headers
 
 LISTS = tuple(BOARD_STAFF_NEWSLETTER_LISTS)
 BATCH = 50
@@ -36,7 +36,7 @@ def from_address() -> str:
 def _html_response(status: int, body: str) -> dict[str, Any]:
     return {
         "statusCode": status,
-        "headers": {"content-type": "text/html; charset=utf-8"},
+        "headers": html_headers(),
         "body": body,
     }
 
@@ -191,12 +191,12 @@ def handle_unsubscribe(event: dict[str, Any], method: str, token: str) -> dict[s
     ip = str(http.get("sourceIp") or "0.0.0.0")  # nosec B104
     if _rate_limited(table, ip, "nl-unsub-ip"):
         if method == "POST":
-            return {"statusCode": 429, "headers": {"content-type": "text/plain"}, "body": ""}
+            return {"statusCode": 429, "headers": plain_headers(), "body": ""}
         return _html_response(429, "<!doctype html><html><body><p>Too many requests.</p></body></html>")
     parsed = parse_token(token)
     if not parsed or parsed[0] != "u":
         if method == "POST":
-            return {"statusCode": 400, "headers": {"content-type": "text/plain"}, "body": ""}
+            return {"statusCode": 400, "headers": plain_headers(), "body": ""}
         return _html_response(400, "<!doctype html><html><body><p>This unsubscribe link is not valid.</p></body></html>")
     _, list_name, digest = parsed
     row = _sub_row(board_store.get_newsletter_sub(table, digest, list_name))
@@ -206,7 +206,7 @@ def handle_unsubscribe(event: dict[str, Any], method: str, token: str) -> dict[s
         row["updatedAt"] = now
         board_store.put_newsletter_sub(table, digest, list_name or str(row.get("list") or "parents"), row)
     if method == "POST":
-        return {"statusCode": 200, "headers": {"content-type": "text/plain"}, "body": ""}
+        return {"statusCode": 200, "headers": plain_headers(), "body": ""}
     return _html_response(200, "<!doctype html><html><body><p>You are unsubscribed.</p></body></html>")
 
 

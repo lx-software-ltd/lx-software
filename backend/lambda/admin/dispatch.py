@@ -93,6 +93,7 @@ from http_common import (
     _route,
     _utc_iso_z,
     not_found,
+    request_id_scope,
 )
 from openrouter_usage import USAGE_PK_PREFIX, handle_usage_get
 from parse_jobs import (
@@ -121,7 +122,6 @@ PUBLIC_READ_PATHS = frozenset(
     }
 )
 PUBLIC_BOARD_PREFIX = "/public/siu-tin-dei/board"
-
 
 def _is_public_path(path: str) -> bool:
     if path in PUBLIC_READ_PATHS or board_public_api_mod.path_class(path) == board_public_api_mod.SCOPE_LINKEDIN:
@@ -1297,7 +1297,6 @@ HTTP_ROUTES = [
     Route('POST', '/parse-statement', _http_finance_parse_post, 'admin', kind='custom', match=_match_finance_parse_post),
 ]
 
-
 def _dispatch_http(event):
     method, path = _route(event)
     for route in HTTP_ROUTES:
@@ -1332,15 +1331,16 @@ def _dispatch_http(event):
 
 
 def lambda_handler(event, context):
-    if isinstance(event, dict):
-        early = EARLY_INTERNAL.get(event.get("internal"))
-        if early is not None:
-            return early(event)
-    sqs = _handle_sqs_batch(event)
-    if sqs is not None:
-        return sqs
-    if isinstance(event, dict):
-        late = LATE_INTERNAL.get(event.get("internal"))
-        if late is not None:
-            return late(event)
-    return _dispatch_http(event)
+    with request_id_scope(event):
+        if isinstance(event, dict):
+            early = EARLY_INTERNAL.get(event.get("internal"))
+            if early is not None:
+                return early(event)
+        sqs = _handle_sqs_batch(event)
+        if sqs is not None:
+            return sqs
+        if isinstance(event, dict):
+            late = LATE_INTERNAL.get(event.get("internal"))
+            if late is not None:
+                return late(event)
+        return _dispatch_http(event)
