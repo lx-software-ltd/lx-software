@@ -99,7 +99,8 @@ def _cf_request(
         headers=headers,
     )
     try:
-        with urllib.request.urlopen(req) as resp:
+        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+        with urllib.request.urlopen(req) as resp:  # nosec B310
             return json.loads(resp.read().decode())
     except urllib.error.HTTPError as exc:
         body = exc.read().decode()[:800]

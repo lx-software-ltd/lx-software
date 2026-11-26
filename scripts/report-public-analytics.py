@@ -106,8 +106,12 @@ class Api:
         req.add_header("Accept", "application/json")
         if data is not None:
             req.add_header("Content-Type", "application/json")
+        target = urllib.parse.urlparse(url)
+        if target.scheme != "https" or not target.hostname:
+            raise ApiError(0, "only https URLs are requested", url)
         try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+            with urllib.request.urlopen(req, timeout=60) as resp:  # nosec B310
                 raw = resp.read()
         except urllib.error.HTTPError as e:
             raw = e.read()
