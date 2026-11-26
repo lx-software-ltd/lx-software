@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Fail when docs/api and the admin route table disagree.
+"""Fail when docs/api and the admin route contract disagree.
 
-A line reader. No YAML package. Paths are the keys indented two spaces.
-Methods are the keys indented four spaces.
+The contract is the ROUTES array in admin-api-routes.ts. The stack deploys
+routesForStage(ROUTE_STAGE), which is a subset until the last stage, so this
+check does not read the synthesized template. A line reader. No YAML package.
+Paths are the keys indented two spaces. Methods are the keys indented four
+spaces.
 """
 
 from __future__ import annotations
@@ -37,8 +40,15 @@ def documented() -> set[tuple[str, str]]:
 
 
 def declared() -> set[tuple[str, str]]:
+    text = ROUTES.read_text(encoding="utf-8")
+    start = text.find("export const ROUTES")
+    if start < 0:
+        return set()
+    body = text[start:]
+    end = body.find("\n];")
+    chunk = body if end < 0 else body[:end]
     found: set[tuple[str, str]] = set()
-    for path, methods in ROUTE.findall(ROUTES.read_text(encoding="utf-8")):
+    for path, methods in ROUTE.findall(chunk):
         for method in METHOD_NAME.findall(methods):
             found.add((path, method))
     return found

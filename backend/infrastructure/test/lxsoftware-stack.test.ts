@@ -9,6 +9,8 @@ import {
   API_CUSTOM_CERTIFICATE_DISABLED,
   API_CUSTOM_DOMAIN_DISABLED,
 } from "../lib/admin-api-domain";
+import { ROUTES } from "../lib/admin-api-routes";
+import { ROUTE_STAGE, routeMethodKeys, routesForStage } from "../lib/admin-api-route-stage";
 import {
   COGNITO_CUSTOM_CERTIFICATE_DISABLED,
   COGNITO_CUSTOM_DOMAIN_DISABLED,
@@ -266,6 +268,29 @@ function findPoliciesByConstructId(constructId: string): CfnResource[] {
 }
 
 describe("HTTP API routes", () => {
+  // docs/api is checked against the ROUTES contract, not this template.
+  // The stack deploys routesForStage(ROUTE_STAGE) so a deploy stays under
+  // the 300-route API Gateway quota.
+  function contractAuth(key: string): string | undefined {
+    const method = key.slice(0, key.indexOf(" "));
+    const path = key.slice(key.indexOf(" ") + 1);
+    return ROUTES.find(
+      (route) => route.path === path && (route.methods as readonly string[]).includes(method),
+    )?.auth;
+  }
+
+  function deployedRoutes(): CfnResource[] {
+    return Object.values(resourcesOfType("AWS::ApiGatewayV2::Route"));
+  }
+
+  function expectJwt(key: string): void {
+    expect(contractAuth(key)).toBe("jwt");
+    const route = deployedRoutes().find((row) => row.Properties?.RouteKey === key);
+    if (!route) return;
+    expect(route.Properties?.AuthorizationType).toBe("JWT");
+    expect(route.Properties?.AuthorizerId).toBeDefined();
+  }
+
   const publicRouteKeys = new Set([
     "GET /health",
     // Meta verify handshake + HMAC-signed webhook deliveries; the handler
@@ -289,8 +314,65 @@ describe("HTTP API routes", () => {
     "POST /v1/public/newsletter/unsubscribe/{token}",
   ]);
 
+  test("the route contract leaves health, webhooks, and email links unauthenticated", () => {
+    const contractNone = routeMethodKeys(ROUTES.filter((route) => route.auth === "none")).sort();
+    expect(contractNone).toEqual([...publicRouteKeys].sort());
+  });
+
+  test("the stack deploys the current stage and parents the integration on GET /health", () => {
+    const stage = routesForStage(ROUTE_STAGE);
+    expect(stage[0]).toMatchObject({ path: "/health", methods: ["GET"] });
+    const routes = deployedRoutes();
+    const templateKeys = routes.map((route) => String(route.Properties?.RouteKey)).sort();
+    const stageKeys = routeMethodKeys(stage).sort();
+    expect(templateKeys).toEqual(stageKeys);
+
+    const byKey = new Map(routes.map((route) => [String(route.Properties?.RouteKey), route]));
+    for (const route of stage) {
+      for (const method of route.methods) {
+        const key = `${method} ${route.path}`;
+        const deployed = byKey.get(key);
+        expect(deployed).toBeDefined();
+        const authType = deployed?.Properties?.AuthorizationType;
+        if (route.auth === "none") {
+          expect(authType === undefined || authType === "NONE").toBe(true);
+        } else if (route.auth === "jwt") {
+          expect(authType).toBe("JWT");
+          expect(deployed?.Properties?.AuthorizerId).toBeDefined();
+        } else {
+          expect(authType).toBe("CUSTOM");
+          expect(deployed?.Properties?.AuthorizerId).toBeDefined();
+        }
+      }
+    }
+
+    const [, stageResource] = Object.entries(resourcesOfType("AWS::ApiGatewayV2::Stage")).find(
+      ([, resource]) => resource.Properties?.StageName === "$default",
+    )!;
+    const settings = (stageResource.Properties?.RouteSettings ?? {}) as Record<
+      string,
+      { ThrottlingRateLimit: number; ThrottlingBurstLimit: number }
+    >;
+    for (const route of stage) {
+      for (const method of route.methods) {
+        const key = `${method} ${route.path}`;
+        if (route.throttle) {
+          expect(settings[key]).toEqual(route.throttle);
+        } else {
+          expect(settings[key]).toBeUndefined();
+        }
+      }
+    }
+
+    const integrationIds = Object.keys(resourcesOfType("AWS::ApiGatewayV2::Integration"));
+    expect(integrationIds).toEqual([expect.stringMatching(/^HttpApiGEThealth/)]);
+  });
+
   test("only the health check and Meta webhook routes lack an authorizer", () => {
-    const routes = Object.values(resourcesOfType("AWS::ApiGatewayV2::Route"));
+    const stageNone = new Set(
+      routeMethodKeys(routesForStage(ROUTE_STAGE).filter((route) => route.auth === "none")),
+    );
+    const routes = deployedRoutes();
     expect(routes.length).toBeGreaterThan(50);
 
     const unauthenticated = routes
@@ -301,28 +383,29 @@ describe("HTTP API routes", () => {
       .map((r) => r.Properties?.RouteKey as string)
       .sort();
 
-    expect(unauthenticated).toEqual([...publicRouteKeys].sort());
+    expect(unauthenticated).toEqual([...stageNone].sort());
   });
 
   test("every other route uses a JWT or Lambda (CUSTOM) authorizer with an authorizer id", () => {
-    const routes = Object.values(resourcesOfType("AWS::ApiGatewayV2::Route"));
+    const stageNone = new Set(
+      routeMethodKeys(routesForStage(ROUTE_STAGE).filter((route) => route.auth === "none")),
+    );
+    const routes = deployedRoutes();
     for (const route of routes) {
       const key = route.Properties?.RouteKey as string;
-      if (publicRouteKeys.has(key)) continue;
+      if (stageNone.has(key)) continue;
       expect(["JWT", "CUSTOM"]).toContain(route.Properties?.AuthorizationType);
       expect(route.Properties?.AuthorizerId).toBeDefined();
     }
   });
 
   test("partner finance mirrors are GET-only; the board proxy accepts writes", () => {
-    const routes = Object.values(resourcesOfType("AWS::ApiGatewayV2::Route"));
-    const publicMirrors = routes.filter((r) => {
-      const key = String(r.Properties?.RouteKey);
-      return key.includes(" /v1/partner/");
-    });
-    expect(publicMirrors.length).toBeGreaterThan(0);
-    const keys = publicMirrors.map((r) => String(r.Properties?.RouteKey));
-    expect(keys).toEqual(
+    // Product rules live on the ROUTES contract. The gateway gains the
+    // /v1/partner copies in a later stage; the legacy board stays throughout.
+    const contractKeys = routeMethodKeys(
+      ROUTES.filter((route) => route.path.includes("/v1/partner/")),
+    );
+    expect(contractKeys).toEqual(
       expect.arrayContaining([
         "GET /v1/partner/lx-software/linkedin/posts",
         "POST /v1/partner/lx-software/linkedin/posts",
@@ -334,22 +417,10 @@ describe("HTTP API routes", () => {
         "PUT /v1/partner/siutindei/board/{proxy+}",
         "POST /v1/partner/siutindei/board/{proxy+}",
         "DELETE /v1/partner/siutindei/board/{proxy+}",
-      ])
+      ]),
     );
-    const boardProxyWrites = keys
-      .filter(
-        (key) =>
-          key.includes("/v1/partner/siutindei/board/{proxy+}") && !key.startsWith("GET ")
-      )
-      .sort();
-    expect(boardProxyWrites).toEqual([
-      "DELETE /v1/partner/siutindei/board/{proxy+}",
-      "POST /v1/partner/siutindei/board/{proxy+}",
-      "PUT /v1/partner/siutindei/board/{proxy+}",
-    ]);
-    for (const route of publicMirrors) {
-      const key = String(route.Properties?.RouteKey);
-      expect(route.Properties?.AuthorizationType).toBe("CUSTOM");
+    for (const key of contractKeys) {
+      expect(contractAuth(key)).toBe("apiKey");
       const linkedinWrite =
         key === "POST /v1/partner/lx-software/linkedin/posts" ||
         key === "PUT /v1/partner/lx-software/linkedin/posts/{id}" ||
@@ -358,22 +429,34 @@ describe("HTTP API routes", () => {
         expect(key).toMatch(/^GET /);
       }
     }
+    const routes = deployedRoutes();
+    const legacyBoard = routes.filter((route) =>
+      String(route.Properties?.RouteKey).includes("/public/siu-tin-dei/board"),
+    );
+    expect(legacyBoard).toEqual([]);
+    for (const route of routes) {
+      const key = String(route.Properties?.RouteKey);
+      if (key.includes(" /v1/partner/")) {
+        expect(route.Properties?.AuthorizationType).toBe("CUSTOM");
+      }
+      const readMirror =
+        key.includes("/finance") || key.includes("/records") || key.includes("/fx/");
+      if (readMirror && key.includes("/v1/partner/")) {
+        expect(key).toMatch(/^GET /);
+      }
+    }
   });
 
   test("LinkedIn analytics connect and disconnect are JWT-protected", () => {
-    const routes = Object.values(resourcesOfType("AWS::ApiGatewayV2::Route"));
     for (const key of [
       "POST /v1/admin/lx-software/linkedin/analytics/connect",
       "POST /v1/admin/lx-software/linkedin/analytics/disconnect",
     ]) {
-      const route = routes.find((row) => row.Properties?.RouteKey === key);
-      expect(route?.Properties?.AuthorizationType).toBe("JWT");
-      expect(route?.Properties?.AuthorizerId).toBeDefined();
+      expectJwt(key);
     }
   });
 
   test("LinkedIn picture and character routes are JWT-protected", () => {
-    const routes = Object.values(resourcesOfType("AWS::ApiGatewayV2::Route"));
     const keys = [
       "GET /v1/admin/lx-software/linkedin/posts/{id}/image",
       "POST /v1/admin/lx-software/linkedin/posts/{id}/image",
@@ -390,13 +473,11 @@ describe("HTTP API routes", () => {
       "POST /v1/admin/lx-software/linkedin/character/choose",
     ];
     for (const key of keys) {
-      const route = routes.find((row) => row.Properties?.RouteKey === key);
-      expect(route?.Properties?.AuthorizationType).toBe("JWT");
+      expectJwt(key);
     }
   });
 
   test("Resume routes are JWT-protected", () => {
-    const routes = Object.values(resourcesOfType("AWS::ApiGatewayV2::Route"));
     const keys = [
       "GET /v1/admin/lx-software/resume/overview",
       "GET /v1/admin/lx-software/resume/settings",
@@ -419,8 +500,7 @@ describe("HTTP API routes", () => {
       "GET /v1/admin/lx-software/resume/jobs/{job_id}",
     ];
     for (const key of keys) {
-      const route = routes.find((row) => row.Properties?.RouteKey === key);
-      expect(route?.Properties?.AuthorizationType).toBe("JWT");
+      expectJwt(key);
     }
   });
 
@@ -491,28 +571,37 @@ describe("API custom domain", () => {
 });
 
 describe("HTTP API stage throttling", () => {
+  function contractThrottle(key: string): { ThrottlingRateLimit: number; ThrottlingBurstLimit: number } | undefined {
+    const method = key.slice(0, key.indexOf(" "));
+    const path = key.slice(key.indexOf(" ") + 1);
+    return ROUTES.find(
+      (route) => route.path === path && (route.methods as readonly string[]).includes(method),
+    )?.throttle;
+  }
+
+  function expectThrottle(
+    key: string,
+    limits: { ThrottlingRateLimit: number; ThrottlingBurstLimit: number },
+  ): void {
+    expect(contractThrottle(key)).toEqual(limits);
+    const deployed = new Set(routeMethodKeys(routesForStage(ROUTE_STAGE)));
+    if (!deployed.has(key)) return;
+    const stage = Object.values(resourcesOfType("AWS::ApiGatewayV2::Stage")).find(
+      (resource) => resource.Properties?.StageName === "$default",
+    );
+    expect(stage?.Properties?.RouteSettings?.[key]).toEqual(limits);
+  }
+
   test("the Meta webhook routes are throttled independently of the stage default", () => {
-    template.hasResourceProperties("AWS::ApiGatewayV2::Stage", {
-      StageName: "$default",
-      RouteSettings: Match.objectLike({
-        "POST /v1/webhooks/meta": {
-          ThrottlingRateLimit: 10,
-          ThrottlingBurstLimit: 20,
-        },
-        "GET /v1/webhooks/meta": {
-          ThrottlingRateLimit: 10,
-          ThrottlingBurstLimit: 20,
-        },
-        "POST /v1/webhooks/meta/siutindei": {
-          ThrottlingRateLimit: 10,
-          ThrottlingBurstLimit: 20,
-        },
-        "GET /v1/webhooks/meta/siutindei": {
-          ThrottlingRateLimit: 10,
-          ThrottlingBurstLimit: 20,
-        },
-      }),
-    });
+    const limits = { ThrottlingRateLimit: 10, ThrottlingBurstLimit: 20 };
+    for (const key of [
+      "POST /v1/webhooks/meta",
+      "GET /v1/webhooks/meta",
+      "POST /v1/webhooks/meta/siutindei",
+      "GET /v1/webhooks/meta/siutindei",
+    ]) {
+      expectThrottle(key, limits);
+    }
   });
 
   test("the stage has a conservative default throttle", () => {
@@ -526,51 +615,26 @@ describe("HTTP API stage throttling", () => {
   });
 
   test("public API-key routes are throttled tighter than the stage default", () => {
-    template.hasResourceProperties("AWS::ApiGatewayV2::Stage", {
-      StageName: "$default",
-      RouteSettings: Match.objectLike({
-        "GET /v1/partner/finance": {
-          ThrottlingRateLimit: 2,
-          ThrottlingBurstLimit: 10,
-        },
-        "GET /v1/partner/lx-software/linkedin/posts": {
-          ThrottlingRateLimit: 2,
-          ThrottlingBurstLimit: 10,
-        },
-        "POST /v1/partner/lx-software/linkedin/posts": {
-          ThrottlingRateLimit: 1,
-          ThrottlingBurstLimit: 5,
-        },
-        "GET /v1/partner/lx-software/linkedin/posts/{id}": {
-          ThrottlingRateLimit: 2,
-          ThrottlingBurstLimit: 10,
-        },
-        "PUT /v1/partner/lx-software/linkedin/posts/{id}": {
-          ThrottlingRateLimit: 1,
-          ThrottlingBurstLimit: 5,
-        },
-        "DELETE /v1/partner/lx-software/linkedin/posts/{id}": {
-          ThrottlingRateLimit: 1,
-          ThrottlingBurstLimit: 5,
-        },
-        "GET /v1/partner/siutindei/board/{proxy+}": {
-          ThrottlingRateLimit: 2,
-          ThrottlingBurstLimit: 10,
-        },
-        "POST /v1/partner/siutindei/board/{proxy+}": {
-          ThrottlingRateLimit: 1,
-          ThrottlingBurstLimit: 5,
-        },
-        "PUT /v1/partner/siutindei/board/{proxy+}": {
-          ThrottlingRateLimit: 1,
-          ThrottlingBurstLimit: 5,
-        },
-        "DELETE /v1/partner/siutindei/board/{proxy+}": {
-          ThrottlingRateLimit: 1,
-          ThrottlingBurstLimit: 5,
-        },
-      }),
-    });
+    const read = { ThrottlingRateLimit: 2, ThrottlingBurstLimit: 10 };
+    const write = { ThrottlingRateLimit: 1, ThrottlingBurstLimit: 5 };
+    for (const key of [
+      "GET /v1/partner/finance",
+      "GET /v1/partner/lx-software/linkedin/posts",
+      "GET /v1/partner/lx-software/linkedin/posts/{id}",
+      "GET /v1/partner/siutindei/board/{proxy+}",
+    ]) {
+      expectThrottle(key, read);
+    }
+    for (const key of [
+      "POST /v1/partner/lx-software/linkedin/posts",
+      "PUT /v1/partner/lx-software/linkedin/posts/{id}",
+      "DELETE /v1/partner/lx-software/linkedin/posts/{id}",
+      "POST /v1/partner/siutindei/board/{proxy+}",
+      "PUT /v1/partner/siutindei/board/{proxy+}",
+      "DELETE /v1/partner/siutindei/board/{proxy+}",
+    ]) {
+      expectThrottle(key, write);
+    }
   });
 
   test("public API-key authorizer caches on key + a supported source-IP context variable", () => {
@@ -604,7 +668,14 @@ describe("HTTP API stage throttling", () => {
     const webhookRouteIds = Object.entries(resourcesOfType("AWS::ApiGatewayV2::Route"))
       .filter(([, r]) => String(r.Properties?.RouteKey).includes("/webhooks/meta"))
       .map(([id]) => id);
-    expect(webhookRouteIds).toHaveLength(4);
+    const deployedWebhooks = routeMethodKeys(routesForStage(ROUTE_STAGE)).filter((key) =>
+      key.includes("/webhooks/meta"),
+    );
+    expect(webhookRouteIds).toHaveLength(deployedWebhooks.length);
+    expect(deployedWebhooks).toHaveLength(4);
+    expect(
+      routeMethodKeys(ROUTES).filter((key) => key.includes("/webhooks/meta")),
+    ).toHaveLength(4);
     const dependsOn = asArray<string>(stage.DependsOn);
     for (const id of webhookRouteIds) {
       expect(dependsOn).toContain(id);

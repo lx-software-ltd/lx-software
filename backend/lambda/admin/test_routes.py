@@ -71,6 +71,43 @@ class RouteTableTests(unittest.TestCase):
         self.assertEqual(http_audience("/health")[0], "none")
         self.assertEqual(http_audience("/v1/admin/finance"), ("admin", "/finance"))
 
+    def test_only_the_forever_keepers_are_rewritten(self) -> None:
+        keepers = {
+            "/public/outreach/unsubscribe/tok": ("public", "/v1/public/outreach/unsubscribe/tok"),
+            "/public/newsletter/confirm/tok": ("public", "/v1/public/newsletter/confirm/tok"),
+            "/public/newsletter/unsubscribe/tok": ("public", "/v1/public/newsletter/unsubscribe/tok"),
+        }
+        for path, expected in keepers.items():
+            self.assertEqual(http_audience(path), expected, path)
+        removed = (
+            "/me",
+            "/finance",
+            "/finance/quotes",
+            "/aws/usage.pdf",
+            "/aws/usage",
+            "/fx/v2/rates",
+            "/siu-tin-dei",
+            "/siu-tin-dei/board/actions",
+            "/evolve-sprouts",
+            "/evolve-sprouts/summary",
+            "/lx-software",
+            "/lx-software/linkedin",
+            "/lx-software/resume/overview",
+            "/public/finance",
+            "/public/finance/quotes",
+            "/public/records",
+            "/public/fx/v2/rates",
+            "/public/lx-software/linkedin/posts",
+            "/public/newsletter/subscribe",
+            "/public/siu-tin-dei/boardroom",
+            "/webhooks/meta",
+            "/webhooks/meta/siutindei",
+            "/public/siu-tin-dei/board",
+            "/public/siu-tin-dei/board/actions/a1",
+        )
+        for path in removed:
+            self.assertEqual(http_audience(path), ("unknown", path), path)
+
     def test_internal_workers_from_handler_tests_are_registered(self) -> None:
         self.assertIn("parse_statement_async", EARLY_INTERNAL)
         self.assertIn("resume_extract", EARLY_INTERNAL)

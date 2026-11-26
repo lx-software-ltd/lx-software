@@ -24,8 +24,10 @@ export interface AdminApiRoute {
 }
 
 /**
- * Every HTTP API route. Order matches the historical addRoutes calls so the
- * shared Lambda integration stays parented under GET /health.
+ * Every HTTP API route. This is the contract. The stack deploys
+ * routesForStage(ROUTE_STAGE) until the last stage, which equals this list.
+ * Order matches the historical addRoutes calls so the shared Lambda
+ * integration stays parented under GET /health.
  * /v1/admin/siutindei/board and /v1/partner/siutindei/board stay individual routes (not one {proxy+}).
  */
 export const ROUTES: readonly AdminApiRoute[] = [
