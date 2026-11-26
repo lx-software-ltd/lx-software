@@ -73,13 +73,9 @@ class RouteTableTests(unittest.TestCase):
 
     def test_only_the_forever_keepers_are_rewritten(self) -> None:
         keepers = {
-            "/webhooks/meta": ("webhooks", "/webhooks/meta"),
-            "/webhooks/meta/siutindei": ("webhooks", "/webhooks/meta/siutindei"),
             "/public/outreach/unsubscribe/tok": ("public", "/v1/public/outreach/unsubscribe/tok"),
             "/public/newsletter/confirm/tok": ("public", "/v1/public/newsletter/confirm/tok"),
             "/public/newsletter/unsubscribe/tok": ("public", "/v1/public/newsletter/unsubscribe/tok"),
-            "/public/siu-tin-dei/board": ("partner", "/v1/partner/siutindei/board"),
-            "/public/siu-tin-dei/board/actions/a1": ("partner", "/v1/partner/siutindei/board/actions/a1"),
         }
         for path, expected in keepers.items():
             self.assertEqual(http_audience(path), expected, path)
@@ -104,6 +100,10 @@ class RouteTableTests(unittest.TestCase):
             "/public/lx-software/linkedin/posts",
             "/public/newsletter/subscribe",
             "/public/siu-tin-dei/boardroom",
+            "/webhooks/meta",
+            "/webhooks/meta/siutindei",
+            "/public/siu-tin-dei/board",
+            "/public/siu-tin-dei/board/actions/a1",
         )
         for path in removed:
             self.assertEqual(http_audience(path), ("unknown", path), path)

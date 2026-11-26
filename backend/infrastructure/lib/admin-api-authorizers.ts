@@ -39,13 +39,12 @@ export function defineAdminAuthorizers(
   });
 
   /**
-   * Public API key authorizer. Validates `Authorization: Bearer` or the
-   * previous `x-api-key` header against scrypt key digests stored in the
-   * records table (`pk = APIKEY#<digest>`, `sk = META`; minted via
-   * scripts/manage-public-api-keys.py). Guards /v1/partner/* GET mirrors
-   * and (when allowWrite + PublicApiWritesEnabled) board PUT/POST/DELETE.
-   * The cache key is source IP only during the header overlap, so this
-   * Lambda never denies by HTTP method — the handler re-checks write_allowed.
+   * Public API key authorizer. Validates an `Authorization: Bearer` key against
+   * scrypt key digests stored in the records table (`pk = APIKEY#<digest>`,
+   * `sk = META`; minted via scripts/manage-public-api-keys.py). Guards
+   * /v1/partner/* GET mirrors and (when allowWrite + PublicApiWritesEnabled)
+   * board PUT/POST/DELETE. Cache is key + source IP, so this Lambda never
+   * denies by HTTP method — the handler re-checks write_allowed.
    */
   const publicApiKeyAuthorizerFn = createPythonLambda(
     scope,
@@ -88,19 +87,17 @@ export function defineAdminAuthorizers(
     publicApiKeyAuthorizerFn,
     {
       responseTypes: [HttpLambdaResponseType.SIMPLE],
-      // Callers send Authorization, x-api-key, or both. Bearer wins when
-      // both are present. HTTP API
-      // requires every identity source to be present, so the cache key
-      // includes both headers or neither. Neither keeps either scheme
-      // from being rejected before this function runs. Source IP stays
-      // so a CIDR allow is not reused from another address. Only
+      // Cache key is header + client IP so a CIDR-bound key cannot be
+      // reused from another address via the authorizer cache. Only
       // `$context.identity.sourceIp` is a supported HTTP API context
       // variable; a missing identity source makes API Gateway return 401
       // without invoking the authorizer.
-      identitySource: ["$context.identity.sourceIp"],
-      // The cache key is the source IP alone, so a stored approval would
-      // apply to every caller from that address. Zero skips the cache.
-      resultsCacheTtl: cdk.Duration.seconds(0),
+      identitySource: [
+        "$request.header.Authorization",
+        "$context.identity.sourceIp",
+      ],
+      // Revocation / CIDR changes take up to this TTL to propagate.
+      resultsCacheTtl: cdk.Duration.seconds(60),
     }
   );
   return { jwtAuthorizer, publicApiKeyAuthorizer, publicApiKeyAuthorizerFn };

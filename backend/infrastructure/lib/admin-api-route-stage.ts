@@ -10,18 +10,26 @@ import { LIVE_ROUTES } from "./admin-api-live-routes";
  * Later deploys change only this number, until the last one also narrows
  * the Lambda legacy rewrite back to the forever keepers.
  */
-export const ROUTE_STAGE = 7;
+export const ROUTE_STAGE = 8;
 
 const MAX_CREATED = 70;
 
-/** Paths that stay on the gateway for this whole cutover. */
+/** Paths that stay on the gateway after the cutover. */
 const KEEPER_PATHS = new Set([
   "/health",
-  "/webhooks/meta",
-  "/webhooks/meta/siutindei",
   "/public/outreach/unsubscribe/{token}",
   "/public/newsletter/confirm/{token}",
   "/public/newsletter/unsubscribe/{token}",
+]);
+
+/**
+ * Paths the cutover kept, and this branch removes. They stay in the live
+ * table so stages 0–7 match the deploys already made. The last stage
+ * deletes only these keys.
+ */
+const RETIRED_PATHS = new Set([
+  "/webhooks/meta",
+  "/webhooks/meta/siutindei",
   "/public/siu-tin-dei/board",
   "/public/siu-tin-dei/board/{proxy+}",
 ]);
@@ -72,9 +80,9 @@ function snakeParams(path: string): string {
   });
 }
 
-/** Contract path for a live path, or null when the live path is a keeper. */
+/** Contract path for a live path, or null when the live path is a keeper or retired. */
 export function contractPathForLive(path: string): string | null {
-  if (KEEPER_PATHS.has(path)) {
+  if (KEEPER_PATHS.has(path) || RETIRED_PATHS.has(path)) {
     return null;
   }
   const exact = EXACT_RENAMES[path];
@@ -111,6 +119,7 @@ function replacementPriority(path: string): number {
 interface CutoverPlan {
   readonly pairs: readonly RouteCutoverPair[];
   readonly keeperKeys: readonly string[];
+  readonly retiredKeys: readonly string[];
   readonly netNewKeys: readonly string[];
   readonly addBatches: readonly (readonly AdminApiRoute[])[];
   readonly deleteBatches: readonly (readonly AdminApiRoute[])[];
@@ -135,6 +144,7 @@ function buildPlan(): CutoverPlan {
   const pairs: RouteCutoverPair[] = [];
   const pairEntries: { live: AdminApiRoute; contract: AdminApiRoute; newKey: string }[] = [];
   const keeperKeys: string[] = [];
+  const retiredKeys: string[] = [];
   const seenLive = new Set<string>();
 
   for (const live of LIVE_ROUTES) {
@@ -146,6 +156,13 @@ function buildPlan(): CutoverPlan {
       }
       seenLive.add(oldKey);
       if (mapped === null) {
+        if (RETIRED_PATHS.has(live.path)) {
+          if (contractByKey.has(oldKey)) {
+            throw new Error(`retired route is still in the contract: ${oldKey}`);
+          }
+          retiredKeys.push(oldKey);
+          continue;
+        }
         if (!contractByKey.has(oldKey)) {
           throw new Error(`keeper missing from the contract: ${oldKey}`);
         }
@@ -230,14 +247,15 @@ function buildPlan(): CutoverPlan {
   }
 
   const keeper = new Set(keeperKeys);
+  const retired = new Set(retiredKeys);
   const liveKeys = new Set(routeMethodKeys(LIVE_ROUTES));
   const contractKeys = new Set(routeMethodKeys(ROUTES));
   const pairedOld = new Set(pairs.map((pair) => pair.oldKey));
   const netNewKeys = routeMethodKeys(netNew);
   const net = new Set(netNewKeys);
   for (const key of liveKeys) {
-    if (!keeper.has(key) && !pairedOld.has(key)) {
-      throw new Error(`live key is neither a keeper nor paired: ${key}`);
+    if (!keeper.has(key) && !pairedOld.has(key) && !retired.has(key)) {
+      throw new Error(`live key is neither a keeper, retired, nor paired: ${key}`);
     }
   }
   for (const key of contractKeys) {
@@ -246,17 +264,22 @@ function buildPlan(): CutoverPlan {
       throw new Error(`contract key ${key} is in ${classes} classes`);
     }
   }
-  if (keeper.size !== 15) {
-    throw new Error(`expected 15 keeper methods, found ${keeper.size}`);
+  if (keeper.size !== 6) {
+    throw new Error(`expected 6 keeper methods, found ${keeper.size}`);
+  }
+  if (retired.size !== 9) {
+    throw new Error(`expected 9 retired methods, found ${retired.size}`);
   }
 
   return {
     pairs,
     keeperKeys,
+    retiredKeys,
     netNewKeys,
     addBatches: [...replacementBatches, netNew],
     deleteBatches,
-    finalStage: replacementBatches.length * 2 + 1,
+    // One even stage after the net-new add deletes only the retired keepers.
+    finalStage: replacementBatches.length * 2 + 2,
   };
 }
 
@@ -271,6 +294,10 @@ export function routeCutoverPairs(): readonly RouteCutoverPair[] {
 
 export function routeKeeperKeys(): readonly string[] {
   return PLAN.keeperKeys;
+}
+
+export function routeRetiredKeys(): readonly string[] {
+  return PLAN.retiredKeys;
 }
 
 export function routeNetNewKeys(): readonly string[] {
@@ -299,8 +326,11 @@ export function routesForStage(stage: number): readonly AdminApiRoute[] {
     }
   }
   const kept = LIVE_ROUTES.filter((route) => !removed.has(route));
+  const stillKept = stage === PLAN.finalStage
+    ? kept.filter((route) => !RETIRED_PATHS.has(route.path))
+    : kept;
   const added = PLAN.addBatches.slice(0, adds).flat();
-  return [...kept, ...added];
+  return [...stillKept, ...added];
 }
 
 if (!Number.isInteger(ROUTE_STAGE) || ROUTE_STAGE < 0 || ROUTE_STAGE > FINAL_ROUTE_STAGE) {

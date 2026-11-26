@@ -7,21 +7,25 @@ import {
   routeCutoverPairs,
   routeKeeperKeys,
   routeMethodKeys,
+  routeRetiredKeys,
   routeNetNewKeys,
   routesForStage,
 } from "../lib/admin-api-route-stage";
 
 const KEEPERS = [
   "GET /health",
-  "GET /webhooks/meta",
-  "POST /webhooks/meta",
-  "GET /webhooks/meta/siutindei",
-  "POST /webhooks/meta/siutindei",
   "GET /public/outreach/unsubscribe/{token}",
   "POST /public/outreach/unsubscribe/{token}",
   "GET /public/newsletter/confirm/{token}",
   "GET /public/newsletter/unsubscribe/{token}",
   "POST /public/newsletter/unsubscribe/{token}",
+];
+
+const RETIRED = [
+  "GET /webhooks/meta",
+  "POST /webhooks/meta",
+  "GET /webhooks/meta/siutindei",
+  "POST /webhooks/meta/siutindei",
   "GET /public/siu-tin-dei/board",
   "GET /public/siu-tin-dei/board/{proxy+}",
   "PUT /public/siu-tin-dei/board/{proxy+}",
@@ -65,7 +69,7 @@ describe("HTTP API route cutover stages", () => {
   test("stage 0 is the live table and the last stage equals the contract", () => {
     expect(sortedSignatures(routesForStage(0))).toEqual(sortedSignatures(LIVE_ROUTES));
     expect(sortedSignatures(routesForStage(FINAL_ROUTE_STAGE))).toEqual(sortedSignatures(ROUTES));
-    expect(routeMethodKeys(routesForStage(FINAL_ROUTE_STAGE))).toHaveLength(234);
+    expect(routeMethodKeys(routesForStage(FINAL_ROUTE_STAGE))).toHaveLength(225);
     expect(ROUTE_STAGE).toBeGreaterThan(0);
     expect(ROUTE_STAGE).toBeLessThanOrEqual(FINAL_ROUTE_STAGE);
   });
@@ -92,12 +96,21 @@ describe("HTTP API route cutover stages", () => {
     }
   });
 
-  test("the 15 keepers are in every stage", () => {
+  test("the keepers stay, and the retired paths leave only on the last stage", () => {
     expect([...routeKeeperKeys()].sort()).toEqual([...KEEPERS].sort());
+    expect([...routeRetiredKeys()].sort()).toEqual([...RETIRED].sort());
     for (const stageKeys of keys) {
       for (const key of KEEPERS) {
         expect(stageKeys.has(key)).toBe(true);
       }
+    }
+    for (let stage = 0; stage < FINAL_ROUTE_STAGE; stage += 1) {
+      for (const key of RETIRED) {
+        expect(keys[stage].has(key)).toBe(true);
+      }
+    }
+    for (const key of RETIRED) {
+      expect(keys[FINAL_ROUTE_STAGE].has(key)).toBe(false);
     }
   });
 
@@ -124,11 +137,12 @@ describe("HTTP API route cutover stages", () => {
     const pairedOld = new Set(pairs.map((pair) => pair.oldKey));
     const pairedNew = new Set(pairs.map((pair) => pair.newKey));
     const keepers = new Set(KEEPERS);
+    const retired = new Set(RETIRED);
     const netNew = new Set(routeNetNewKeys());
     expect([...netNew].sort()).toEqual([...NET_NEW].sort());
     for (const key of routeMethodKeys(LIVE_ROUTES)) {
-      expect(keepers.has(key) || pairedOld.has(key)).toBe(true);
-      expect(keepers.has(key) && pairedOld.has(key)).toBe(false);
+      expect(keepers.has(key) || retired.has(key) || pairedOld.has(key)).toBe(true);
+      expect([keepers.has(key), retired.has(key), pairedOld.has(key)].filter(Boolean)).toHaveLength(1);
     }
     for (const key of routeMethodKeys(ROUTES)) {
       const classes = [keepers.has(key), pairedNew.has(key), netNew.has(key)].filter(Boolean);
@@ -205,11 +219,13 @@ describe("HTTP API route cutover stages", () => {
     );
   });
 
-  test("the last add is only the net-new keys", () => {
-    const created = [...keys[FINAL_ROUTE_STAGE]].filter(
-      (key) => !keys[FINAL_ROUTE_STAGE - 1].has(key),
-    );
+  test("the last add is only the net-new keys, then the last stage only deletes", () => {
+    const addStage = FINAL_ROUTE_STAGE - 1;
+    const created = [...keys[addStage]].filter((key) => !keys[addStage - 1].has(key));
     expect(created.sort()).toEqual([...NET_NEW].sort());
-    expect(keys[FINAL_ROUTE_STAGE - 1].size).toBe(220);
+    expect(keys[addStage - 1].size).toBe(220);
+    const removed = [...keys[addStage]].filter((key) => !keys[FINAL_ROUTE_STAGE].has(key));
+    expect(removed.sort()).toEqual([...RETIRED].sort());
+    expect([...keys[FINAL_ROUTE_STAGE]].filter((key) => !keys[addStage].has(key))).toEqual([]);
   });
 });

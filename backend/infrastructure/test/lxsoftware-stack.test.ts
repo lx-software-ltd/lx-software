@@ -295,10 +295,6 @@ describe("HTTP API routes", () => {
     "GET /health",
     // Meta verify handshake + HMAC-signed webhook deliveries; the handler
     // validates hub.verify_token / X-Hub-Signature-256 itself.
-    "GET /webhooks/meta",
-    "POST /webhooks/meta",
-    "GET /webhooks/meta/siutindei",
-    "POST /webhooks/meta/siutindei",
     "GET /v1/webhooks/meta",
     "POST /v1/webhooks/meta",
     "GET /v1/webhooks/meta/siutindei",
@@ -434,25 +430,18 @@ describe("HTTP API routes", () => {
       }
     }
     const routes = deployedRoutes();
-    const legacyBoard = routes
-      .filter((route) => String(route.Properties?.RouteKey).includes("/public/siu-tin-dei/board"))
-      .map((route) => String(route.Properties?.RouteKey))
-      .sort();
-    expect(legacyBoard).toEqual([
-      "DELETE /public/siu-tin-dei/board/{proxy+}",
-      "GET /public/siu-tin-dei/board",
-      "GET /public/siu-tin-dei/board/{proxy+}",
-      "POST /public/siu-tin-dei/board/{proxy+}",
-      "PUT /public/siu-tin-dei/board/{proxy+}",
-    ]);
+    const legacyBoard = routes.filter((route) =>
+      String(route.Properties?.RouteKey).includes("/public/siu-tin-dei/board"),
+    );
+    expect(legacyBoard).toEqual([]);
     for (const route of routes) {
       const key = String(route.Properties?.RouteKey);
-      if (key.includes("/public/siu-tin-dei/board") || key.includes(" /v1/partner/")) {
+      if (key.includes(" /v1/partner/")) {
         expect(route.Properties?.AuthorizationType).toBe("CUSTOM");
       }
       const readMirror =
         key.includes("/finance") || key.includes("/records") || key.includes("/fx/");
-      if (readMirror && (key.includes("/public/") || key.includes("/v1/partner/"))) {
+      if (readMirror && key.includes("/v1/partner/")) {
         expect(key).toMatch(/^GET /);
       }
     }
@@ -566,7 +555,9 @@ describe("API custom domain", () => {
     expect(serialized).toContain('""');
 
     const api = Object.values(resourcesOfType("AWS::ApiGatewayV2::Api"))[0];
-    expect(api.Properties?.DisableExecuteApiEndpoint).toBeUndefined();
+    expect(api.Properties?.DisableExecuteApiEndpoint).toEqual({
+      "Fn::If": ["UseApiCustomDomain", true, false],
+    });
     const withBaseUrl = Object.values(resourcesOfType("AWS::Lambda::Function")).filter(
       (fn) => fn.Properties?.Environment?.Variables?.PUBLIC_API_BASE_URL !== undefined,
     );
@@ -604,12 +595,8 @@ describe("HTTP API stage throttling", () => {
   test("the Meta webhook routes are throttled independently of the stage default", () => {
     const limits = { ThrottlingRateLimit: 10, ThrottlingBurstLimit: 20 };
     for (const key of [
-      "POST /webhooks/meta",
-      "GET /webhooks/meta",
       "POST /v1/webhooks/meta",
       "GET /v1/webhooks/meta",
-      "POST /webhooks/meta/siutindei",
-      "GET /webhooks/meta/siutindei",
       "POST /v1/webhooks/meta/siutindei",
       "GET /v1/webhooks/meta/siutindei",
     ]) {
@@ -635,8 +622,6 @@ describe("HTTP API stage throttling", () => {
       "GET /v1/partner/lx-software/linkedin/posts",
       "GET /v1/partner/lx-software/linkedin/posts/{id}",
       "GET /v1/partner/siutindei/board/{proxy+}",
-      "GET /public/siu-tin-dei/board",
-      "GET /public/siu-tin-dei/board/{proxy+}",
     ]) {
       expectThrottle(key, read);
     }
@@ -647,30 +632,18 @@ describe("HTTP API stage throttling", () => {
       "POST /v1/partner/siutindei/board/{proxy+}",
       "PUT /v1/partner/siutindei/board/{proxy+}",
       "DELETE /v1/partner/siutindei/board/{proxy+}",
-      "POST /public/siu-tin-dei/board/{proxy+}",
-      "PUT /public/siu-tin-dei/board/{proxy+}",
-      "DELETE /public/siu-tin-dei/board/{proxy+}",
     ]) {
       expectThrottle(key, write);
     }
   });
 
-  test("public API-key authorizer does not cache a source-IP result", () => {
+  test("public API-key authorizer caches on key + a supported source-IP context variable", () => {
     template.hasResourceProperties("AWS::ApiGatewayV2::Authorizer", {
       AuthorizerType: "REQUEST",
       EnableSimpleResponses: true,
-      AuthorizerResultTtlInSeconds: 0,
-      IdentitySource: ["$context.identity.sourceIp"],
+      AuthorizerResultTtlInSeconds: 60,
+      IdentitySource: ["$request.header.Authorization", "$context.identity.sourceIp"],
     });
-    const sources = Object.values(resourcesOfType("AWS::ApiGatewayV2::Authorizer"))
-      .filter((item) => item.Properties?.AuthorizerType === "REQUEST")
-      .flatMap((item) => (item.Properties?.IdentitySource ?? []) as string[]);
-    const headers = sources.filter((item) => item.includes(".header."));
-    const both =
-      headers.includes("$request.header.Authorization") &&
-      headers.includes("$request.header.x-api-key");
-    expect(headers.length === 0 || both).toBe(true);
-    expect(sources).toContain("$context.identity.sourceIp");
   });
 
   test("public API-key metric filters use term patterns (Lambda log lines are not JSON)", () => {
@@ -699,9 +672,10 @@ describe("HTTP API stage throttling", () => {
       key.includes("/webhooks/meta"),
     );
     expect(webhookRouteIds).toHaveLength(deployedWebhooks.length);
+    expect(deployedWebhooks).toHaveLength(4);
     expect(
       routeMethodKeys(ROUTES).filter((key) => key.includes("/webhooks/meta")),
-    ).toHaveLength(8);
+    ).toHaveLength(4);
     const dependsOn = asArray<string>(stage.DependsOn);
     for (const id of webhookRouteIds) {
       expect(dependsOn).toContain(id);

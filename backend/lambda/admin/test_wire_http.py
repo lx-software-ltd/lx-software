@@ -150,26 +150,18 @@ class WireHttpTest(unittest.TestCase):
         self.assertIn("income_records", body)
         self.assertNotIn("incomeRecords", body)
 
-    def test_the_legacy_board_path_keeps_camel_case_and_the_new_path_does_not(self) -> None:
+    def test_the_partner_board_path_returns_snake_case(self) -> None:
         def respond(_event: dict) -> dict:
             return _json_response(200, {"nextCursor": "n1", "items": []})
 
-        old = apply_wire(_http("GET", "/public/siu-tin-dei/board/actions"), respond)
-        old_body = json.loads(old["body"])
-        self.assertEqual(old_body["nextCursor"], "n1")
-        self.assertNotIn("next_cursor", old_body)
-        new = apply_wire(_partner("/v1/partner/siutindei/board/actions"), respond)
-        new_body = json.loads(new["body"])
-        self.assertEqual(new_body["next_cursor"], "n1")
-        self.assertNotIn("nextCursor", new_body)
-
-    def test_the_legacy_board_path_uses_the_same_handler_path(self) -> None:
-        self.assertEqual(legacy_http_path("/public/siu-tin-dei/board"), "/v1/partner/siutindei/board")
+        out = apply_wire(_partner("/v1/partner/siutindei/board/actions"), respond)
+        body = json.loads(out["body"])
+        self.assertEqual(body["next_cursor"], "n1")
+        self.assertNotIn("nextCursor", body)
         self.assertEqual(
-            legacy_http_path("/public/siu-tin-dei/board/actions/a1"),
-            "/v1/partner/siutindei/board/actions/a1",
+            legacy_http_path("/public/siu-tin-dei/board/actions"),
+            "/public/siu-tin-dei/board/actions",
         )
-        self.assertEqual(legacy_http_path("/public/siu-tin-dei/boardroom"), "/public/siu-tin-dei/boardroom")
 
     def test_the_wire_contract_is_read_once(self) -> None:
         import http_common

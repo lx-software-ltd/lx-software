@@ -17,6 +17,9 @@ if not domain.startswith("https://"):
 if not api_url.startswith("https://"):
     print(f"::error::AdminApiBaseUrl on {stack} must be an https origin", file=sys.stderr)
     sys.exit(1)
+if "execute-api" in api_url:
+    print(f"::error::AdminApiBaseUrl on {stack} must not use the execute-api hostname", file=sys.stderr)
+    sys.exit(1)
 with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
     handle.write(f"client_id={client_id}\n")
     handle.write(f"domain={domain}\n")

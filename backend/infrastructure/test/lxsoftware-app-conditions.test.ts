@@ -56,6 +56,7 @@ describe("assembled templates", () => {
     expect(serialized).toContain("lxsoftware-AdminApiBaseUrl");
     expect(serialized).not.toContain("CspApiExecuteApiOrigin");
     expect(serialized).not.toContain("UseApiCustomDomain");
+    expect(serialized).not.toContain("execute-api");
     expect(adminJson.Conditions ?? {}).not.toHaveProperty("UseApiCustomDomain");
     const adminExports = Object.values(adminJson.Outputs ?? {}).map((output) =>
       JSON.stringify(output.Export ?? {}),

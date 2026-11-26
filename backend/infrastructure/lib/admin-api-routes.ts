@@ -33,9 +33,7 @@ export interface AdminApiRoute {
 export const ROUTES: readonly AdminApiRoute[] = [
   { path: "/health", methods: [GET], auth: "none" },
   { path: "/v1/webhooks/meta", methods: [GET, POST], auth: "none", throttle: WEBHOOK_THROTTLE },
-  { path: "/webhooks/meta", methods: [GET, POST], auth: "none", throttle: WEBHOOK_THROTTLE },
   { path: "/v1/webhooks/meta/siutindei", methods: [GET, POST], auth: "none", throttle: WEBHOOK_THROTTLE },
-  { path: "/webhooks/meta/siutindei", methods: [GET, POST], auth: "none", throttle: WEBHOOK_THROTTLE },
   { path: "/v1/public/outreach/unsubscribe/{token}", methods: [GET, POST], auth: "none", throttle: WEBHOOK_THROTTLE },
   { path: "/public/outreach/unsubscribe/{token}", methods: [GET, POST], auth: "none", throttle: WEBHOOK_THROTTLE },
   { path: "/v1/public/newsletter/subscribe", methods: [POST], auth: "none", throttle: WEBHOOK_THROTTLE },
@@ -217,8 +215,4 @@ export const ROUTES: readonly AdminApiRoute[] = [
   { path: "/v1/partner/siutindei/board", methods: [GET], auth: "apiKey", throttle: PUBLIC_READ_THROTTLE },
   { path: "/v1/partner/siutindei/board/{proxy+}", methods: [GET], auth: "apiKey", throttle: PUBLIC_READ_THROTTLE },
   { path: "/v1/partner/siutindei/board/{proxy+}", methods: [PUT, POST, DELETE], auth: "apiKey", throttle: PUBLIC_WRITE_THROTTLE },
-  // Previous board URL. Same handler. Removed in the following change.
-  { path: "/public/siu-tin-dei/board", methods: [GET], auth: "apiKey", throttle: PUBLIC_READ_THROTTLE },
-  { path: "/public/siu-tin-dei/board/{proxy+}", methods: [GET], auth: "apiKey", throttle: PUBLIC_READ_THROTTLE },
-  { path: "/public/siu-tin-dei/board/{proxy+}", methods: [PUT, POST, DELETE], auth: "apiKey", throttle: PUBLIC_WRITE_THROTTLE },
 ];

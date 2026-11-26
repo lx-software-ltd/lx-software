@@ -88,7 +88,7 @@ export function defineAdminHttpApi(
   const httpApi = new apigwv2.HttpApi(scope, "HttpApi", {
     apiName: "lxsoftware-admin-api",
     corsPreflight: {
-      allowHeaders: ["authorization", "content-type", "x-api-key"],
+      allowHeaders: ["authorization", "content-type"],
       allowMethods: [
         apigwv2.CorsHttpMethod.GET,
         apigwv2.CorsHttpMethod.POST,
@@ -184,9 +184,14 @@ export function defineAdminHttpApi(
     httpApi.apiEndpoint,
   ).toString();
   const adminApiBaseUrl = defaultPublicBaseUrl;
+  const cfnApi = httpApi.node.defaultChild as apigwv2.CfnApi;
+  cfnApi.addPropertyOverride(
+    "DisableExecuteApiEndpoint",
+    cdk.Fn.conditionIf(apiDomain.useApiCustomDomain.logicalId, true, false),
+  );
   const cspApiConnectOrigin = cdk.Fn.conditionIf(
     apiDomain.useApiCustomDomain.logicalId,
-    cdk.Fn.join(" ", [apiDomain.url, httpApi.apiEndpoint]),
+    apiDomain.url,
     httpApi.apiEndpoint,
   ).toString();
   adminFn.addEnvironment(

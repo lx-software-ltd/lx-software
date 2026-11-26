@@ -75,14 +75,9 @@ export function assemble(app: cdk.App): cdk.App {
     description: "LX Software admin SPA delivery (S3 + CloudFront).",
     env,
     synthesizer,
-    // AdminApiBaseUrl is the resolved origin. Referencing httpApi.apiEndpoint
-    // keeps CDK's automatic export under its old name. The live admin-web
-    // stack still imports that export, so a backend deploy must not delete it.
-    // This template does not define UseApiCustomDomain.
-    cspApiConnectOrigin: cdk.Fn.join(" ", [
-      cdk.Fn.importValue("lxsoftware-AdminApiBaseUrl"),
-      lxsoftware.httpApi.apiEndpoint,
-    ]),
+    // The CSP names only the resolved admin API origin. This stack does not
+    // define UseApiCustomDomain, and it does not list the execute-api hostname.
+    cspApiConnectOrigin: cdk.Fn.importValue("lxsoftware-AdminApiBaseUrl"),
     cspAssetsConnectOrigins: cdk.Fn.join(" ", [
       cdk.Fn.join("", ["https://", lxsoftware.assetsBucket.bucketDomainName]),
       cdk.Fn.join("", [
@@ -93,6 +88,10 @@ export function assemble(app: cdk.App): cdk.App {
   });
   tagStack(adminWeb, "Admin Console", "spa");
   adminWeb.addStackDependency(lxsoftware);
+  // The live admin-web stack and L2's admin-web import CDK's automatic
+  // export of the execute-api endpoint. Keep that export until a later
+  // pull request removes it, after this branch's admin-web has deployed.
+  lxsoftware.exportValue(lxsoftware.httpApi.apiEndpoint);
 
   // Inject Checkov skip metadata onto CDK-internal resources (AwsCustomResource
   // and BucketNotifications Lambdas) plus VPC suppression for application

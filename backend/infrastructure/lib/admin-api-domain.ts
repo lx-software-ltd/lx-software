@@ -24,8 +24,8 @@ function customValueUnset(value: string, disabled: string): cdk.ICfnConditionExp
 /**
  * Regional custom domain for the admin HTTP API, same shape as
  * findingalpha's `api.<domain>`: TLS 1.2 in this region, mapped to the
- * `$default` stage with no path prefix. The execute-api endpoint stays
- * enabled so the admin SPA can keep calling `AdminApiBaseUrl`.
+ * `$default` stage with no path prefix. When the domain is on, the
+ * execute-api endpoint is disabled.
  */
 export function defineApiDomain(
   scope: cdk.Stack,
