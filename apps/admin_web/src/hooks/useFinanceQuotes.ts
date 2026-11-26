@@ -3,7 +3,7 @@ import { useMemo } from "react";
 import { fetchFinanceQuotes, type FinanceQuoteResult } from "../lib/financeQuotes";
 
 /**
- * Live ticker / crypto spot prices via the admin `/finance/quotes` proxy.
+ * Live ticker / crypto spot prices via the admin `/v1/admin/finance/quotes` proxy.
  * Returns `[]` (and keeps the query disabled, no network) when `symbols` is empty.
  */
 export function useFinanceQuotes(symbols: readonly string[]) {

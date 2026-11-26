@@ -13,7 +13,8 @@ import board_newsletter
 import board_outreach
 import board_store
 import board_tools
-from test_board import BoardTestCase, lambda_handler
+from http_call import http_call
+from test_board import BoardTestCase
 
 
 class FakeSes:
@@ -83,7 +84,7 @@ class NewsletterTests(BoardTestCase):
             "body": json.dumps({"list": "parents", "email": "parent@example.com", "lang": "en"}),
             "rawQueryString": "",
         }
-        out = lambda_handler(event, None)
+        out = http_call(event, None)
         self.assertEqual(out["statusCode"], 200)
         self.assertEqual(len(self.ses.calls), 1)
         self.assertEqual(self.ses.calls[0]["FromEmailAddress"], "news@siutindei.com")
@@ -94,7 +95,7 @@ class NewsletterTests(BoardTestCase):
         )
         self.assertEqual(refused["error"], "no confirmed subscribers")
         confirm = board_newsletter.make_token("c", "parents", digest)
-        confirmed = lambda_handler(
+        confirmed = http_call(
             {
                 "requestContext": {
                     "http": {"method": "GET", "path": f"/v1/public/newsletter/confirm/{confirm}", "sourceIp": "1.1.1.1"},
@@ -129,7 +130,7 @@ class NewsletterTests(BoardTestCase):
             },
         )
         token = board_newsletter.make_token("u", "parents", digest)
-        out = lambda_handler(
+        out = http_call(
             {
                 "requestContext": {
                     "http": {"method": "GET", "path": f"/v1/public/newsletter/unsubscribe/{token}", "sourceIp": "2.2.2.2"},
@@ -287,7 +288,7 @@ class NewsletterTests(BoardTestCase):
                 "createdAt": board_store.now_iso(),
             },
         )
-        lambda_handler(
+        http_call(
             {
                 "requestContext": {
                     "http": {"method": "POST", "path": "/v1/public/newsletter/subscribe", "sourceIp": "9.9.9.9"},
@@ -306,7 +307,7 @@ class NewsletterTests(BoardTestCase):
 
     def test_fourth_confirm_not_sent(self) -> None:
         for i in range(4):
-            lambda_handler(
+            http_call(
                 {
                     "requestContext": {
                         "http": {"method": "POST", "path": "/v1/public/newsletter/subscribe", "sourceIp": f"3.3.3.{i}"},
@@ -328,7 +329,7 @@ class NewsletterTests(BoardTestCase):
             existing.pop("confirmedAt", None)
             if existing:
                 board_store.put_newsletter_sub(self.table, digest, "parents", existing)
-            lambda_handler(
+            http_call(
                 {
                     "requestContext": {
                         "http": {"method": "POST", "path": "/v1/public/newsletter/subscribe", "sourceIp": f"4.4.4.{i}"},
@@ -343,7 +344,6 @@ class NewsletterTests(BoardTestCase):
 
     def test_newsletter_complaint_leaves_outreach_day_unchanged(self) -> None:
         import board_hk
-        import dispatch
 
         today = board_hk.today_hkt()
         board_store.save_outreach_day(self.table, {"sent": 10, "bounces": 0, "complaints": 0}, today)
@@ -381,7 +381,7 @@ class NewsletterTests(BoardTestCase):
             patch("board_newsletter.handle_ses_events", return_value={"handled": 1}),
             patch("board_outreach.handle_ses_events", side_effect=raise_on_bad),
         ):
-            out = dispatch.lambda_handler(event, None)
+            out = http_call(event, None)
         day = board_store.load_outreach_day(self.table, today)
         self.assertEqual(int(day.get("complaints") or 0), 0)
         self.assertEqual(out.get("batchItemFailures"), [{"itemIdentifier": "bad-1"}])
@@ -402,7 +402,7 @@ class NewsletterTests(BoardTestCase):
                 "createdAt": board_store.now_iso(),
             },
         )
-        out = lambda_handler(
+        out = http_call(
             {
                 "requestContext": {
                     "http": {"method": "POST", "path": "/v1/public/newsletter/subscribe", "sourceIp": "5.5.5.5"},

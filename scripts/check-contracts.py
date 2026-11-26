@@ -22,6 +22,7 @@ ARTIFACTS = [
     ROOT / "backend" / "lambda" / "admin" / "contracts" / "openrouter-apps.json",
     ROOT / "backend" / "lambda" / "admin" / "contracts" / "aws-billing.json",
     ROOT / "backend" / "lambda" / "admin" / "contracts" / "public-api-scopes.json",
+    ROOT / "backend" / "lambda" / "admin" / "contracts" / "wire-format.json",
     ROOT / "backend" / "lambda" / "public_api_authorizer" / "public_api_scopes_generated.py",
 ]
 

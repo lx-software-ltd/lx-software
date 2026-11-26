@@ -15,7 +15,7 @@ import board_pii
 import board_store
 import board_tools
 import inbound_email_handler
-from dispatch import lambda_handler
+from http_call import http_call
 from test_board import BoardTestCase
 from test_board_tools import ToolsTestCase
 
@@ -389,7 +389,7 @@ class TestMailRoutes(MailTestCase):
     def test_selftest_sends_to_the_signed_in_owner_without_indexing(self) -> None:
         ev = self.event("/v1/admin/siutindei/board/mail/selftest", "POST", {})
         ev["requestContext"]["authorizer"]["jwt"]["claims"]["email"] = "Owner@Example.com"
-        out = lambda_handler(ev, None)
+        out = http_call(ev, None)
         body = json.loads(out["body"])
         self.assertEqual(out["statusCode"], 200, body)
         self.assertTrue(body["ok"])
@@ -418,7 +418,7 @@ class TestMailRoutes(MailTestCase):
         self.ses.fail_with = ClientError({"Error": {"Code": "AccessDeniedException", "Message": deny}}, "SendEmail")
         ev = self.event("/v1/admin/siutindei/board/mail/selftest", "POST", {})
         ev["requestContext"]["authorizer"]["jwt"]["claims"]["email"] = "owner@example.com"
-        out = lambda_handler(ev, None)
+        out = http_call(ev, None)
         body = json.loads(out["body"])
         self.assertEqual(out["statusCode"], 502)
         self.assertIn("AccessDeniedException", body["message"])

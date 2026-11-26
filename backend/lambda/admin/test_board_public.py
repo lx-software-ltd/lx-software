@@ -8,7 +8,7 @@ from typing import Any
 from unittest.mock import patch
 
 import board_async
-from dispatch import lambda_handler
+from http_call import http_call
 from test_board import BoardTestCase
 
 
@@ -30,7 +30,7 @@ class PublicBoardReadTests(BoardTestCase):
                 "scopes": "finance,siutindei-board-ops,siutindei-board-full,siutindei-pii,siutindei-assets",
             }
         }
-        out = lambda_handler(ev, None)
+        out = http_call(ev, None)
         return out["statusCode"], json.loads(out["body"])
 
     def test_overview_and_staff_surfaces(self) -> None:
@@ -123,13 +123,13 @@ class PublicBoardReadTests(BoardTestCase):
                 "scopes": "siutindei-board-ops",
             }
         }
-        out = lambda_handler(ev, None)
+        out = http_call(ev, None)
         self.assertEqual(out["statusCode"], 200)
         self.assertEqual(json.loads(out["body"])["config"]["allowList"], [])
         ev["requestContext"]["authorizer"]["lambda"]["scopes"] = (
             "siutindei-board-ops,siutindei-pii"
         )
-        out = lambda_handler(ev, None)
+        out = http_call(ev, None)
         self.assertEqual(out["statusCode"], 200)
         self.assertEqual(
             json.loads(out["body"])["config"]["allowList"], ["owner@example.com"]
@@ -140,7 +140,7 @@ class PublicBoardReadTests(BoardTestCase):
         ev["requestContext"]["authorizer"] = {
             "lambda": {"keyId": "k-fin", "label": "fin", "scope": "read", "scopes": "finance"}
         }
-        out = lambda_handler(ev, None)
+        out = http_call(ev, None)
         self.assertEqual(out["statusCode"], 404)
 
     def test_legacy_read_scope_is_finance_only(self) -> None:
@@ -148,13 +148,13 @@ class PublicBoardReadTests(BoardTestCase):
         ev["requestContext"]["authorizer"] = {
             "lambda": {"keyId": "k-legacy", "label": "old", "scope": "read"}
         }
-        out = lambda_handler(ev, None)
+        out = http_call(ev, None)
         self.assertEqual(out["statusCode"], 404)
         ev = self.event("/v1/partner/finance")
         ev["requestContext"]["authorizer"] = {
             "lambda": {"keyId": "k-legacy", "label": "old", "scope": "read"}
         }
-        out = lambda_handler(ev, None)
+        out = http_call(ev, None)
         self.assertEqual(out["statusCode"], 200)
 
     def test_public_records_still_hides_board_rows(self) -> None:
@@ -205,7 +205,7 @@ class PublicBoardWriteTests(BoardTestCase):
                 "write": write,
             }
         }
-        out = lambda_handler(ev, None)
+        out = http_call(ev, None)
         return out["statusCode"], json.loads(out["body"])
 
     def test_create_task_and_put_charter(self) -> None:

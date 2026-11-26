@@ -1,0 +1,29 @@
+{
+  "renames": {},
+  "verbatimKeys": [
+    "catalog_import",
+    "code_production",
+    "code_staging",
+    "cold_outreach",
+    "inbound_reply",
+    "outbound_known"
+  ],
+  "mapFields": {
+    "holdOverrides": 1,
+    "matrix": 2,
+    "modelBySeat": 1,
+    "overrides": 1
+  },
+  "opaqueFields": [],
+  "rootMaps": {},
+  "excludedRoutes": [
+    "/public/newsletter/confirm/",
+    "/public/newsletter/unsubscribe/",
+    "/public/outreach/unsubscribe/",
+    "/v1/public/newsletter/confirm/",
+    "/v1/public/newsletter/unsubscribe/",
+    "/v1/public/outreach/unsubscribe/",
+    "/v1/webhooks/",
+    "/webhooks/"
+  ]
+}

@@ -3,7 +3,7 @@
  * `backend/lambda/admin/bank_sync.py` for the API contract).
  */
 
-export const BANKING_CALLBACK_PATH = "/banking/callback";
+export const BANKING_CALLBACK_PATH = "/v1/admin/banking/callback";
 
 export type BankSyncAccount = {
   readonly uid: string;

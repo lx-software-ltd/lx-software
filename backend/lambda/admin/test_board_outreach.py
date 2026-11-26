@@ -18,7 +18,8 @@ import board_store
 import board_targets
 import board_tools
 import board_triage
-from test_board import BoardTestCase, freeze_board_daytime, lambda_handler
+from http_call import http_call
+from test_board import BoardTestCase, freeze_board_daytime
 
 
 class FakeSes:
@@ -174,12 +175,12 @@ class OutreachTests(BoardTestCase):
             "requestContext": {"http": {"method": "GET", "path": f"/v1/public/outreach/unsubscribe/{token}", "sourceIp": "1.1.1.1"}, "requestId": "u1"},
             "rawQueryString": "",
         }
-        out = lambda_handler(event, None)
+        out = http_call(event, None)
         self.assertEqual(out["statusCode"], 200)
         self.assertIn("will not hear from us", out["body"])
         self.assertEqual(_nn(board_store.get_prospect(self.table, row["prospectId"]))["stage"], "suppressed")
         event["requestContext"]["http"]["method"] = "POST"
-        out = lambda_handler(event, None)
+        out = http_call(event, None)
         self.assertEqual(out["statusCode"], 200)
         self.assertEqual(out["body"], "")
         sent = board_outreach.send(self.table, self.settings, prospect_id=row["prospectId"])

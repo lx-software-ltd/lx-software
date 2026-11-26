@@ -59,7 +59,7 @@ describe("fetchFinanceQuotes", () => {
       "",
     ]);
 
-    expect(capturedUrl).toContain("/finance/quotes?symbols=");
+    expect(capturedUrl).toContain("/v1/admin/finance/quotes?symbols=");
     // Trims & dedupes US:TQQQ; encodes the colon.
     expect(capturedUrl).toContain("US%3ATQQQ");
     expect(capturedUrl).toContain("BTC");

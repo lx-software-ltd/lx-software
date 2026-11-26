@@ -15,8 +15,8 @@ from urllib import request as urlrequest
 import board_context
 import board_meta
 import board_store
-import dispatch
 from board_tools import REGISTRY, ToolContext, execute_call
+from http_call import http_call
 from test_board import BoardTestCase
 from test_board_tools import ToolsTestCase
 
@@ -142,7 +142,7 @@ class TestWebhook(MetaTestCase):
             "requestContext": {"http": {"method": "GET", "path": "/v1/webhooks/meta"}, "requestId": "w1"},
             "rawQueryString": "hub.mode=subscribe&hub.verify_token=verify-me&hub.challenge=abc123",
         }
-        out = dispatch.lambda_handler(ev, None)
+        out = http_call(ev, None)
         self.assertEqual(out["statusCode"], 200)
         self.assertEqual(out["body"], "abc123")
         self.assertEqual(out["headers"]["Content-Type"], "text/plain")
@@ -155,7 +155,7 @@ class TestWebhook(MetaTestCase):
             },
             "rawQueryString": "hub.mode=subscribe&hub.verify_token=verify-me&hub.challenge=tenant",
         }
-        out = dispatch.lambda_handler(ev, None)
+        out = http_call(ev, None)
         self.assertEqual(out["statusCode"], 200)
         self.assertEqual(out["body"], "tenant")
 
@@ -164,7 +164,7 @@ class TestWebhook(MetaTestCase):
             "requestContext": {"http": {"method": "GET", "path": "/v1/webhooks/meta"}, "requestId": "w2"},
             "rawQueryString": "hub.mode=subscribe&hub.verify_token=nope&hub.challenge=x",
         }
-        out = dispatch.lambda_handler(ev, None)
+        out = http_call(ev, None)
         self.assertEqual(out["statusCode"], 403)
 
     def test_post_requires_valid_hmac_and_masks_pii(self) -> None:
@@ -199,7 +199,7 @@ class TestWebhook(MetaTestCase):
             "body": raw.decode(),
         }
         with patch.object(board_store, "records_table", return_value=self.table):
-            out = dispatch.lambda_handler(ev, None)
+            out = http_call(ev, None)
         self.assertEqual(out["statusCode"], 200)
         threads = board_store.list_meta_threads(self.table)
         self.assertEqual(len(threads), 1)
@@ -208,7 +208,7 @@ class TestWebhook(MetaTestCase):
         # Unsigned body is rejected.
         ev["headers"] = {"X-Hub-Signature-256": "sha256=deadbeef"}
         with patch.object(board_store, "records_table", return_value=self.table):
-            bad = dispatch.lambda_handler(ev, None)
+            bad = http_call(ev, None)
         self.assertEqual(bad["statusCode"], 403)
 
 

@@ -51,4 +51,4 @@ export type OpenRouterUsagePayload = {
   readonly pull?: OpenRouterUsagePull | null;
 };
 
-export const OPENROUTER_USAGE_PATH = "/openrouter/usage";
+export const OPENROUTER_USAGE_PATH = "/v1/admin/openrouter/usage";

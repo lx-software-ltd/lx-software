@@ -14,27 +14,27 @@ export function handleA0(ctx: MockCtx): Response | null {
 
 export function handleA1(ctx: MockCtx): Response | null {
   const p = ctx.path;
-  if (!(p === "/me")) return null;
+  if (!(p === "/v1/admin/me")) return null;
   return json({ sub: "mock-admin", email: "mock.admin@example.com" });
 }
 
 export function handleA2(ctx: MockCtx): Response | null {
   const url = ctx.url;
   const p = ctx.path;
-  if (!(p === "/openrouter/usage")) return null;
+  if (!(p === "/v1/admin/openrouter/usage")) return null;
   return json(overlayUsageRange(url, openrouterUsageFixture));
 }
 
 export function handleA3(ctx: MockCtx): Response | null {
   const url = ctx.url;
   const p = ctx.path;
-  if (!(p === "/aws/usage")) return null;
+  if (!(p === "/v1/admin/aws/usage")) return null;
   return json(overlayUsageRange(url, awsUsageFixture));
 }
 
 export function handleA4(ctx: MockCtx): Response | null {
   const p = ctx.path;
-  if (!(p === "/aws/usage.pdf")) return null;
+  if (!(p === "/v1/admin/aws/usage/pdf")) return null;
 
       const body =
         "%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\nlx-software-aws-mock\n";
@@ -50,7 +50,7 @@ export function handleA4(ctx: MockCtx): Response | null {
 
 export function handleA5(ctx: MockCtx): Response | null {
   const p = ctx.path;
-  if (!(p === "/records")) return null;
+  if (!(p === "/v1/admin/records")) return null;
   return json({ items: assetsFixture, nextCursor: null });
 }
 
@@ -74,7 +74,7 @@ function assetMatchesQuery(row: (typeof assetsFixture)[number], query: string): 
 
 export function handleA6(ctx: MockCtx): Response | null {
   const p = ctx.path;
-  if (!(p === "/assets")) return null;
+  if (!(p === "/v1/admin/assets")) return null;
   const key = ctx.url.searchParams.get("key");
   if (key) {
     const pk = key.startsWith("ASSET#") ? key : `ASSET#${key}`;
@@ -89,13 +89,13 @@ export function handleA6(ctx: MockCtx): Response | null {
 
 export function handleA7(ctx: MockCtx): Response | null {
   const p = ctx.path;
-  if (!(p === "/assets/download-url")) return null;
+  if (!(p === "/v1/admin/assets/download-url")) return null;
   return json({ url: "about:blank" });
 }
 
 export function handleA8(ctx: MockCtx): Response | null {
   const p = ctx.path;
-  if (!(p === "/assets/delete")) return null;
+  if (!(p === "/v1/admin/assets/delete")) return null;
   return json({ ok: true });
 }
 

@@ -21,7 +21,7 @@ export const LINKEDIN_BYTES_KEY = ["linkedin-bytes"] as const;
 type Job = { jobId: string; status: string; postIds: string[]; error: string };
 
 async function loadJob(jobId: string): Promise<Job> {
-  const next = await adminFetchJson<{ job: Job }>(`/lx-software/linkedin/jobs/${jobId}`);
+  const next = await adminFetchJson<{ job: Job }>(`/v1/admin/lx-software/linkedin/jobs/${jobId}`);
   return next.job;
 }
 
@@ -35,7 +35,7 @@ function pendingPollDelay(pendingSince: number): number {
 export function linkedInOverviewQuery() {
   return {
     queryKey: [...LINKEDIN_KEY, "overview"] as const,
-    queryFn: () => adminFetchJson<LinkedInOverview>("/lx-software/linkedin"),
+    queryFn: () => adminFetchJson<LinkedInOverview>("/v1/admin/lx-software/linkedin"),
   };
 }
 
@@ -43,7 +43,7 @@ export function linkedInOverviewQuery() {
 export function linkedInPlanQuery() {
   return {
     queryKey: LINKEDIN_PLAN_KEY,
-    queryFn: () => adminFetchJson<LinkedInPlan>("/lx-software/linkedin?view=plan"),
+    queryFn: () => adminFetchJson<LinkedInPlan>("/v1/admin/lx-software/linkedin?view=plan"),
     refetchOnWindowFocus: true,
   };
 }
@@ -63,7 +63,7 @@ export function useLinkedIn() {
   const overview = useQuery(linkedInOverviewQuery());
   const posts = useQuery({
     queryKey: [...LINKEDIN_KEY, "posts"] as const,
-    queryFn: () => adminFetchJson<{ items: LinkedInPost[] }>("/lx-software/linkedin/posts"),
+    queryFn: () => adminFetchJson<{ items: LinkedInPost[] }>("/v1/admin/lx-software/linkedin/posts"),
     refetchInterval: (query) => {
       const pending =
         query.state.data?.items.some(
@@ -79,15 +79,15 @@ export function useLinkedIn() {
   });
   const ideas = useQuery({
     queryKey: [...LINKEDIN_KEY, "ideas"] as const,
-    queryFn: () => adminFetchJson<{ items: LinkedInIdea[] }>("/lx-software/linkedin/ideas"),
+    queryFn: () => adminFetchJson<{ items: LinkedInIdea[] }>("/v1/admin/lx-software/linkedin/ideas"),
   });
   const character = useQuery({
     queryKey: [...LINKEDIN_KEY, "character"] as const,
-    queryFn: () => adminFetchJson<LinkedInCharacter>("/lx-software/linkedin/character"),
+    queryFn: () => adminFetchJson<LinkedInCharacter>("/v1/admin/lx-software/linkedin/character"),
   });
   const saveSettings = useMutation({
     mutationFn: (body: LinkedInDraftSettings) =>
-      adminFetchJson<{ settings: LinkedInDraftSettings }>("/lx-software/linkedin/settings", {
+      adminFetchJson<{ settings: LinkedInDraftSettings }>("/v1/admin/lx-software/linkedin/settings", {
         method: "PUT",
         body: JSON.stringify(body),
       }),
@@ -95,7 +95,7 @@ export function useLinkedIn() {
   });
   const createPost = useMutation({
     mutationFn: (body: Partial<LinkedInPost>) =>
-      adminFetchJson<{ item: LinkedInPost }>("/lx-software/linkedin/posts", {
+      adminFetchJson<{ item: LinkedInPost }>("/v1/admin/lx-software/linkedin/posts", {
         method: "POST",
         body: JSON.stringify(body),
       }),
@@ -103,7 +103,7 @@ export function useLinkedIn() {
   });
   const updatePost = useMutation({
     mutationFn: ({ postId, body }: { postId: string; body: Partial<LinkedInPost> }) =>
-      adminFetchJson<{ item: LinkedInPost }>(`/lx-software/linkedin/posts/${postId}`, {
+      adminFetchJson<{ item: LinkedInPost }>(`/v1/admin/lx-software/linkedin/posts/${postId}`, {
         method: "PUT",
         body: JSON.stringify(body),
       }),
@@ -111,7 +111,7 @@ export function useLinkedIn() {
   });
   const starPost = useMutation({
     mutationFn: ({ postId, starred }: { postId: string; starred: boolean }) =>
-      adminFetchJson<{ item: LinkedInPost }>(`/lx-software/linkedin/posts/${postId}`, {
+      adminFetchJson<{ item: LinkedInPost }>(`/v1/admin/lx-software/linkedin/posts/${postId}`, {
         method: "PUT",
         body: JSON.stringify({ starred }),
       }),
@@ -132,7 +132,7 @@ export function useLinkedIn() {
   });
   const act = useMutation({
     mutationFn: ({ postId, action, body }: { postId: string; action: string; body?: Record<string, unknown> }) =>
-      adminFetchJson<{ item: LinkedInPost }>(`/lx-software/linkedin/posts/${postId}/${action}`, {
+      adminFetchJson<{ item: LinkedInPost }>(`/v1/admin/lx-software/linkedin/posts/${postId}/${action}`, {
         method: "POST",
         body: JSON.stringify(body ?? {}),
       }),
@@ -140,7 +140,7 @@ export function useLinkedIn() {
   });
   const createIdea = useMutation({
     mutationFn: (body: { text: string; pillar: string }) =>
-      adminFetchJson<{ item: LinkedInIdea }>("/lx-software/linkedin/ideas", {
+      adminFetchJson<{ item: LinkedInIdea }>("/v1/admin/lx-software/linkedin/ideas", {
         method: "POST",
         body: JSON.stringify(body),
       }),
@@ -148,12 +148,12 @@ export function useLinkedIn() {
   });
   const deleteIdea = useMutation({
     mutationFn: (ideaId: string) =>
-      adminFetchJson(`/lx-software/linkedin/ideas/${ideaId}`, { method: "DELETE" }),
+      adminFetchJson(`/v1/admin/lx-software/linkedin/ideas/${ideaId}`, { method: "DELETE" }),
     onSuccess: refresh,
   });
   const regenerate = useMutation({
     mutationFn: async (postId: string) => {
-      const queued = await adminFetchJson<{ job: Job }>(`/lx-software/linkedin/posts/${postId}/regenerate`, {
+      const queued = await adminFetchJson<{ job: Job }>(`/v1/admin/lx-software/linkedin/posts/${postId}/regenerate`, {
         method: "POST",
         body: JSON.stringify({}),
       });
@@ -163,21 +163,21 @@ export function useLinkedIn() {
   });
   const connect = useMutation({
     mutationFn: (body: { includeOrganizations: boolean }) =>
-      adminFetchJson<{ url: string }>("/lx-software/linkedin/connect", {
+      adminFetchJson<{ url: string }>("/v1/admin/lx-software/linkedin/connect", {
         method: "POST",
         body: JSON.stringify(body),
       }),
   });
   const connectAnalytics = useMutation({
     mutationFn: () =>
-      adminFetchJson<{ url: string }>("/lx-software/linkedin/analytics/connect", {
+      adminFetchJson<{ url: string }>("/v1/admin/lx-software/linkedin/analytics/connect", {
         method: "POST",
         body: "{}",
       }),
   });
   const disconnectAnalytics = useMutation({
     mutationFn: () =>
-      adminFetchJson<{ analytics: LinkedInAnalyticsConnection }>("/lx-software/linkedin/analytics/disconnect", {
+      adminFetchJson<{ analytics: LinkedInAnalyticsConnection }>("/v1/admin/lx-software/linkedin/analytics/disconnect", {
         method: "POST",
         body: "{}",
       }),
@@ -185,19 +185,19 @@ export function useLinkedIn() {
   });
   const completeAuth = useMutation({
     mutationFn: (body: { code: string; state: string }) =>
-      adminFetchJson<{ connection: LinkedInConnection }>("/lx-software/linkedin/oauth/exchange", {
+      adminFetchJson<{ connection: LinkedInConnection }>("/v1/admin/lx-software/linkedin/oauth/exchange", {
         method: "POST",
         body: JSON.stringify(body),
       }),
     onSuccess: refresh,
   });
   const disconnect = useMutation({
-    mutationFn: () => adminFetchJson("/lx-software/linkedin/disconnect", { method: "POST", body: "{}" }),
+    mutationFn: () => adminFetchJson("/v1/admin/lx-software/linkedin/disconnect", { method: "POST", body: "{}" }),
     onSuccess: refresh,
   });
   const refreshOrganizations = useMutation({
     mutationFn: () =>
-      adminFetchJson<{ connection: LinkedInConnection }>("/lx-software/linkedin/connection/refresh", {
+      adminFetchJson<{ connection: LinkedInConnection }>("/v1/admin/lx-software/linkedin/connection/refresh", {
         method: "POST",
         body: "{}",
       }),
@@ -205,7 +205,7 @@ export function useLinkedIn() {
   });
   const saveConnection = useMutation({
     mutationFn: (body: { channel: string; organizationId: string }) =>
-      adminFetchJson<{ connection: LinkedInConnection }>("/lx-software/linkedin/connection", {
+      adminFetchJson<{ connection: LinkedInConnection }>("/v1/admin/lx-software/linkedin/connection", {
         method: "PUT",
         body: JSON.stringify(body),
       }),
@@ -213,7 +213,7 @@ export function useLinkedIn() {
   });
   const uploadImage = useMutation({
     mutationFn: ({ postId, contentType, dataBase64 }: { postId: string; contentType: string; dataBase64: string }) =>
-      adminFetchJson<{ item: LinkedInPost }>(`/lx-software/linkedin/posts/${postId}/image`, {
+      adminFetchJson<{ item: LinkedInPost }>(`/v1/admin/lx-software/linkedin/posts/${postId}/image`, {
         method: "POST",
         body: JSON.stringify({ contentType, dataBase64 }),
       }),
@@ -224,7 +224,7 @@ export function useLinkedIn() {
   });
   const deleteImage = useMutation({
     mutationFn: (postId: string) =>
-      adminFetchJson<{ item: LinkedInPost }>(`/lx-software/linkedin/posts/${postId}/image`, { method: "DELETE" }),
+      adminFetchJson<{ item: LinkedInPost }>(`/v1/admin/lx-software/linkedin/posts/${postId}/image`, { method: "DELETE" }),
     onSuccess: (_data, postId) => {
       refresh();
       refreshPostBytes(postId);
@@ -242,7 +242,7 @@ export function useLinkedIn() {
       caption: string;
       expression: string;
     }) =>
-      adminFetchJson<{ item: LinkedInPost }>(`/lx-software/linkedin/posts/${postId}/image/regenerate`, {
+      adminFetchJson<{ item: LinkedInPost }>(`/v1/admin/lx-software/linkedin/posts/${postId}/image/regenerate`, {
         method: "POST",
         body: JSON.stringify({ scene, caption, expression }),
       }),
@@ -253,7 +253,7 @@ export function useLinkedIn() {
   });
   const rewriteBrief = useMutation({
     mutationFn: (postId: string) =>
-      adminFetchJson<{ item: LinkedInPost }>(`/lx-software/linkedin/posts/${postId}/image/brief`, {
+      adminFetchJson<{ item: LinkedInPost }>(`/v1/admin/lx-software/linkedin/posts/${postId}/image/brief`, {
         method: "POST",
         body: "{}",
       }),
@@ -261,7 +261,7 @@ export function useLinkedIn() {
   });
   const uploadCharacterPhoto = useMutation({
     mutationFn: ({ contentType, dataBase64 }: { contentType: string; dataBase64: string }) =>
-      adminFetchJson<LinkedInCharacter>("/lx-software/linkedin/character/photo", {
+      adminFetchJson<LinkedInCharacter>("/v1/admin/lx-software/linkedin/character/photo", {
         method: "POST",
         body: JSON.stringify({ contentType, dataBase64 }),
       }),
@@ -271,7 +271,7 @@ export function useLinkedIn() {
     },
   });
   const deleteCharacterPhoto = useMutation({
-    mutationFn: () => adminFetchJson<LinkedInCharacter>("/lx-software/linkedin/character/photo", { method: "DELETE" }),
+    mutationFn: () => adminFetchJson<LinkedInCharacter>("/v1/admin/lx-software/linkedin/character/photo", { method: "DELETE" }),
     onSuccess: () => {
       refresh();
       refreshCharacterBytes();
@@ -279,7 +279,7 @@ export function useLinkedIn() {
   });
   const drawCharacter = useMutation({
     mutationFn: async () => {
-      const queued = await adminFetchJson<{ job: Job }>("/lx-software/linkedin/character/draw", {
+      const queued = await adminFetchJson<{ job: Job }>("/v1/admin/lx-software/linkedin/character/draw", {
         method: "POST",
         body: "{}",
       });
@@ -292,7 +292,7 @@ export function useLinkedIn() {
   });
   const chooseCharacter = useMutation({
     mutationFn: (candidateId: string) =>
-      adminFetchJson<LinkedInCharacter>("/lx-software/linkedin/character/choose", {
+      adminFetchJson<LinkedInCharacter>("/v1/admin/lx-software/linkedin/character/choose", {
         method: "POST",
         body: JSON.stringify({ candidateId }),
       }),
@@ -303,7 +303,7 @@ export function useLinkedIn() {
   });
   const generate = useMutation({
     mutationFn: async (body: { count?: number; pillar?: string }) => {
-      const queued = await adminFetchJson<{ job: Job }>("/lx-software/linkedin/generate", {
+      const queued = await adminFetchJson<{ job: Job }>("/v1/admin/lx-software/linkedin/generate", {
         method: "POST",
         body: JSON.stringify(body),
       });

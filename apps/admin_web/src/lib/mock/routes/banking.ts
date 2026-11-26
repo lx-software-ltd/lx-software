@@ -4,13 +4,13 @@ import { json, parseBody } from "./context";
 
 export function handleB0(ctx: MockCtx): Response | null {
   const p = ctx.path;
-  if (!(p === "/banking")) return null;
+  if (!(p === "/v1/admin/banking")) return null;
   return json(bankingFixture);
 }
 
 export function handleB1(ctx: MockCtx): Response | null {
   const p = ctx.path;
-  if (!(p === "/banking/banks")) return null;
+  if (!(p === "/v1/admin/banking/banks")) return null;
 
       return json({
         banks: [
@@ -23,13 +23,13 @@ export function handleB1(ctx: MockCtx): Response | null {
 
 export function handleB2(ctx: MockCtx): Response | null {
   const p = ctx.path;
-  if (!(p === "/banking/sync")) return null;
+  if (!(p === "/v1/admin/banking/sync")) return null;
   return json(bankingFixture.lastSync);
 }
 
 export function handleB3(ctx: MockCtx): Response | null {
   const p = ctx.path;
   const init = ctx.init;
-  if (!(p === "/banking/mappings")) return null;
+  if (!(p === "/v1/admin/banking/mappings")) return null;
   return json({ mappings: parseBody(init).mappings ?? bankingFixture.mappings });
 }

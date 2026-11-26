@@ -44,7 +44,7 @@ export function useAdminAssets(filter = "") {
       const data = await adminFetchJson<{
         items: AdminAssetMeta[];
         nextCursor?: string | null;
-      }>(`/assets${qs ? `?${qs}` : ""}`);
+      }>(`/v1/admin/assets${qs ? `?${qs}` : ""}`);
       const items = data.items.filter((row) => row.pk.startsWith("ASSET#") && row.sk === "META");
       return { items, nextCursor: data.nextCursor ?? null };
     },
@@ -60,7 +60,7 @@ export function useAdminAsset(objectKey: string | null) {
     queryFn: async () => {
       try {
         const data = await adminFetchJson<{ item: AdminAssetMeta }>(
-          `/assets?key=${encodeURIComponent(objectKey ?? "")}`,
+          `/v1/admin/assets?key=${encodeURIComponent(objectKey ?? "")}`,
         );
         const row = data.item;
         if (!row?.pk.startsWith("ASSET#") || row.sk !== "META") return null;

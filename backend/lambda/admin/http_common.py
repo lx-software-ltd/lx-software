@@ -171,6 +171,25 @@ def http_audience(path: str) -> tuple[str, str]:
     return "unknown", path
 
 
+def apply_wire(event: dict[str, Any], respond: Any) -> Any:
+    """Convert JSON keys at the HTTP boundary, after the handler returns."""
+    import wire_format
+
+    bind_request_id(event)
+    method, path = _route(event)
+    contract = wire_format.load_contract()
+    if not wire_format.excluded(path, contract):
+        event = wire_format.prepare_request(event, contract)
+    response = respond(event)
+    if wire_format.excluded(path, contract):
+        return response
+    prepared = wire_format.prepare_response(response, contract, f"{method} {path}")
+    if prepared is None:
+        _log_event("warning", tag="wire_format_pass_through", path=path)
+        return response
+    return prepared
+
+
 def _request_id(event: dict[str, Any]) -> str:
     return (
         event.get("requestContext", {}).get("requestId", "")

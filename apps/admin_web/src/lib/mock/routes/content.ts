@@ -1,7 +1,7 @@
 import type { MockCtx } from "./types";
 import { json, state } from "./context";
 
-const CONTENT_PREFIX = "/siu-tin-dei/board/content/";
+const CONTENT_PREFIX = "/v1/admin/siutindei/board/content/";
 const SUFFIX = "/delete-post";
 
 /** Owner-only delete of a published Facebook post; mirrors board_content.delete_post. */

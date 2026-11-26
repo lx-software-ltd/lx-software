@@ -208,7 +208,7 @@ export const assetsFixture: readonly AdminAssetMeta[] = [
 
 export const bankingFixture: BankSyncState = {
   enabled: true,
-  callbackPath: "/banking/callback",
+  callbackPath: "/v1/admin/banking/callback",
   sessions: [
     {
       sessionId: "sess-monzo",
@@ -1141,7 +1141,7 @@ export const openrouterUsageFixture: OpenRouterUsagePayload = {
       id: "executive-board",
       label: "Executive Board",
       title: "LX Admin - Executive Board",
-      referer: "https://admin.lx-software.com/siu-tin-dei/board",
+      referer: "https://admin.lx-software.com/siutindei/board",
       repo: "lx-software-ltd/lx-software",
       keyName: "lxsoftware:executive-board",
       meteredHere: true,

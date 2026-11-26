@@ -109,7 +109,7 @@ import board_store  # noqa: E402
 import openrouter_client  # noqa: E402
 from board_routes import validate_settings  # noqa: E402
 from contract_constants import BOARD_KEY  # noqa: E402
-from dispatch import lambda_handler  # noqa: E402
+from http_call import http_call  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # In-memory DynamoDB table
@@ -611,7 +611,7 @@ class BoardTestCase(unittest.TestCase):
         return ev
 
     def call(self, path: str, method: str = "GET", body: dict | None = None, query: str = "") -> tuple[int, Any]:
-        out = lambda_handler(self.event(path, method, body, query), None)
+        out = http_call(self.event(path, method, body, query), None)
         return out["statusCode"], json.loads(out["body"])
 
 
@@ -835,7 +835,7 @@ class TestBoardRoutes(BoardTestCase):
     def test_non_admin_forbidden(self) -> None:
         ev = self.event("/v1/admin/siutindei/board")
         ev["requestContext"]["authorizer"]["jwt"]["claims"]["cognito:groups"] = "[viewer]"
-        out = lambda_handler(ev, None)
+        out = http_call(ev, None)
         self.assertEqual(out["statusCode"], 403)
 
 
@@ -1106,25 +1106,25 @@ class TestMeetings(BoardTestCase):
         )
 
     def test_schedule_trigger_respects_settings(self) -> None:
-        lambda_handler({"internal": "board_meeting", "slot": "morning"}, None)
+        http_call({"internal": "board_meeting", "slot": "morning"}, None)
         self.assertEqual(board_store.list_meetings(self.table), [])
         self.call("/v1/admin/siutindei/board/settings", "PUT", {"schedule": {"morningEnabled": True}})
-        lambda_handler({"internal": "board_meeting", "slot": "morning"}, None)
+        http_call({"internal": "board_meeting", "slot": "morning"}, None)
         meetings = board_store.list_meetings(self.table)
         self.assertEqual(len(meetings), 1)
         self.assertEqual(meetings[0]["trigger"], "schedule:morning")
         self.assertEqual(meetings[0]["status"], "succeeded")
-        lambda_handler({"internal": "board_meeting", "slot": "evening"}, None)
+        http_call({"internal": "board_meeting", "slot": "evening"}, None)
         self.assertEqual(len(board_store.list_meetings(self.table)), 1)
 
     def test_schedule_trigger_ignores_other_board_key(self) -> None:
         self.call("/v1/admin/siutindei/board/settings", "PUT", {"schedule": {"morningEnabled": True}})
-        lambda_handler(
+        http_call(
             {"internal": "board_meeting", "slot": "morning", "boardKey": "lxSoftware"},
             None,
         )
         self.assertEqual(board_store.list_meetings(self.table), [])
-        lambda_handler(
+        http_call(
             {"internal": "board_meeting", "slot": "morning", "boardKey": BOARD_KEY},
             None,
         )

@@ -41,7 +41,7 @@ describe("LinkedIn plan dashboard card", () => {
     expect(screen.getByText("1")).toBeTruthy();
     expect(screen.getByText(formatDateTimeHKT(NEXT_SLOT))).toBeTruthy();
     expect(screen.getByText(/their slot has not arrived/)).toBeTruthy();
-    expect(vi.mocked(adminFetchJson)).toHaveBeenCalledWith("/lx-software/linkedin?view=plan");
+    expect(vi.mocked(adminFetchJson)).toHaveBeenCalledWith("/v1/admin/lx-software/linkedin?view=plan");
   });
 
   it("hides a slot that has already started", async () => {

@@ -23,5 +23,5 @@ export type AwsBillingPayload = {
   readonly companies: readonly AwsBillingCompany[];
 };
 
-export const AWS_USAGE_PATH = "/aws/usage";
-export const AWS_USAGE_PDF_PATH = "/aws/usage.pdf";
+export const AWS_USAGE_PATH = "/v1/admin/aws/usage";
+export const AWS_USAGE_PDF_PATH = "/v1/admin/aws/usage/pdf";

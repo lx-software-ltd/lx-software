@@ -13,8 +13,8 @@ import board_data_api
 import board_product
 import board_receivables
 import board_store
-import dispatch
 from board_tools import REGISTRY, ToolContext, execute_call
+from http_call import http_call
 from test_board import BoardTestCase
 from test_board_tools import ToolsTestCase
 
@@ -601,8 +601,8 @@ class TestMirrorAndDunning(ReceivablesTestCase):
 
     def test_schedule_triggers_dispatch(self) -> None:
         with patch.object(board_store, "records_table", return_value=self.table):
-            dispatch.lambda_handler({"internal": "board_receivables_mirror"}, None)
-            dispatch.lambda_handler({"internal": "board_dunning"}, None)
+            http_call({"internal": "board_receivables_mirror"}, None)
+            http_call({"internal": "board_dunning"}, None)
 
 
 class TestProductViews(ReceivablesTestCase):

@@ -15,21 +15,21 @@ import { STATEMENT_BOOK_LABELS } from "../../financeTypes";
 export function handleF0(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
-  if (!(p === "/finance" && method === "GET")) return null;
+  if (!(p === "/v1/admin/finance" && method === "GET")) return null;
   return json(state.finance);
 }
 
 export function handleF1(ctx: MockCtx): Response | null {
   const url = ctx.url;
   const p = ctx.path;
-  if (!(p === "/finance/quotes")) return null;
+  if (!(p === "/v1/admin/finance/quotes")) return null;
   return quotes(url);
 }
 
 export function handleF2(ctx: MockCtx): Response | null {
   const url = ctx.url;
   const p = ctx.path;
-  if (!(p === "/fx/v2/rates")) return null;
+  if (!(p === "/v1/admin/fx/rates")) return null;
   return fxRates(url);
 }
 
@@ -37,9 +37,9 @@ export function handleF3(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
   const init = ctx.init;
-  if (!(p === "/finance/hillmarton" || p === "/finance/morrison")) return null;
+  if (!(p === "/v1/admin/finance/hillmarton" || p === "/v1/admin/finance/morrison")) return null;
 
-      const house = p.slice("/finance/".length) as "hillmarton" | "morrison";
+      const house = p.slice("/v1/admin/finance/".length) as "hillmarton" | "morrison";
       if (method === "PUT") {
         const data = parseBody(init) as unknown as HouseFinanceData;
         state.finance = { ...state.finance, [house]: data };
@@ -52,9 +52,9 @@ export function handleF4(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
   const init = ctx.init;
-  if (!(p.startsWith("/finance/"))) return null;
+  if (!(p.startsWith("/v1/admin/finance/"))) return null;
 
-      const listKey = FINANCE_LIST_KEYS[p.slice("/finance/".length)];
+      const listKey = FINANCE_LIST_KEYS[p.slice("/v1/admin/finance/".length)];
       if (listKey) {
         if (method === "PUT") {
           const body = parseBody(init);
@@ -146,12 +146,13 @@ export function handleF8(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
   const init = ctx.init;
-  const book = state.books[p.slice(1)];
+  const slug = p.startsWith("/v1/admin/") ? p.slice("/v1/admin/".length) : p.slice(1);
+  const book = state.books[slug];
   if (!(book)) return null;
 
       if (method === "PUT") {
-        state.books[p.slice(1)] = parseBody(init) as unknown as HouseFinanceData;
+        state.books[slug] = parseBody(init) as unknown as HouseFinanceData;
       }
-      return json({ data: state.books[p.slice(1)] });
+      return json({ data: state.books[slug] });
     return null;
 }

@@ -32,7 +32,6 @@ def _install_stubs() -> None:
 
 _install_stubs()
 
-from dispatch import lambda_handler  # noqa: E402
 from handler import (  # noqa: E402
     DEFAULT_EXPENSE_INCOME_ALLOCATION_PERCENTAGES,
     EXPENSE_RECORD_CATEGORIES,
@@ -72,6 +71,7 @@ from handler import (  # noqa: E402
     _statement_basename_already_imported,
     _utc_iso_z,
 )
+from http_call import http_call  # noqa: E402
 from http_common import _public_authorizer_context  # noqa: E402
 
 
@@ -101,15 +101,9 @@ class TestNormalizePublicAssetKey(unittest.TestCase):
 
     def test_rejects_inbound_bad_house_or_batch(self) -> None:
         batch = "a" * 32
-        self.assertIsNone(
-            _normalize_public_asset_key(f"inbound/unknown/{batch}/00_x.pdf")
-        )
-        self.assertIsNone(
-            _normalize_public_asset_key("inbound/hillmarton/short/00_x.pdf")
-        )
-        self.assertIsNone(
-            _normalize_public_asset_key(f"inbound/hillmarton/{'g' * 32}/x.pdf")
-        )
+        self.assertIsNone(_normalize_public_asset_key(f"inbound/unknown/{batch}/00_x.pdf"))
+        self.assertIsNone(_normalize_public_asset_key("inbound/hillmarton/short/00_x.pdf"))
+        self.assertIsNone(_normalize_public_asset_key(f"inbound/hillmarton/{'g' * 32}/x.pdf"))
 
     def test_empty(self) -> None:
         self.assertIsNone(_normalize_public_asset_key(None))
@@ -122,27 +116,19 @@ class TestGroups(unittest.TestCase):
         self.assertTrue(_groups_include_admin({"cognito:groups": "admin"}))
         self.assertTrue(_groups_include_admin({"cognito:groups": "viewer,admin"}))
         self.assertTrue(_groups_include_admin({"cognito:groups": ["admin"]}))
-        self.assertTrue(
-            _groups_include_admin({"cognito:groups": ["viewer", "admin"]})
-        )
+        self.assertTrue(_groups_include_admin({"cognito:groups": ["viewer", "admin"]}))
 
     def test_admin_present_httpapi_bracketed(self) -> None:
         # API Gateway HTTP API JWT authorizer passes array claims as a
         # Java toString() string, with literal brackets and ", " separators.
         self.assertTrue(_groups_include_admin({"cognito:groups": "[admin]"}))
-        self.assertTrue(
-            _groups_include_admin({"cognito:groups": "[viewer, admin]"})
-        )
-        self.assertTrue(
-            _groups_include_admin({"cognito:groups": "[admin, viewer]"})
-        )
+        self.assertTrue(_groups_include_admin({"cognito:groups": "[viewer, admin]"}))
+        self.assertTrue(_groups_include_admin({"cognito:groups": "[admin, viewer]"}))
 
     def test_admin_absent(self) -> None:
         self.assertFalse(_groups_include_admin({"cognito:groups": "viewer"}))
         self.assertFalse(_groups_include_admin({"cognito:groups": "[viewer]"}))
-        self.assertFalse(
-            _groups_include_admin({"cognito:groups": "[viewer, editor]"})
-        )
+        self.assertFalse(_groups_include_admin({"cognito:groups": "[viewer, editor]"}))
         self.assertFalse(_groups_include_admin({"cognito:groups": []}))
         self.assertFalse(_groups_include_admin({}))
 
@@ -204,7 +190,6 @@ class TestFinancePayload(unittest.TestCase):
         with self.assertRaises(ValueError):
             _normalize_finance_payload(body)
 
-
     def test_source_asset_key_persisted(self) -> None:
         body = {
             "defaultCurrency": "GBP",
@@ -224,9 +209,7 @@ class TestFinancePayload(unittest.TestCase):
             ],
         }
         out = _normalize_finance_payload(body)
-        self.assertEqual(
-            out["lines"][0]["sourceAssetKeys"], ["uploads/abc/123/statement.pdf"]
-        )
+        self.assertEqual(out["lines"][0]["sourceAssetKeys"], ["uploads/abc/123/statement.pdf"])
         self.assertNotIn("sourceAssetKey", out["lines"][0])
 
     def test_source_asset_keys_multiple(self) -> None:
@@ -1038,56 +1021,38 @@ class TestLiabilitiesSheetPayload(unittest.TestCase):
 
     def test_normalize_optional_rate_and_house(self) -> None:
         out = _normalize_liabilities_sheet_payload(
-            {
-                "liabilityRecords": [
-                    self._row(interestRatePercent=4.25, relatedHouse="hillmarton")
-                ]
-            }
+            {"liabilityRecords": [self._row(interestRatePercent=4.25, relatedHouse="hillmarton")]}
         )
         self.assertEqual(out[0]["interestRatePercent"], 4.25)
         self.assertEqual(out[0]["relatedHouse"], "hillmarton")
 
     def test_normalize_rejects_bad_liability_type(self) -> None:
         with self.assertRaises(ValueError):
-            _normalize_liabilities_sheet_payload(
-                {"liabilityRecords": [self._row(liabilityType="IOU")]}
-            )
+            _normalize_liabilities_sheet_payload({"liabilityRecords": [self._row(liabilityType="IOU")]})
 
     def test_normalize_requires_description(self) -> None:
         with self.assertRaises(ValueError):
-            _normalize_liabilities_sheet_payload(
-                {"liabilityRecords": [self._row(description="  ")]}
-            )
+            _normalize_liabilities_sheet_payload({"liabilityRecords": [self._row(description="  ")]})
 
     def test_normalize_rejects_negative_balance(self) -> None:
         with self.assertRaises(ValueError):
-            _normalize_liabilities_sheet_payload(
-                {"liabilityRecords": [self._row(outstandingBalance=-1.0)]}
-            )
+            _normalize_liabilities_sheet_payload({"liabilityRecords": [self._row(outstandingBalance=-1.0)]})
 
     def test_normalize_rejects_bad_rate(self) -> None:
         for bad in (-0.1, 100.5, "abc", True):
             with self.assertRaises(ValueError):
-                _normalize_liabilities_sheet_payload(
-                    {"liabilityRecords": [self._row(interestRatePercent=bad)]}
-                )
+                _normalize_liabilities_sheet_payload({"liabilityRecords": [self._row(interestRatePercent=bad)]})
 
     def test_normalize_rejects_unknown_house(self) -> None:
         with self.assertRaises(ValueError):
-            _normalize_liabilities_sheet_payload(
-                {"liabilityRecords": [self._row(relatedHouse="atlantis")]}
-            )
+            _normalize_liabilities_sheet_payload({"liabilityRecords": [self._row(relatedHouse="atlantis")]})
 
     def test_normalize_rejects_unsupported_currency(self) -> None:
         with self.assertRaises(ValueError):
-            _normalize_liabilities_sheet_payload(
-                {"liabilityRecords": [self._row(currency="JPY")]}
-            )
+            _normalize_liabilities_sheet_payload({"liabilityRecords": [self._row(currency="JPY")]})
 
     def test_normalize_ignores_client_last_updated(self) -> None:
-        out = _normalize_liabilities_sheet_payload(
-            {"liabilityRecords": [self._row(lastUpdated="2020-01-01")]}
-        )
+        out = _normalize_liabilities_sheet_payload({"liabilityRecords": [self._row(lastUpdated="2020-01-01")]})
         self.assertNotIn("lastUpdated", out[0])
 
     def test_sanitize_keeps_valid_rows_and_last_updated(self) -> None:
@@ -1124,9 +1089,7 @@ class TestMergeLiabilitiesLastUpdated(unittest.TestCase):
 
     def test_unchanged_preserves_last_updated(self) -> None:
         existing = [self._row(lastUpdated="2025-03-01")]
-        out = _merge_liabilities_last_updated(
-            [self._row()], existing, today_iso="2026-01-10"
-        )
+        out = _merge_liabilities_last_updated([self._row()], existing, today_iso="2026-01-10")
         self.assertEqual(out[0]["lastUpdated"], "2025-03-01")
 
     def test_balance_change_gets_today(self) -> None:
@@ -1140,9 +1103,7 @@ class TestMergeLiabilitiesLastUpdated(unittest.TestCase):
 
     def test_rate_change_gets_today(self) -> None:
         existing = [self._row(lastUpdated="2025-03-01", interestRatePercent=2.0)]
-        out = _merge_liabilities_last_updated(
-            [self._row(interestRatePercent=2.5)], existing, today_iso="2026-01-10"
-        )
+        out = _merge_liabilities_last_updated([self._row(interestRatePercent=2.5)], existing, today_iso="2026-01-10")
         self.assertEqual(out[0]["lastUpdated"], "2026-01-10")
 
 
@@ -1361,9 +1322,7 @@ class TestLedgerSheetPayload(unittest.TestCase):
             ]
         }
         with self.assertRaises(ValueError) as ctx:
-            _normalize_ledger_sheet_payload(
-                body, body_key="incomeRecords", categories=INCOME_RECORD_CATEGORIES
-            )
+            _normalize_ledger_sheet_payload(body, body_key="incomeRecords", categories=INCOME_RECORD_CATEGORIES)
         self.assertIn("amountPeriod", str(ctx.exception))
 
     def test_income_invalid_related_house(self) -> None:
@@ -1380,9 +1339,7 @@ class TestLedgerSheetPayload(unittest.TestCase):
             ]
         }
         with self.assertRaises(ValueError) as ctx:
-            _normalize_ledger_sheet_payload(
-                body, body_key="incomeRecords", categories=INCOME_RECORD_CATEGORIES
-            )
+            _normalize_ledger_sheet_payload(body, body_key="incomeRecords", categories=INCOME_RECORD_CATEGORIES)
         self.assertIn("relatedHouse", str(ctx.exception))
 
     def test_income_invalid_category(self) -> None:
@@ -1398,15 +1355,11 @@ class TestLedgerSheetPayload(unittest.TestCase):
             ]
         }
         with self.assertRaises(ValueError):
-            _normalize_ledger_sheet_payload(
-                body, body_key="incomeRecords", categories=INCOME_RECORD_CATEGORIES
-            )
+            _normalize_ledger_sheet_payload(body, body_key="incomeRecords", categories=INCOME_RECORD_CATEGORIES)
 
     def test_income_missing_body_key(self) -> None:
         with self.assertRaises(ValueError):
-            _normalize_ledger_sheet_payload(
-                {}, body_key="incomeRecords", categories=INCOME_RECORD_CATEGORIES
-            )
+            _normalize_ledger_sheet_payload({}, body_key="incomeRecords", categories=INCOME_RECORD_CATEGORIES)
 
     def test_expense_valid(self) -> None:
         body = {
@@ -1518,9 +1471,7 @@ class TestLedgerSheetPayload(unittest.TestCase):
         self.assertIn("isAllocate", str(ctx.exception))
 
     def test_normalize_allocations_empty_when_none_tagged(self) -> None:
-        out = _normalize_allocations_sheet_payload(
-            {"allocationRecords": []}, frozenset()
-        )
+        out = _normalize_allocations_sheet_payload({"allocationRecords": []}, frozenset())
         self.assertEqual(out, [])
 
     def test_normalize_allocations_rejects_nonempty_when_none_tagged(self) -> None:
@@ -1656,18 +1607,14 @@ class TestLedgerSheetPayload(unittest.TestCase):
     def test_merge_allocation_linked_updates_last_updated_on_is_income_toggle(self) -> None:
         existing = [{"expenseId": "a", "accumulatedAmount": 1.0, "lastUpdated": "2026-01-01"}]
         normalized = [{"expenseId": "a", "accumulatedAmount": 1.0, "isIncome": True}]
-        out = _merge_allocation_stored_last_updated(
-            normalized, existing, today_iso="2026-02-02"
-        )
+        out = _merge_allocation_stored_last_updated(normalized, existing, today_iso="2026-02-02")
         self.assertEqual(out[0]["lastUpdated"], "2026-02-02")
         self.assertTrue(out[0].get("isIncome"))
 
     def test_merge_allocation_linked_updates_last_updated_on_is_pension_toggle(self) -> None:
         existing = [{"expenseId": "a", "accumulatedAmount": 1.0, "lastUpdated": "2026-01-01"}]
         normalized = [{"expenseId": "a", "accumulatedAmount": 1.0, "isPension": True}]
-        out = _merge_allocation_stored_last_updated(
-            normalized, existing, today_iso="2026-02-02"
-        )
+        out = _merge_allocation_stored_last_updated(normalized, existing, today_iso="2026-02-02")
         self.assertEqual(out[0]["lastUpdated"], "2026-02-02")
         self.assertTrue(out[0].get("isPension"))
 
@@ -1690,9 +1637,7 @@ class TestLedgerSheetPayload(unittest.TestCase):
     def test_merge_allocation_updates_last_updated_on_amount_change(self) -> None:
         existing = [{"expenseId": "a", "accumulatedAmount": 1.0, "lastUpdated": "2026-01-01"}]
         normalized = [{"expenseId": "a", "accumulatedAmount": 2.0}]
-        out = _merge_allocation_stored_last_updated(
-            normalized, existing, today_iso="2026-02-02"
-        )
+        out = _merge_allocation_stored_last_updated(normalized, existing, today_iso="2026-02-02")
         self.assertEqual(out[0]["lastUpdated"], "2026-02-02")
 
     def test_merge_allocation_keeps_last_updated_when_amount_unchanged(self) -> None:
@@ -1714,9 +1659,7 @@ class TestLedgerSheetPayload(unittest.TestCase):
                 "isAllocate": True,
             }
         ]
-        out = _sanitize_ledger_records_list(
-            raw, EXPENSE_RECORD_CATEGORIES, include_expense_flags=True
-        )
+        out = _sanitize_ledger_records_list(raw, EXPENSE_RECORD_CATEGORIES, include_expense_flags=True)
         self.assertTrue(out[0]["isAllocate"])
 
     def test_derived_expense_tax_on_income_row(self) -> None:
@@ -1763,11 +1706,7 @@ class TestLedgerSheetPayload(unittest.TestCase):
             "savingOnIncomePercent": 25.0,
         }
         out = _build_allocation_records_for_response([], [], income, perc)
-        match = [
-            r
-            for r in out
-            if r["expenseId"] == "__derived__saving-on-income__morrison__USD"
-        ]
+        match = [r for r in out if r["expenseId"] == "__derived__saving-on-income__morrison__USD"]
         self.assertEqual(len(match), 1)
         self.assertEqual(match[0]["monthlyAmount"], 200.0)
         self.assertEqual(match[0]["accumulatedAmount"], 0.0)
@@ -1803,12 +1742,11 @@ class TestLedgerSheetPayload(unittest.TestCase):
                 "isSaving": "no",
             }
         ]
-        out = _sanitize_ledger_records_list(
-            raw, INCOME_RECORD_CATEGORIES, include_income_flags=True
-        )
+        out = _sanitize_ledger_records_list(raw, INCOME_RECORD_CATEGORIES, include_income_flags=True)
         self.assertTrue(out[0]["isTax"])
         self.assertFalse(out[0]["isSaving"])
         self.assertFalse(out[0]["isInvestment"])
+
     def test_image_types_allowed(self) -> None:
         self.assertTrue(_is_allowed_upload_content_type("image/png"))
         self.assertTrue(_is_allowed_upload_content_type("image/jpeg"))
@@ -1868,9 +1806,7 @@ class TestUtcIsoZ(unittest.TestCase):
 
 class TestStatementBasenameDuplicate(unittest.TestCase):
     def test_empty_lines(self) -> None:
-        self.assertFalse(
-            _statement_basename_already_imported({"lines": []}, "jan.pdf")
-        )
+        self.assertFalse(_statement_basename_already_imported({"lines": []}, "jan.pdf"))
 
     def test_matches_basename_only(self) -> None:
         house = {
@@ -1881,12 +1817,8 @@ class TestStatementBasenameDuplicate(unittest.TestCase):
                 }
             ]
         }
-        self.assertTrue(
-            _statement_basename_already_imported(house, "BankStmt.pdf")
-        )
-        self.assertFalse(
-            _statement_basename_already_imported(house, "Other.pdf")
-        )
+        self.assertTrue(_statement_basename_already_imported(house, "BankStmt.pdf"))
+        self.assertFalse(_statement_basename_already_imported(house, "Other.pdf"))
 
     def test_basename_in_source_asset_keys_array(self) -> None:
         house = {
@@ -1900,20 +1832,12 @@ class TestStatementBasenameDuplicate(unittest.TestCase):
                 }
             ]
         }
-        self.assertTrue(
-            _statement_basename_already_imported(house, "Other.pdf")
-        )
+        self.assertTrue(_statement_basename_already_imported(house, "Other.pdf"))
 
     def test_case_sensitive(self) -> None:
-        house = {
-            "lines": [{"id": "a", "sourceAssetKey": "uploads/u/x/report.PDF"}]
-        }
-        self.assertTrue(
-            _statement_basename_already_imported(house, "report.PDF")
-        )
-        self.assertFalse(
-            _statement_basename_already_imported(house, "report.pdf")
-        )
+        house = {"lines": [{"id": "a", "sourceAssetKey": "uploads/u/x/report.PDF"}]}
+        self.assertTrue(_statement_basename_already_imported(house, "report.PDF"))
+        self.assertFalse(_statement_basename_already_imported(house, "report.pdf"))
 
     def test_ignores_manual_lines(self) -> None:
         house = {
@@ -1930,9 +1854,7 @@ class TestStatementBasenameDuplicate(unittest.TestCase):
                 }
             ]
         }
-        self.assertFalse(
-            _statement_basename_already_imported(house, "Rent.pdf")
-        )
+        self.assertFalse(_statement_basename_already_imported(house, "Rent.pdf"))
 
 
 def _advice_note_house_item() -> dict:
@@ -2006,7 +1928,7 @@ class TestParseRepeatsImportedBasename(unittest.TestCase):
             {"key": "uploads/admin-sub/batch/00_advice-note.pdf"},
         )
         with patch("dispatch.enqueue_parse_statement_async_job", return_value="job-repeat") as enqueued:
-            out = lambda_handler(event, None)
+            out = http_call(event, None)
         self.assertEqual(out["statusCode"], 202, out.get("body"))
         self.assertEqual(json.loads(out["body"])["jobId"], "job-repeat")
         enqueued.assert_called_once()
@@ -2025,7 +1947,7 @@ class TestParseRepeatsImportedBasename(unittest.TestCase):
             },
         )
         with patch("dispatch.enqueue_parse_statement_async_job", return_value="job-book") as enqueued:
-            out = lambda_handler(event, None)
+            out = http_call(event, None)
         self.assertEqual(out["statusCode"], 202, out.get("body"))
         self.assertEqual(enqueued.call_args.kwargs["house"], "lxSoftware")
         self.assertEqual(enqueued.call_args.kwargs["line_type_only"], "expenditure")
@@ -2088,7 +2010,6 @@ class TestParseRepeatsImportedBasename(unittest.TestCase):
         self.assertEqual(len(finance_puts), 1)
         self.assertEqual(len(finance_puts[0]["lines"]), 2)
         self.assertEqual(finance_puts[0]["lines"][1]["sourceAssetKeys"], [s3_key])
-
 
     def test_execute_reads_an_inbound_email_body_as_text(self) -> None:
         import parse_statement as parse_statement_mod
@@ -2275,16 +2196,12 @@ class TestParseStatementHousePath(unittest.TestCase):
 
     def test_path_split(self) -> None:
         self.assertEqual(
-            _path_finance_house_for_parse(
-                {}, "/finance/morrison/parse-statement"
-            ),
+            _path_finance_house_for_parse({}, "/finance/morrison/parse-statement"),
             "morrison",
         )
 
     def test_invalid_path(self) -> None:
-        self.assertIsNone(
-            _path_finance_house_for_parse({}, "/finance/morrison")
-        )
+        self.assertIsNone(_path_finance_house_for_parse({}, "/finance/morrison"))
         self.assertIsNone(_path_finance_house_for_parse({}, "/something"))
 
 
@@ -2296,9 +2213,7 @@ class TestParseJobPath(unittest.TestCase):
                 "jobId": "abc123",
             }
         }
-        h, j = _path_finance_parse_job(
-            ev, "/finance/morrison/parse-statement/jobs/abc123"
-        )
+        h, j = _path_finance_parse_job(ev, "/finance/morrison/parse-statement/jobs/abc123")
         self.assertEqual((h, j), ("morrison", "abc123"))
 
     def test_path_split(self) -> None:
@@ -2318,12 +2233,9 @@ class TestParseJobPublicDoc(unittest.TestCase):
 
         self.assertEqual(_parse_job_public_doc({"status": "pending"}), {"status": "pending"})
         self.assertEqual(
-            _parse_job_public_doc({"status": "failed", "errorMessage": "bad"})[
-                "message"
-            ],
+            _parse_job_public_doc({"status": "failed", "errorMessage": "bad"})["message"],
             "bad",
         )
-
 
     def test_succeeded_doc_includes_repeat_notes(self) -> None:
         from handler import _parse_job_public_doc
@@ -2392,9 +2304,7 @@ class TestFinalizeStuckProcessing(unittest.TestCase):
 
         table = MagicMock()
         doc = {"status": "processing", "updatedAt": "2099-01-01T00:00:00.000Z"}
-        out = _finalize_stuck_processing_job(
-            table, {"pk": "PARSE_JOB#x", "sk": "META"}, doc
-        )
+        out = _finalize_stuck_processing_job(table, {"pk": "PARSE_JOB#x", "sk": "META"}, doc)
         self.assertEqual(out["status"], "processing")
         table.put_item.assert_not_called()
 
@@ -2402,13 +2312,9 @@ class TestFinalizeStuckProcessing(unittest.TestCase):
         from handler import _finalize_stuck_processing_job
 
         table = MagicMock()
-        stale = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime(
-            "%Y-%m-%dT%H:%M:%S.%f"
-        )[:-3] + "Z"
+        stale = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
         doc = {"status": "processing", "updatedAt": stale}
-        out = _finalize_stuck_processing_job(
-            table, {"pk": "PARSE_JOB#y", "sk": "META"}, doc
-        )
+        out = _finalize_stuck_processing_job(table, {"pk": "PARSE_JOB#y", "sk": "META"}, doc)
         self.assertEqual(out["status"], "failed")
         table.put_item.assert_called_once()
 
@@ -2449,9 +2355,7 @@ class TestLambdaInternalAsyncDispatch(unittest.TestCase):
 
         import parse_jobs as parse_jobs_mod
 
-        with patch.object(
-            parse_jobs_mod, "_handle_parse_statement_async_worker", side_effect=capture
-        ):
+        with patch.object(parse_jobs_mod, "_handle_parse_statement_async_worker", side_effect=capture):
             out = handler_mod.lambda_handler(
                 {"internal": "parse_statement_async", "jobId": "jid"},
                 None,
@@ -2465,9 +2369,7 @@ class TestFxV2RatesQuery(unittest.TestCase):
     def test_requires_base(self) -> None:
         self.assertEqual(_parse_fx_v2_rates_query(None), "base is required")
         self.assertEqual(_parse_fx_v2_rates_query({}), "base is required")
-        self.assertEqual(
-            _parse_fx_v2_rates_query({"quotes": "USD"}), "base is required"
-        )
+        self.assertEqual(_parse_fx_v2_rates_query({"quotes": "USD"}), "base is required")
 
     def test_supported_and_sorted(self) -> None:
         parsed = _parse_fx_v2_rates_query({"base": "hkd", "quotes": "USD,EUR"})
@@ -2509,9 +2411,7 @@ class TestNormalizeFinanceQuoteSymbol(unittest.TestCase):
 
     def test_us_prefix_strips_to_bare_symbol(self) -> None:
         self.assertEqual(_normalize_finance_quote_symbol("US:TQQQ"), "TQQQ")
-        self.assertEqual(
-            _normalize_finance_quote_symbol("nasdaq:msft"), "MSFT"
-        )
+        self.assertEqual(_normalize_finance_quote_symbol("nasdaq:msft"), "MSFT")
         self.assertEqual(_normalize_finance_quote_symbol("NYSE:SPY"), "SPY")
 
     def test_lse_maps_to_dot_l(self) -> None:
@@ -2521,35 +2421,25 @@ class TestNormalizeFinanceQuoteSymbol(unittest.TestCase):
     def test_hkex_maps_to_dot_hk(self) -> None:
         self.assertEqual(_normalize_finance_quote_symbol("HK:0700"), "0700.HK")
         self.assertEqual(_normalize_finance_quote_symbol("HKG:0700"), "0700.HK")
-        self.assertEqual(
-            _normalize_finance_quote_symbol("HKEX:0700"), "0700.HK"
-        )
+        self.assertEqual(_normalize_finance_quote_symbol("HKEX:0700"), "0700.HK")
 
     def test_other_exchange_prefixes(self) -> None:
-        self.assertEqual(
-            _normalize_finance_quote_symbol("TYO:7203"), "7203.T"
-        )
+        self.assertEqual(_normalize_finance_quote_symbol("TYO:7203"), "7203.T")
         self.assertEqual(_normalize_finance_quote_symbol("ASX:CBA"), "CBA.AX")
         self.assertEqual(_normalize_finance_quote_symbol("TSX:RY"), "RY.TO")
         self.assertEqual(_normalize_finance_quote_symbol("SGX:D05"), "D05.SI")
         self.assertEqual(_normalize_finance_quote_symbol("PAR:MC"), "MC.PA")
-        self.assertEqual(
-            _normalize_finance_quote_symbol("XETRA:SAP"), "SAP.DE"
-        )
+        self.assertEqual(_normalize_finance_quote_symbol("XETRA:SAP"), "SAP.DE")
 
     def test_unknown_prefix_passes_through_bare_symbol(self) -> None:
-        self.assertEqual(
-            _normalize_finance_quote_symbol("FOO:BAR"), "BAR"
-        )
+        self.assertEqual(_normalize_finance_quote_symbol("FOO:BAR"), "BAR")
 
     def test_empty_after_prefix_is_invalid(self) -> None:
         self.assertIsNone(_normalize_finance_quote_symbol("US:"))
 
     def test_already_yahoo_native_passes_through(self) -> None:
         self.assertEqual(_normalize_finance_quote_symbol("VWRA.L"), "VWRA.L")
-        self.assertEqual(
-            _normalize_finance_quote_symbol("BTC-USD"), "BTC-USD"
-        )
+        self.assertEqual(_normalize_finance_quote_symbol("BTC-USD"), "BTC-USD")
 
     def test_bare_short_token_treated_as_crypto(self) -> None:
         # 2-6 alpha letters with no separators → assume crypto and append -USD
@@ -2559,20 +2449,14 @@ class TestNormalizeFinanceQuoteSymbol(unittest.TestCase):
 
     def test_bare_long_or_mixed_token_passed_through(self) -> None:
         # 7+ chars or non-alpha → pass through uppercased
-        self.assertEqual(
-            _normalize_finance_quote_symbol("MICROSOFT"), "MICROSOFT"
-        )
+        self.assertEqual(_normalize_finance_quote_symbol("MICROSOFT"), "MICROSOFT")
         self.assertEqual(_normalize_finance_quote_symbol("0700"), "0700")
 
 
 class TestNormalizeYahooPriceCurrency(unittest.TestCase):
     def test_passes_through_normal_currency(self) -> None:
-        self.assertEqual(
-            _normalize_yahoo_price_currency(123.45, "USD"), (123.45, "USD")
-        )
-        self.assertEqual(
-            _normalize_yahoo_price_currency(789.0, "hkd"), (789.0, "HKD")
-        )
+        self.assertEqual(_normalize_yahoo_price_currency(123.45, "USD"), (123.45, "USD"))
+        self.assertEqual(_normalize_yahoo_price_currency(789.0, "hkd"), (789.0, "HKD"))
 
     def test_gbp_pence_normalized(self) -> None:
         # GBp / GBX → divide by 100 and report GBP
@@ -2584,36 +2468,24 @@ class TestNormalizeYahooPriceCurrency(unittest.TestCase):
         self.assertEqual(ccy2, "GBP")
 
     def test_zar_cents_and_ils_agorot_normalized(self) -> None:
-        self.assertEqual(
-            _normalize_yahoo_price_currency(1000.0, "ZAc"), (10.0, "ZAR")
-        )
-        self.assertEqual(
-            _normalize_yahoo_price_currency(500.0, "ILA"), (5.0, "ILS")
-        )
+        self.assertEqual(_normalize_yahoo_price_currency(1000.0, "ZAc"), (10.0, "ZAR"))
+        self.assertEqual(_normalize_yahoo_price_currency(500.0, "ILA"), (5.0, "ILS"))
 
     def test_blank_currency_passes_through(self) -> None:
-        self.assertEqual(
-            _normalize_yahoo_price_currency(1.0, ""), (1.0, "")
-        )
+        self.assertEqual(_normalize_yahoo_price_currency(1.0, ""), (1.0, ""))
 
 
 class TestParseFinanceQuotesQuery(unittest.TestCase):
     def test_requires_symbols(self) -> None:
-        self.assertEqual(
-            _parse_finance_quotes_query(None), "symbols is required"
-        )
-        self.assertEqual(
-            _parse_finance_quotes_query({}), "symbols is required"
-        )
+        self.assertEqual(_parse_finance_quotes_query(None), "symbols is required")
+        self.assertEqual(_parse_finance_quotes_query({}), "symbols is required")
         self.assertEqual(
             _parse_finance_quotes_query({"symbols": "  ,, "}),
             "symbols is required",
         )
 
     def test_normalizes_and_dedupes(self) -> None:
-        out = _parse_finance_quotes_query(
-            {"symbols": "US:TQQQ, BTC, BTC-USD ,LON:VWRA"}
-        )
+        out = _parse_finance_quotes_query({"symbols": "US:TQQQ, BTC, BTC-USD ,LON:VWRA"})
         self.assertIsInstance(out, tuple)
         pairs, _ = out  # type: ignore[misc]
         # BTC normalizes to BTC-USD which is already present, so dedup
@@ -2695,18 +2567,16 @@ class TestPublicReadRoutes(unittest.TestCase):
         return {"keyId": "k123", "label": "test", "scope": "read"}
 
     def test_missing_key_context_unauthorized(self) -> None:
-        out = lambda_handler(self._event("/v1/partner/finance"), None)
+        out = http_call(self._event("/v1/partner/finance"), None)
         self.assertEqual(out["statusCode"], 401)
 
     def test_wrong_scope_unauthorized(self) -> None:
         ctx = {"keyId": "k123", "scope": "write"}
-        out = lambda_handler(self._event("/v1/partner/finance", key_ctx=ctx), None)
+        out = http_call(self._event("/v1/partner/finance", key_ctx=ctx), None)
         self.assertEqual(out["statusCode"], 401)
 
     def test_public_finance_returns_overview(self) -> None:
-        out = lambda_handler(
-            self._event("/v1/partner/finance", key_ctx=self._key_ctx()), None
-        )
+        out = http_call(self._event("/v1/partner/finance", key_ctx=self._key_ctx()), None)
         self.assertEqual(out["statusCode"], 200)
         body = json.loads(out["body"])
         for key in (
@@ -2724,23 +2594,21 @@ class TestPublicReadRoutes(unittest.TestCase):
             self.assertIn(key, body)
 
     def test_public_records_returns_items(self) -> None:
-        out = lambda_handler(
-            self._event("/v1/partner/records", key_ctx=self._key_ctx()), None
-        )
+        out = http_call(self._event("/v1/partner/records", key_ctx=self._key_ctx()), None)
         self.assertEqual(out["statusCode"], 200)
         body = json.loads(out["body"])
         self.assertEqual(body["items"], [])
         self.assertIsNone(body["nextCursor"])
 
     def test_unlisted_public_path_not_found(self) -> None:
-        out = lambda_handler(
+        out = http_call(
             self._event("/v1/partner/finance/hillmarton", key_ctx=self._key_ctx()),
             None,
         )
         self.assertEqual(out["statusCode"], 404)
 
     def test_non_get_method_forbidden(self) -> None:
-        out = lambda_handler(
+        out = http_call(
             self._event("/v1/partner/finance", method="PUT", key_ctx=self._key_ctx()),
             None,
         )
@@ -2748,7 +2616,7 @@ class TestPublicReadRoutes(unittest.TestCase):
         self.assertEqual(json.loads(out["body"])["reason"], "not_allowlisted")
 
     def test_public_board_write_forbidden_when_disabled(self) -> None:
-        out = lambda_handler(
+        out = http_call(
             self._event(
                 "/v1/partner/siutindei/board/tasks",
                 method="POST",
@@ -2760,20 +2628,18 @@ class TestPublicReadRoutes(unittest.TestCase):
         self.assertEqual(json.loads(out["body"])["reason"], "writes_disabled")
 
     def test_public_board_unknown_get_not_found(self) -> None:
-        out = lambda_handler(
+        out = http_call(
             self._event("/v1/partner/siutindei/board/charter", key_ctx=self._key_ctx()),
             None,
         )
         self.assertEqual(out["statusCode"], 404)
 
     def test_bare_public_prefix_not_found(self) -> None:
-        out = lambda_handler(
-            self._event("/v1/partner", key_ctx=self._key_ctx()), None
-        )
+        out = http_call(self._event("/v1/partner", key_ctx=self._key_ctx()), None)
         self.assertEqual(out["statusCode"], 404)
 
     def test_linkedin_posts_need_their_scope(self) -> None:
-        denied = lambda_handler(
+        denied = http_call(
             self._event(
                 "/v1/partner/lx-software/linkedin/posts",
                 key_ctx={"keyId": "k123", "scopes": "finance,siutindei-board-full"},
@@ -2785,7 +2651,7 @@ class TestPublicReadRoutes(unittest.TestCase):
             "linkedin_public.posts_response",
             return_value=(200, {"items": [{"postId": "post_1", "body": "A published post."}]}),
         ) as posts:
-            allowed = lambda_handler(
+            allowed = http_call(
                 self._event(
                     "/v1/partner/lx-software/linkedin/posts",
                     key_ctx={"keyId": "k123", "scopes": "lxsoftware-linkedin"},
@@ -2806,7 +2672,7 @@ class TestPublicReadRoutes(unittest.TestCase):
             "linkedin_public.posts_response",
             return_value=(200, {"items": [], "status": ["drafted"]}),
         ) as posts:
-            out = lambda_handler(event, None)
+            out = http_call(event, None)
         self.assertEqual(out["statusCode"], 200)
         self.assertEqual(json.loads(out["body"])["status"], ["drafted"])
         self.assertEqual(posts.call_args.args[1], {"status": "drafted"})
@@ -2816,13 +2682,13 @@ class TestPublicReadRoutes(unittest.TestCase):
         event = self._event("/v1/partner/lx-software/linkedin/posts", method="POST", key_ctx=ctx)
         event["body"] = '{"body":"A hook."}'
         with patch.dict("os.environ", {"PUBLIC_API_WRITES_ENABLED": "false"}):
-            disabled = lambda_handler(event, None)
+            disabled = http_call(event, None)
         self.assertEqual(disabled["statusCode"], 403)
         self.assertEqual(json.loads(disabled["body"])["reason"], "writes_disabled")
         read_only = dict(ctx)
         read_only["write"] = "0"
         with patch.dict("os.environ", {"PUBLIC_API_WRITES_ENABLED": "true"}):
-            denied = lambda_handler(
+            denied = http_call(
                 self._event("/v1/partner/lx-software/linkedin/posts", method="POST", key_ctx=read_only),
                 None,
             )
@@ -2841,16 +2707,16 @@ class TestPublicReadRoutes(unittest.TestCase):
                 "linkedin_public.handle",
                 return_value=(200, {"item": {"postId": "li_abc"}}),
             ) as handle:
-                out = lambda_handler(event, None)
+                out = http_call(event, None)
         self.assertEqual(out["statusCode"], 200)
         self.assertEqual(json.loads(out["body"])["item"]["postId"], "li_abc")
         self.assertEqual(handle.call_args.args[1], "PUT")
         self.assertEqual(handle.call_args.args[2], "/v1/partner/lx-software/linkedin/posts/li_abc")
-        self.assertEqual(handle.call_args.args[3]["body"], '{"body":"A hook."}')
+        self.assertEqual(json.loads(handle.call_args.args[3]["body"]), {"body": "A hook."})
 
     def test_linkedin_action_paths_stay_unlisted(self) -> None:
         with patch.dict("os.environ", {"PUBLIC_API_WRITES_ENABLED": "true"}):
-            out = lambda_handler(
+            out = http_call(
                 self._event(
                     "/v1/partner/lx-software/linkedin/posts/li_abc/approve",
                     method="POST",
@@ -2864,19 +2730,13 @@ class TestPublicReadRoutes(unittest.TestCase):
     def test_key_context_cannot_reach_admin_routes(self) -> None:
         # An API-key principal hitting a non-/public route has no JWT claims,
         # so the admin gate must reject it.
-        out = lambda_handler(
-            self._event("/v1/admin/finance", key_ctx=self._key_ctx()), None
-        )
+        out = http_call(self._event("/v1/admin/finance", key_ctx=self._key_ctx()), None)
         self.assertEqual(out["statusCode"], 401)
 
     def test_admin_get_finance_still_works(self) -> None:
         event = self._event("/v1/admin/finance")
-        event["requestContext"]["authorizer"] = {
-            "jwt": {
-                "claims": {"sub": "admin-sub", "cognito:groups": "[admin]"}
-            }
-        }
-        out = lambda_handler(event, None)
+        event["requestContext"]["authorizer"] = {"jwt": {"claims": {"sub": "admin-sub", "cognito:groups": "[admin]"}}}
+        out = http_call(event, None)
         self.assertEqual(out["statusCode"], 200)
         self.assertIn("hillmarton", json.loads(out["body"]))
 

@@ -32,11 +32,11 @@ def _install_stubs() -> None:
 
 _install_stubs()
 
-from dispatch import lambda_handler  # noqa: E402
 from finance_store import (  # noqa: E402
     _finance_owner_ddb_key,
     _statement_book_ddb_key,
 )
+from http_call import http_call  # noqa: E402
 from parse_jobs import (  # noqa: E402
     _path_siu_tin_dei_parse_job,
     _path_statement_book_parse_job,
@@ -180,7 +180,7 @@ class TestSiuTinDeiRoutes(unittest.TestCase):
         return event
 
     def test_get_returns_empty_book(self) -> None:
-        out = lambda_handler(self._event("/v1/admin/siutindei"), None)
+        out = http_call(self._event("/v1/admin/siutindei"), None)
         self.assertEqual(out["statusCode"], 200)
         data = json.loads(out["body"])["data"]
         self.assertEqual(data["defaultCurrency"], "HKD")
@@ -203,7 +203,7 @@ class TestSiuTinDeiRoutes(unittest.TestCase):
                 }
             ],
         }
-        out = lambda_handler(self._event("/v1/admin/siutindei", method="PUT", body=body), None)
+        out = http_call(self._event("/v1/admin/siutindei", method="PUT", body=body), None)
         self.assertEqual(out["statusCode"], 400)
         self.assertIn("income or expenditure", json.loads(out["body"])["message"])
 
@@ -224,7 +224,7 @@ class TestSiuTinDeiRoutes(unittest.TestCase):
                 }
             ],
         }
-        out = lambda_handler(self._event("/v1/admin/siutindei", method="PUT", body=body), None)
+        out = http_call(self._event("/v1/admin/siutindei", method="PUT", body=body), None)
         self.assertEqual(out["statusCode"], 200)
         data = json.loads(out["body"])["data"]
         self.assertEqual(data["defaultCurrency"], "HKD")
@@ -237,7 +237,7 @@ class TestSiuTinDeiRoutes(unittest.TestCase):
         self.assertEqual(len(book_puts), 1)
 
     def test_parse_requires_tab_scoped_type(self) -> None:
-        out = lambda_handler(
+        out = http_call(
             self._event(
                 "/v1/admin/siutindei/parse-statement",
                 method="POST",
@@ -292,7 +292,7 @@ class TestLxSoftwareRoutes(unittest.TestCase):
         return event
 
     def test_get_returns_empty_book(self) -> None:
-        out = lambda_handler(self._event("/v1/admin/lx-software"), None)
+        out = http_call(self._event("/v1/admin/lx-software"), None)
         self.assertEqual(out["statusCode"], 200)
         data = json.loads(out["body"])["data"]
         self.assertEqual(data["defaultCurrency"], "HKD")
@@ -315,7 +315,7 @@ class TestLxSoftwareRoutes(unittest.TestCase):
                 }
             ],
         }
-        out = lambda_handler(self._event("/v1/admin/lx-software", method="PUT", body=body), None)
+        out = http_call(self._event("/v1/admin/lx-software", method="PUT", body=body), None)
         self.assertEqual(out["statusCode"], 400)
         self.assertIn("income or expenditure", json.loads(out["body"])["message"])
 
@@ -336,7 +336,7 @@ class TestLxSoftwareRoutes(unittest.TestCase):
                 }
             ],
         }
-        out = lambda_handler(self._event("/v1/admin/lx-software", method="PUT", body=body), None)
+        out = http_call(self._event("/v1/admin/lx-software", method="PUT", body=body), None)
         self.assertEqual(out["statusCode"], 200)
         data = json.loads(out["body"])["data"]
         self.assertEqual(data["defaultCurrency"], "HKD")
@@ -349,7 +349,7 @@ class TestLxSoftwareRoutes(unittest.TestCase):
         self.assertEqual(len(book_puts), 1)
 
     def test_parse_requires_tab_scoped_type(self) -> None:
-        out = lambda_handler(
+        out = http_call(
             self._event(
                 "/v1/admin/lx-software/parse-statement",
                 method="POST",

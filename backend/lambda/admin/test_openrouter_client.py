@@ -17,6 +17,7 @@ def _install_stubs() -> None:
     if "boto3" not in sys.modules:
         sys.modules["boto3"] = MagicMock()
     if "botocore" not in sys.modules:
+
         class _Exceptions(types.ModuleType):
             ClientError: type[Exception]
 
@@ -107,7 +108,7 @@ class TestOpenRouterAttribution(unittest.TestCase):
         self.assertEqual(_header(headers, "X-OpenRouter-Title"), "LX Admin - Executive Board")
         self.assertEqual(
             _header(headers, "HTTP-Referer"),
-            "https://admin.lx-software.com/siu-tin-dei/board",
+            "https://admin.lx-software.com/siutindei/board",
         )
         self.assertEqual(_header(headers, "X-OpenRouter-App-Visibility"), "hidden")
         body = captured["body"]
@@ -918,6 +919,7 @@ if __name__ == "__main__":
 from typing import TypeVar
 
 _T = TypeVar("_T")
+
 
 def _nn(value: _T | None) -> _T:
     assert value is not None

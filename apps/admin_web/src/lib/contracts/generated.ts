@@ -949,7 +949,7 @@ export const OPENROUTER_APPS: readonly OpenRouterAppDefinition[] = [
     "id": "executive-board",
     "label": "Executive Board",
     "title": "LX Admin - Executive Board",
-    "referer": "https://admin.lx-software.com/siu-tin-dei/board",
+    "referer": "https://admin.lx-software.com/siutindei/board",
     "repo": "lx-software-ltd/lx-software",
     "keyName": "lxsoftware:executive-board",
     "meteredHere": true,
@@ -1024,3 +1024,33 @@ export const AWS_BILLING_COMPANIES: readonly AwsBillingCompanyDefinition[] = [
     "organization": "LX Software"
   }
 ];
+
+export const wireFormat = {
+  "renames": {},
+  "verbatimKeys": [
+    "catalog_import",
+    "code_production",
+    "code_staging",
+    "cold_outreach",
+    "inbound_reply",
+    "outbound_known"
+  ],
+  "mapFields": {
+    "holdOverrides": 1,
+    "matrix": 2,
+    "modelBySeat": 1,
+    "overrides": 1
+  },
+  "opaqueFields": [],
+  "rootMaps": {},
+  "excludedRoutes": [
+    "/public/newsletter/confirm/",
+    "/public/newsletter/unsubscribe/",
+    "/public/outreach/unsubscribe/",
+    "/v1/public/newsletter/confirm/",
+    "/v1/public/newsletter/unsubscribe/",
+    "/v1/public/outreach/unsubscribe/",
+    "/v1/webhooks/",
+    "/webhooks/"
+  ]
+} as const;

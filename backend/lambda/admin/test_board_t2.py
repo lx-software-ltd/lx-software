@@ -14,7 +14,7 @@ import board_context
 import board_research
 import board_security
 import board_store
-import dispatch
+from http_call import http_call
 from test_board import BoardTestCase, _FakeResp
 from test_board_tools import ToolsTestCase
 
@@ -324,7 +324,7 @@ class TestAwsAndSecurity(ToolsTestCase):
 
     def test_schedule_trigger_dispatch(self) -> None:
         with patch.object(board_store, "records_table", return_value=self.table):
-            dispatch.lambda_handler({"internal": "board_cache_refresh"}, None)
+            http_call({"internal": "board_cache_refresh"}, None)
         self.assertIsNotNone(board_store.get_cache(self.table, "aws:monthly_cost"))
 
     def test_schedule_trigger_skips_other_board(self) -> None:

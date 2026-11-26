@@ -177,9 +177,9 @@ function fileBody(row: StoredResume, kind: "file" | "pdf"): Response {
 
 export function handleResume(ctx: MockCtx): Response | null {
   const { method, path } = ctx;
-  if (path !== "/lx-software/resume" && !path.startsWith("/lx-software/resume/")) return null;
+  if (path !== "/v1/admin/lx-software/resume" && !path.startsWith("/v1/admin/lx-software/resume/")) return null;
   settleJobs();
-  const parts = path.slice("/lx-software/resume".length).split("/").filter(Boolean);
+  const parts = path.slice("/v1/admin/lx-software/resume".length).split("/").filter(Boolean);
   const body = parseBody(ctx.init);
   const resumeState = state.resume;
 

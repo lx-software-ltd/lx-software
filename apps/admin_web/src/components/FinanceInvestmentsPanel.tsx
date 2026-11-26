@@ -403,7 +403,7 @@ export function FinanceInvestmentsPanel({
 
   // Live spot prices for Crypto/ETF rows. The user-entered crypto code or
   // ETF ticker (e.g. ``BTC``, ``US:TQQQ``) is fetched from the admin
-  // ``/finance/quotes`` endpoint, which proxies Yahoo Finance. The result
+  // ``/v1/admin/finance/quotes`` endpoint, which proxies Yahoo Finance. The result
   // is then FX-converted into the row currency via Frankfurter.
   const marketPricedSymbols = useMemo(() => {
     const symbols: string[] = [];

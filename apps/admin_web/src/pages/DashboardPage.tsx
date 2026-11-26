@@ -66,7 +66,7 @@ export function DashboardPage() {
   const meQuery = useQuery({
     queryKey: [...keys.admin, "me"],
     queryFn: () =>
-      adminFetchJson<{ sub?: string; email?: string }>("/me"),
+      adminFetchJson<{ sub?: string; email?: string }>("/v1/admin/me"),
   });
   const [bookFiscalYear, setBookFiscalYear] = useState<Partial<Record<string, FiscalYearId>>>({});
   const [hillmartonFy, setHillmartonFy] = useState<FiscalYearId>(() =>

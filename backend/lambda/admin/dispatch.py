@@ -92,7 +92,7 @@ from http_common import (
     _require_admin,
     _route,
     _utc_iso_z,
-    bind_request_id,
+    apply_wire,
     http_audience,
     not_found,
 )
@@ -1341,5 +1341,4 @@ def lambda_handler(event, context):
         late = LATE_INTERNAL.get(event.get("internal"))
         if late is not None:
             return late(event)
-    bind_request_id(event)
-    return _dispatch_http(event)
+    return apply_wire(event, _dispatch_http)

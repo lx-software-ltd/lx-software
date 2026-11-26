@@ -3,7 +3,7 @@ import { AdminApiError, getAdminApiErrorMessage, joinUrl } from "./apiAdminClien
 
 describe("apiAdminClient joinUrl", () => {
   it("joins base and path", () => {
-    expect(joinUrl("https://api.example", "/me")).toBe("https://api.example/me");
+    expect(joinUrl("https://api.example", "/v1/admin/me")).toBe("https://api.example/v1/admin/me");
     expect(joinUrl("https://api.example/", "me")).toBe("https://api.example/me");
   });
 

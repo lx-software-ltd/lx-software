@@ -135,17 +135,18 @@ function publicCharacter() {
 
 function postIdFrom(path: string): string {
   const parts = path.split("/").filter(Boolean);
-  return parts[3] ?? "";
+  const at = parts.indexOf("posts");
+  return at >= 0 ? (parts[at + 1] ?? "") : "";
 }
 
 export function handleLinkedIn(ctx: MockCtx): Response | null {
   const { path, method } = ctx;
-  if (path !== "/lx-software/linkedin" && !path.startsWith("/lx-software/linkedin/")) return null;
-  if (path === "/lx-software/linkedin" && method === "GET") {
+  if (path !== "/v1/admin/lx-software/linkedin" && !path.startsWith("/v1/admin/lx-software/linkedin/")) return null;
+  if (path === "/v1/admin/lx-software/linkedin" && method === "GET") {
     if (ctx.url.searchParams.get("view") === "plan") return json(planSummary());
     return json(overview());
   }
-  if (path === "/lx-software/linkedin/settings" && method === "PUT") {
+  if (path === "/v1/admin/lx-software/linkedin/settings" && method === "PUT") {
     const body = parseBody(ctx.init);
     const voice = String(body.voiceNotes ?? state.linkedin.settings.voiceNotes).trim();
     const example = String(body.styleExample ?? state.linkedin.settings.styleExample).trim();
@@ -157,10 +158,10 @@ export function handleLinkedIn(ctx: MockCtx): Response | null {
     } as typeof state.linkedin.settings;
     return json({ settings: state.linkedin.settings });
   }
-  if (path === "/lx-software/linkedin/posts" && method === "GET") {
+  if (path === "/v1/admin/lx-software/linkedin/posts" && method === "GET") {
     return json({ items: state.linkedin.posts.filter((row) => row.status !== "archived") });
   }
-  if (path === "/lx-software/linkedin/posts" && method === "POST") {
+  if (path === "/v1/admin/lx-software/linkedin/posts" && method === "POST") {
     const body = parseBody(ctx.init);
     const post: LinkedInPost = {
       postId: `li_${state.linkedin.posts.length + 1}`,
@@ -178,10 +179,10 @@ export function handleLinkedIn(ctx: MockCtx): Response | null {
     state.linkedin.posts = [post, ...state.linkedin.posts];
     return json({ item: post }, 201);
   }
-  if (path === "/lx-software/linkedin/ideas" && method === "GET") {
+  if (path === "/v1/admin/lx-software/linkedin/ideas" && method === "GET") {
     return json({ items: state.linkedin.ideas });
   }
-  if (path === "/lx-software/linkedin/ideas" && method === "POST") {
+  if (path === "/v1/admin/lx-software/linkedin/ideas" && method === "POST") {
     const body = parseBody(ctx.init);
     const idea = {
       ideaId: `idea_${state.linkedin.ideas.length + 1}`,
@@ -193,24 +194,24 @@ export function handleLinkedIn(ctx: MockCtx): Response | null {
     state.linkedin.ideas = [idea, ...state.linkedin.ideas];
     return json({ item: idea }, 201);
   }
-  if (path.startsWith("/lx-software/linkedin/ideas/") && method === "DELETE") {
+  if (path.startsWith("/v1/admin/lx-software/linkedin/ideas/") && method === "DELETE") {
     const ideaId = path.split("/").pop() ?? "";
     state.linkedin.ideas = state.linkedin.ideas.filter((row) => row.ideaId !== ideaId);
     return json({ deleted: ideaId });
   }
-  if (path === "/lx-software/linkedin/analytics/connect" && method === "POST") {
+  if (path === "/v1/admin/lx-software/linkedin/analytics/connect" && method === "POST") {
     const token = `oauth_analytics_${state.linkedin.posts.length}`;
     rememberOauth(token, false, "analytics");
-    return json({ url: `/lx-software/linkedin/callback?code=mock&state=${encodeURIComponent(token)}` });
+    return json({ url: `/v1/admin/lx-software/linkedin/callback?code=mock&state=${encodeURIComponent(token)}` });
   }
-  if (path === "/lx-software/linkedin/connect" && method === "POST") {
+  if (path === "/v1/admin/lx-software/linkedin/connect" && method === "POST") {
     const body = parseBody(ctx.init);
     const includeOrganizations = Boolean(body.includeOrganizations);
     const token = `oauth_${state.linkedin.posts.length}`;
     rememberOauth(token, includeOrganizations);
-    return json({ url: `/lx-software/linkedin/callback?code=mock&state=${encodeURIComponent(token)}` });
+    return json({ url: `/v1/admin/lx-software/linkedin/callback?code=mock&state=${encodeURIComponent(token)}` });
   }
-  if (path === "/lx-software/linkedin/oauth/exchange" && method === "POST") {
+  if (path === "/v1/admin/lx-software/linkedin/oauth/exchange" && method === "POST") {
     const body = parseBody(ctx.init);
     if (!readOauth() || body.state !== readOauth()) {
       return json({ message: "That LinkedIn sign-in expired. Connect again." }, 400);
@@ -246,15 +247,15 @@ export function handleLinkedIn(ctx: MockCtx): Response | null {
     };
     return json({ connection: state.linkedin.connection });
   }
-  if (path === "/lx-software/linkedin/analytics/disconnect" && method === "POST") {
+  if (path === "/v1/admin/lx-software/linkedin/analytics/disconnect" && method === "POST") {
     state.linkedin.analytics = { ...DISCONNECTED_ANALYTICS };
     return json({ analytics: state.linkedin.analytics });
   }
-  if (path === "/lx-software/linkedin/disconnect" && method === "POST") {
+  if (path === "/v1/admin/lx-software/linkedin/disconnect" && method === "POST") {
     state.linkedin.connection = { ...DISCONNECTED, organizations: [] };
     return json({ connection: state.linkedin.connection });
   }
-  if (path === "/lx-software/linkedin/connection/refresh" && method === "POST") {
+  if (path === "/v1/admin/lx-software/linkedin/connection/refresh" && method === "POST") {
     if (state.linkedin.connection.status !== "connected") {
       return json({ message: "LinkedIn is not connected." }, 400);
     }
@@ -270,7 +271,7 @@ export function handleLinkedIn(ctx: MockCtx): Response | null {
     };
     return json({ connection: state.linkedin.connection });
   }
-  if (path === "/lx-software/linkedin/connection" && method === "PUT") {
+  if (path === "/v1/admin/lx-software/linkedin/connection" && method === "PUT") {
     if (state.linkedin.connection.status !== "connected") {
       return json({ message: "LinkedIn is not connected." }, 400);
     }
@@ -291,7 +292,7 @@ export function handleLinkedIn(ctx: MockCtx): Response | null {
     }
     return json({ connection: state.linkedin.connection });
   }
-  if (path === "/lx-software/linkedin/generate" && method === "POST") {
+  if (path === "/v1/admin/lx-software/linkedin/generate" && method === "POST") {
     const post: LinkedInPost = {
       postId: `li_gen_${state.linkedin.posts.length + 1}`,
       status: "drafted",
@@ -310,8 +311,8 @@ export function handleLinkedIn(ctx: MockCtx): Response | null {
   }
   const id = postIdFrom(path);
   const index = state.linkedin.posts.findIndex((row) => row.postId === id);
-  if (path === "/lx-software/linkedin/character" && method === "GET") return json(publicCharacter());
-  if (path === "/lx-software/linkedin/character/photo" && method === "POST") {
+  if (path === "/v1/admin/lx-software/linkedin/character" && method === "GET") return json(publicCharacter());
+  if (path === "/v1/admin/lx-software/linkedin/character/photo" && method === "POST") {
     const body = parseBody(ctx.init);
     const contentType = String(body.contentType ?? "");
     if (contentType !== "image/png" && contentType !== "image/jpeg") {
@@ -320,21 +321,21 @@ export function handleLinkedIn(ctx: MockCtx): Response | null {
     state.linkedin.character.photo = { contentType, dataBase64: String(body.dataBase64 ?? "") };
     return json(publicCharacter());
   }
-  if (path === "/lx-software/linkedin/character/photo" && method === "GET") {
+  if (path === "/v1/admin/lx-software/linkedin/character/photo" && method === "GET") {
     const photo = state.linkedin.character.photo;
     if (!photo) return json({ message: "No photo stored." }, 404);
     return json(photo);
   }
-  if (path === "/lx-software/linkedin/character/photo" && method === "DELETE") {
+  if (path === "/v1/admin/lx-software/linkedin/character/photo" && method === "DELETE") {
     state.linkedin.character.photo = null;
     return json(publicCharacter());
   }
-  if (path === "/lx-software/linkedin/character/sheet" && method === "GET") {
+  if (path === "/v1/admin/lx-software/linkedin/character/sheet" && method === "GET") {
     const sheet = state.linkedin.character.sheet;
     if (!sheet) return json({ message: "No character sheet yet." }, 404);
     return json(sheet);
   }
-  if (path === "/lx-software/linkedin/character/draw" && method === "POST") {
+  if (path === "/v1/admin/lx-software/linkedin/character/draw" && method === "POST") {
     if (!state.linkedin.character.photo) return json({ message: "Upload a photo first." }, 400);
     state.linkedin.character.candidates = ["c1", "c2", "c3", "c4"].map((id) => ({
       id,
@@ -343,14 +344,14 @@ export function handleLinkedIn(ctx: MockCtx): Response | null {
     }));
     return json({ job: { jobId: "job_character", status: "done", postIds: [], error: "" } }, 202);
   }
-  if (path.startsWith("/lx-software/linkedin/character/candidates/") && method === "GET") {
+  if (path.startsWith("/v1/admin/lx-software/linkedin/character/candidates/") && method === "GET") {
     const id = path.split("/").pop() ?? "";
     if (!/^c[1-4]$/.test(id)) return json({ message: "That candidate is not one of the four drawings." }, 400);
     const row = state.linkedin.character.candidates.find((item) => item.id === id);
     if (!row) return json({ message: "That candidate is gone." }, 404);
     return json({ contentType: row.contentType, dataBase64: row.dataBase64 });
   }
-  if (path === "/lx-software/linkedin/character/choose" && method === "POST") {
+  if (path === "/v1/admin/lx-software/linkedin/character/choose" && method === "POST") {
     const id = String(parseBody(ctx.init).candidateId ?? "");
     if (!/^c[1-4]$/.test(id)) return json({ message: "That candidate is not one of the four drawings." }, 400);
     const row = state.linkedin.character.candidates.find((item) => item.id === id);
@@ -454,7 +455,7 @@ export function handleLinkedIn(ctx: MockCtx): Response | null {
     };
     return json({ job: { jobId: "job_regen", status: "done", postIds: [id], error: "" } }, 202);
   }
-  if (method === "PUT" && path === `/lx-software/linkedin/posts/${id}` && index >= 0) {
+  if (method === "PUT" && path === `/v1/admin/lx-software/linkedin/posts/${id}` && index >= 0) {
     const body = parseBody(ctx.init);
     state.linkedin.posts[index] = {
       ...state.linkedin.posts[index],

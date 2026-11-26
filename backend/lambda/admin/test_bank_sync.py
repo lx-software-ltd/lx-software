@@ -45,8 +45,8 @@ from bank_sync import (  # noqa: E402
     run_bank_sync,
 )
 from ddb_convert import _from_ddb_nested, _to_ddb_nested  # noqa: E402
-from dispatch import lambda_handler  # noqa: E402
 from finance_store import _finance_sheet_ddb_key  # noqa: E402
+from http_call import http_call  # noqa: E402
 
 
 class FakeTable:
@@ -411,7 +411,7 @@ class TestBankingRoutesDisabled(BankSyncTestCase):
     env = DISABLED_ENV
 
     def test_get_banking_reports_disabled(self) -> None:
-        out = lambda_handler(_admin_event("/v1/admin/banking"), None)
+        out = http_call(_admin_event("/v1/admin/banking"), None)
         self.assertEqual(out["statusCode"], 200)
         body = json.loads(out["body"])
         self.assertFalse(body["enabled"])
@@ -419,7 +419,7 @@ class TestBankingRoutesDisabled(BankSyncTestCase):
         self.assertEqual(body["mappings"], [])
 
     def test_auth_start_rejected_when_disabled(self) -> None:
-        out = lambda_handler(
+        out = http_call(
             _admin_event(
                 "/v1/admin/banking/auth",
                 method="POST",
@@ -436,14 +436,14 @@ class TestBankingRoutesDisabled(BankSyncTestCase):
 
     def test_internal_worker_noops_when_disabled(self) -> None:
         with patch.object(bank_sync, "run_bank_sync") as run:
-            out = lambda_handler({"internal": "bank_sync"}, None)
+            out = http_call({"internal": "bank_sync"}, None)
         run.assert_not_called()
         self.assertEqual(out, {})
 
 
 class TestBankingAuthRoutes(BankSyncTestCase):
     def test_auth_start_rejects_unlisted_redirect(self) -> None:
-        out = lambda_handler(
+        out = http_call(
             _admin_event(
                 "/v1/admin/banking/auth",
                 method="POST",
@@ -481,7 +481,7 @@ class TestBankingAuthRoutes(BankSyncTestCase):
             return {"url": "https://auth.enablebanking.com/x", "authorization_id": "a1"}
 
         with patch.object(bank_sync, "_eb_request", side_effect=fake_eb):
-            out = lambda_handler(
+            out = http_call(
                 _admin_event(
                     "/v1/admin/banking/auth",
                     method="POST",
@@ -505,7 +505,7 @@ class TestBankingAuthRoutes(BankSyncTestCase):
         with patch.object(
             bank_sync, "_eb_request", return_value={"aspsps": []}
         ):
-            out = lambda_handler(
+            out = http_call(
                 _admin_event(
                     "/v1/admin/banking/auth",
                     method="POST",
@@ -521,7 +521,7 @@ class TestBankingAuthRoutes(BankSyncTestCase):
         self.assertIn("Unknown bank", json.loads(out["body"])["message"])
 
     def test_sessions_rejects_unknown_state(self) -> None:
-        out = lambda_handler(
+        out = http_call(
             _admin_event(
                 "/v1/admin/banking/sessions",
                 method="POST",
@@ -559,7 +559,7 @@ class TestBankingAuthRoutes(BankSyncTestCase):
         with patch.object(
             bank_sync, "_eb_request", return_value=session_response
         ) as eb:
-            out = lambda_handler(
+            out = http_call(
                 _admin_event(
                     "/v1/admin/banking/sessions",
                     method="POST",
@@ -586,7 +586,7 @@ class TestBankingAuthRoutes(BankSyncTestCase):
                 "expiresAt": int(time.time()) - 10,
             }
         )
-        out = lambda_handler(
+        out = http_call(
             _admin_event(
                 "/v1/admin/banking/sessions",
                 method="POST",
@@ -605,7 +605,7 @@ class TestBankingMappingsAndDelete(BankSyncTestCase):
         self._seed_accounts_sheet([ACCOUNT_RECORD])
 
     def test_put_mappings_happy_path(self) -> None:
-        out = lambda_handler(
+        out = http_call(
             _admin_event(
                 "/v1/admin/banking/mappings",
                 method="PUT",
@@ -621,7 +621,7 @@ class TestBankingMappingsAndDelete(BankSyncTestCase):
         self.assertEqual(len(self._stored_state()["mappings"]), 1)
 
     def test_put_mappings_rejects_unknown_uid(self) -> None:
-        out = lambda_handler(
+        out = http_call(
             _admin_event(
                 "/v1/admin/banking/mappings",
                 method="PUT",
@@ -637,7 +637,7 @@ class TestBankingMappingsAndDelete(BankSyncTestCase):
         self.assertIn("linked bank account", json.loads(out["body"])["message"])
 
     def test_put_mappings_rejects_unknown_record(self) -> None:
-        out = lambda_handler(
+        out = http_call(
             _admin_event(
                 "/v1/admin/banking/mappings",
                 method="PUT",
@@ -653,7 +653,7 @@ class TestBankingMappingsAndDelete(BankSyncTestCase):
         self.assertIn("accounts-sheet record", json.loads(out["body"])["message"])
 
     def test_put_mappings_rejects_duplicates(self) -> None:
-        out = lambda_handler(
+        out = http_call(
             _admin_event(
                 "/v1/admin/banking/mappings",
                 method="PUT",
@@ -679,7 +679,7 @@ class TestBankingMappingsAndDelete(BankSyncTestCase):
             }
         )
         with patch.object(bank_sync, "_eb_request") as eb:
-            out = lambda_handler(
+            out = http_call(
                 _admin_event("/v1/admin/banking/sessions/sess-hsbc", method="DELETE"),
                 None,
             )
@@ -690,13 +690,13 @@ class TestBankingMappingsAndDelete(BankSyncTestCase):
         self.assertEqual(stored["mappings"], [])
 
     def test_delete_unknown_session_404(self) -> None:
-        out = lambda_handler(
+        out = http_call(
             _admin_event("/v1/admin/banking/sessions/other", method="DELETE"), None
         )
         self.assertEqual(out["statusCode"], 404)
 
     def test_get_banking_returns_state(self) -> None:
-        out = lambda_handler(_admin_event("/v1/admin/banking"), None)
+        out = http_call(_admin_event("/v1/admin/banking"), None)
         self.assertEqual(out["statusCode"], 200)
         body = json.loads(out["body"])
         self.assertTrue(body["enabled"])
@@ -724,7 +724,7 @@ class TestBankingSyncRoute(BankSyncTestCase):
             ]
         }
         with patch.object(bank_sync, "_eb_request", return_value=balances):
-            out = lambda_handler(
+            out = http_call(
                 _admin_event("/v1/admin/banking/sync", method="POST"), None
             )
         self.assertEqual(out["statusCode"], 200)
@@ -735,7 +735,7 @@ class TestBankingSyncRoute(BankSyncTestCase):
 
     def test_internal_worker_runs_sync(self) -> None:
         self._seed_state({"sessions": [], "mappings": []})
-        out = lambda_handler({"internal": "bank_sync"}, None)
+        out = http_call({"internal": "bank_sync"}, None)
         self.assertEqual(out, {})
         self.assertIn("lastSync", self._stored_state())
 
