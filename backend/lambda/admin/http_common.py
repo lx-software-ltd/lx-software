@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import contextvars
 import json
 import os
 import time
@@ -14,16 +15,50 @@ import runtime
 from botocore.exceptions import ClientError
 from runtime import ADMIN_GROUP, logger
 
+_REQUEST_ID: contextvars.ContextVar[str] = contextvars.ContextVar("lxsoftware_request_id", default="")
 
-def _json_response(
-    status_code: int, payload: dict[str, Any] | list[Any] | str
-) -> dict[str, Any]:
+_PROBLEMS = {
+    400: ("invalid_request", "Bad Request"),
+    401: ("unauthenticated", "Unauthorized"),
+    403: ("forbidden", "Forbidden"),
+    404: ("not_found", "Not Found"),
+    405: ("method_not_allowed", "Method Not Allowed"),
+    409: ("conflict", "Conflict"),
+    429: ("rate_limited", "Too Many Requests"),
+    500: ("internal_error", "Internal Server Error"),
+    503: ("unavailable", "Service Unavailable"),
+}
+
+
+def bind_request_id(event: dict[str, Any]) -> None:
+    """Remember the HTTP request id for `_json_response`. Empty when there is none."""
+    found = _request_id(event)
+    _REQUEST_ID.set("" if found == "unknown" else found)
+
+
+def _with_problem(status_code: int, payload: dict[str, Any]) -> dict[str, Any]:
+    code, title = _PROBLEMS.get(status_code, ("error", "Error"))
+    message = payload.get("message")
+    detail = message if isinstance(message, str) and message else title
+    out = dict(payload)
+    out.setdefault("type", "about:blank")
+    out.setdefault("title", title)
+    out.setdefault("status", status_code)
+    out.setdefault("detail", detail)
+    out.setdefault("code", code)
+    out.setdefault("request_id", _REQUEST_ID.get())
+    return out
+
+
+def _json_response(status_code: int, payload: dict[str, Any] | list[Any] | str) -> dict[str, Any]:
+    if status_code >= 400 and isinstance(payload, dict):
+        payload = _with_problem(status_code, payload)
     body = _g if isinstance(_g := payload, str) else json.dumps(payload, default=str)
-    return {
-        "statusCode": status_code,
-        "headers": {"Content-Type": "application/json"},
-        "body": body,
-    }
+    headers = {"Content-Type": "application/json"}
+    request_id = _REQUEST_ID.get()
+    if request_id:
+        headers["x-request-id"] = request_id
+    return {"statusCode": status_code, "headers": headers, "body": body}
 
 
 def not_found() -> dict[str, Any]:
@@ -45,12 +80,7 @@ def _parse_json_body(event: dict[str, Any]) -> dict[str, Any]:
 
 
 def _claims(event: dict[str, Any]) -> dict[str, Any]:
-    return (
-        event.get("requestContext", {})
-        .get("authorizer", {})
-        .get("jwt", {})
-        .get("claims", {})
-    )
+    return event.get("requestContext", {}).get("authorizer", {}).get("jwt", {}).get("claims", {})
 
 
 def _public_authorizer_context(event: dict[str, Any]) -> dict[str, Any]:
@@ -100,11 +130,8 @@ def _route(event: dict[str, Any]) -> tuple[str, str]:
 
 def _request_id(event: dict[str, Any]) -> str:
     return (
-        event.get("requestContext", {})
-        .get("requestId", "")
-        or event.get("requestContext", {})
-        .get("http", {})
-        .get("requestId", "")
+        event.get("requestContext", {}).get("requestId", "")
+        or event.get("requestContext", {}).get("http", {}).get("requestId", "")
         or "unknown"
     )
 
@@ -195,8 +222,6 @@ def parse_iso_strict(value: str) -> datetime:
 def _encode_cursor(key: dict[str, Any]) -> str:
     raw = json.dumps(key, separators=(",", ":"), default=str).encode("utf-8")
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
-
-
 
 
 def _read_http_error(exc: Any, limit: int | None = None) -> bytes:

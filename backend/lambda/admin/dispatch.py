@@ -92,6 +92,7 @@ from http_common import (
     _require_admin,
     _route,
     _utc_iso_z,
+    bind_request_id,
     not_found,
 )
 from openrouter_usage import USAGE_PK_PREFIX, handle_usage_get
@@ -121,7 +122,6 @@ PUBLIC_READ_PATHS = frozenset(
     }
 )
 PUBLIC_BOARD_PREFIX = "/public/siu-tin-dei/board"
-
 
 def _is_public_path(path: str) -> bool:
     if path in PUBLIC_READ_PATHS or board_public_api_mod.path_class(path) == board_public_api_mod.SCOPE_LINKEDIN:
@@ -1297,7 +1297,6 @@ HTTP_ROUTES = [
     Route('POST', '/parse-statement', _http_finance_parse_post, 'admin', kind='custom', match=_match_finance_parse_post),
 ]
 
-
 def _dispatch_http(event):
     method, path = _route(event)
     for route in HTTP_ROUTES:
@@ -1343,4 +1342,5 @@ def lambda_handler(event, context):
         late = LATE_INTERNAL.get(event.get("internal"))
         if late is not None:
             return late(event)
+    bind_request_id(event)
     return _dispatch_http(event)

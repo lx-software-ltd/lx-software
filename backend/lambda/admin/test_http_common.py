@@ -11,7 +11,15 @@ from test_support import install_aws_stubs
 
 install_aws_stubs()
 
-from http_common import _close_http_error, _parse_json_body, _read_http_error  # noqa: E402
+import json  # noqa: E402
+
+from http_common import (  # noqa: E402
+    _close_http_error,
+    _json_response,
+    _parse_json_body,
+    _read_http_error,
+    bind_request_id,
+)
 
 
 class ParseJsonBodyTests(unittest.TestCase):
@@ -27,6 +35,37 @@ class ParseJsonBodyTests(unittest.TestCase):
     def test_invalid_json_is_empty_object(self) -> None:
         self.assertEqual(_parse_json_body({"body": "not-json"}), {})
         self.assertEqual(_parse_json_body({}), {})
+
+
+class ErrorBodyTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        bind_request_id({})
+
+    def test_an_error_keeps_message_and_reason_and_adds_problem_members(self) -> None:
+        bind_request_id({"requestContext": {"requestId": "req-1"}})
+        response = _json_response(403, {"message": "Forbidden", "reason": "writes_disabled"})
+        body = json.loads(response["body"])
+        self.assertEqual(body["message"], "Forbidden")
+        self.assertEqual(body["reason"], "writes_disabled")
+        self.assertEqual(body["type"], "about:blank")
+        self.assertEqual(body["title"], "Forbidden")
+        self.assertEqual(body["status"], 403)
+        self.assertEqual(body["detail"], "Forbidden")
+        self.assertEqual(body["code"], "forbidden")
+        self.assertEqual(body["request_id"], "req-1")
+        self.assertEqual(response["headers"]["x-request-id"], "req-1")
+
+    def test_a_success_body_stays_unchanged(self) -> None:
+        bind_request_id({"requestContext": {"requestId": "req-2"}})
+        response = _json_response(200, {"message": "saved", "ok": True})
+        self.assertEqual(json.loads(response["body"]), {"message": "saved", "ok": True})
+        self.assertEqual(response["headers"]["x-request-id"], "req-2")
+
+    def test_the_header_is_omitted_when_the_request_has_no_id(self) -> None:
+        bind_request_id({})
+        response = _json_response(404, {"message": "Not found"})
+        self.assertNotIn("x-request-id", response["headers"])
+        self.assertEqual(json.loads(response["body"])["code"], "not_found")
 
 
 class _UnreadableHTTPError(urllib.error.HTTPError):

@@ -1717,6 +1717,22 @@ describe("Board SES configuration-set IAM and public CORS", () => {
     expect(serialized).toContain("ReportBatchItemFailures");
   });
 
+  test("CORS allows every method on a JWT route and exposes the request id", () => {
+    const api = Object.values(resourcesOfType("AWS::ApiGatewayV2::Api"))[0];
+    const cors = api.Properties?.CorsConfiguration as {
+      AllowMethods?: string[];
+      ExposeHeaders?: string[];
+    };
+    const allowed = cors.AllowMethods ?? [];
+    expect(allowed).toContain("PATCH");
+    expect(cors.ExposeHeaders).toContain("x-request-id");
+    for (const route of Object.values(resourcesOfType("AWS::ApiGatewayV2::Route"))) {
+      if (route.Properties?.AuthorizationType !== "JWT") continue;
+      const method = String(route.Properties?.RouteKey).split(" ")[0];
+      expect(allowed).toContain(method);
+    }
+  });
+
   test("CORS origins include the PublicSiteOrigins parameter", () => {
     const serialized = JSON.stringify(template.toJSON());
     expect(serialized).toContain("PublicSiteOrigins");
