@@ -39,10 +39,10 @@ export function defineAdminAuthorizers(
   });
 
   /**
-   * Public API key authorizer. Validates the `x-api-key` header against
+   * Public API key authorizer. Validates an `Authorization: Bearer` key against
    * scrypt key digests stored in the records table (`pk = APIKEY#<digest>`,
    * `sk = META`; minted via scripts/manage-public-api-keys.py). Guards
-   * /public/* GET mirrors and (when allowWrite + PublicApiWritesEnabled)
+   * /v1/partner/* GET mirrors and (when allowWrite + PublicApiWritesEnabled)
    * board PUT/POST/DELETE. Cache is key + source IP, so this Lambda never
    * denies by HTTP method — the handler re-checks write_allowed.
    */

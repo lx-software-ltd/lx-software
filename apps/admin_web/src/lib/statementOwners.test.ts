@@ -3,7 +3,6 @@ import { houseDisplayLabel } from "./houses";
 import {
   isHouseKey,
   isStatementBookKey,
-  kebabBookKey,
   parseStatementJobPath,
   parseStatementStartPath,
   statementBookApiPath,
@@ -54,11 +53,9 @@ describe("statementOwners", () => {
     expect(statementOwnerQueryKey(EVOLVE_SPROUTS_BOOK_KEY)).toEqual(["evolveSprouts"]);
   });
 
-  it("maps camelCase book keys to kebab API slugs", () => {
-    expect(kebabBookKey(SIU_TIN_DEI_BOOK_KEY)).toBe("siu-tin-dei");
-    expect(kebabBookKey(LX_SOFTWARE_BOOK_KEY)).toBe("lx-software");
+  it("maps camelCase book keys to API slugs", () => {
+    expect(statementBookApiPath(SIU_TIN_DEI_BOOK_KEY)).toBe("/v1/admin/siutindei");
     expect(statementBookApiPath(LX_SOFTWARE_BOOK_KEY)).toBe("/v1/admin/lx-software");
-    expect(kebabBookKey(EVOLVE_SPROUTS_BOOK_KEY)).toBe("evolve-sprouts");
     expect(statementBookApiPath(EVOLVE_SPROUTS_BOOK_KEY)).toBe("/v1/admin/evolvesprouts");
     expect(STATEMENT_BOOK_DASHBOARD_ORDER).toEqual([
       "lxSoftware",

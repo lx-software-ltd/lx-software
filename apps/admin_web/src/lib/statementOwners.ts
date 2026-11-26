@@ -59,10 +59,6 @@ export function parseStatementJobPath(
     : `${statementBookApiPath(owner)}/parse-statement/jobs/${encodeURIComponent(jobId)}`;
 }
 
-export function kebabBookKey(owner: StatementBookKey): string {
-  return owner.replace(/[A-Z]/g, (ch) => `-${ch.toLowerCase()}`);
-}
-
 export function statementBookApiPath(owner: StatementBookKey): string {
   return `/v1/admin/${BOOK_API_SLUG[owner]}`;
 }

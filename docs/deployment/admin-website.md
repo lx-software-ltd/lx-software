@@ -340,34 +340,34 @@ format; for presigned-upload failures look at `Operation`
 
 ## Public API keys
 
-The HTTP API mirrors admin endpoints under `/public/*`, authenticated with
-a static key in the `x-api-key` header instead of a Cognito JWT. Keys are
+The HTTP API mirrors admin endpoints under `/v1/partner/*`, authenticated with
+a static key in the `Authorization: Bearer` header instead of a Cognito JWT. Keys are
 scoped; existing keys stay GET-only unless minted or updated with
 `allowWrite`.
 
 | Route | Mirrors |
 |-------|---------|
-| `GET /public/finance`, `/public/finance/quotes`, `/public/records`, `/public/fx/v2/rates` | the JWT GETs (finance stays GET-only) |
-| `GET /public/lx-software/linkedin/posts` | LinkedIn posts (text, pillar, time, reactions, comments, impressions). Published only unless `?status=` names `drafted`, `approved`, `archived`, `failed`, a comma-separated list, or `all` |
-| `POST /public/lx-software/linkedin/posts` | Create a drafted post from `body`, `firstComment`, `hashtags`, and `pillar`. Same key, `allowWrite`, and `PublicApiWritesEnabled` |
-| `GET` / `PUT` / `DELETE /public/lx-software/linkedin/posts/{id}` | Read one post, update those four fields, or archive it. A published post cannot be edited or archived here |
-| `GET /public/siu-tin-dei/board` and `GET /public/siu-tin-dei/board/{proxy+}` | every JWT GET under `/siu-tin-dei/board` |
-| `PUT` / `POST` / `DELETE /public/siu-tin-dei/board/{proxy+}` | the matching JWT write, when the key has `allowWrite` and `PublicApiWritesEnabled` is `true` |
+| `GET /v1/partner/finance`, `/v1/partner/finance/quotes`, `/v1/partner/records`, `/v1/partner/fx/rates` | the JWT GETs (finance stays GET-only) |
+| `GET /v1/partner/lx-software/linkedin/posts` | LinkedIn posts (text, pillar, time, reactions, comments, impressions). Published only unless `?status=` names `drafted`, `approved`, `archived`, `failed`, a comma-separated list, or `all` |
+| `POST /v1/partner/lx-software/linkedin/posts` | Create a drafted post from `body`, `firstComment`, `hashtags`, and `pillar`. Same key, `allowWrite`, and `PublicApiWritesEnabled` |
+| `GET` / `PUT` / `DELETE /v1/partner/lx-software/linkedin/posts/{id}` | Read one post, update those four fields, or archive it. A published post cannot be edited or archived here |
+| `GET /v1/partner/siutindei/board` and `GET /v1/partner/siutindei/board/{proxy+}` | every JWT GET under `/v1/admin/siutindei/board` |
+| `PUT` / `POST` / `DELETE /v1/partner/siutindei/board/{proxy+}` | the matching JWT write, when the key has `allowWrite` and `PublicApiWritesEnabled` is `true` |
 
-Assets and parse-job endpoints are not mirrored. `/public/records`
+Assets and parse-job endpoints are not mirrored. `/v1/partner/records`
 excludes `BOARD#` rows. Legacy keys with only `scope=read` are finance-only.
 The handler enforces scopes, the write flag and the kill switch
 (`PUBLIC_READ_PATHS` / `PUBLIC_BOARD_PREFIX` in `dispatch.py`).
 
 | Scope | Routes |
 |-------|--------|
-| `finance` | `/public/finance`, quotes, records, FX (GET only) |
+| `finance` | `/v1/partner/finance`, quotes, records, FX (GET only) |
 | `siutindei-board-ops` | overview, staff, tasks, breakers, review, holds, ramp, tools, tool-calls; writes on those heads with `allowWrite` (except owner-only) |
-| `siutindei-board-full` | every JWT GET under `/siu-tin-dei/board` except the PII heads; matching writes with `allowWrite` |
+| `siutindei-board-full` | every JWT GET under `/v1/admin/siutindei/board` except the PII heads; matching writes with `allowWrite` |
 | `siutindei-board-delegate` | on top of the path's own scope and `allowWrite`: reject an approval (note required), dismiss a task (note required), and `POST …/settings/focus`. Not approve |
 | `siutindei-pii` | unmasked mail; `allowList` / `digestTo` on overview and `GET /tools` `config.allowList`; `prospects`, `outreach`, `receivables` (with board-full); prospect import / PUT / merge |
 | `siutindei-assets` | content creative presigned URLs (GET only) |
-| `lxsoftware-linkedin` | `GET /public/lx-software/linkedin/posts` and `GET …/posts/{id}`. Text, time, and impression, reaction, and comment counts. No `status` parameter returns published posts. `?status=drafted` (also `approved`, `archived`, `failed`, a comma-separated list, or `all`) returns those posts on the same key; each item carries `status`. With `allowWrite`, `POST` creates a draft, `PUT …/posts/{id}` updates `body`, `firstComment`, `hashtags`, and `pillar`, and `DELETE …/posts/{id}` archives a post that is not published. No approve, mark-posted, regenerate, picture, connection, or tokens. A successful read sends the same coalesced notification as the other public reads; a write mails every time |
+| `lxsoftware-linkedin` | `GET /v1/partner/lx-software/linkedin/posts` and `GET …/posts/{id}`. Text, time, and impression, reaction, and comment counts. No `status` parameter returns published posts. `?status=drafted` (also `approved`, `archived`, `failed`, a comma-separated list, or `all`) returns those posts on the same key; each item carries `status`. With `allowWrite`, `POST` creates a draft, `PUT …/posts/{id}` updates `body`, `firstComment`, `hashtags`, and `pillar`, and `DELETE …/posts/{id}` archives a post that is not published. No approve, mark-posted, regenerate, picture, connection, or tokens. A successful read sends the same coalesced notification as the other public reads; a write mails every time |
 
 Writes need **`allowWrite`** on the key (`create --allow-write` or
 `set-write`) **and** stack parameter **`PublicApiWritesEnabled=true`**
@@ -452,21 +452,21 @@ Set `ADMIN_API_BASE_URL` in your shell to the `AdminApiBaseUrl` output of
 the `lxsoftware` stack. It is not a GitHub variable.
 
 ```bash
-curl -H "x-api-key: lxpk_..." "$ADMIN_API_BASE_URL/public/finance"
-curl -H "x-api-key: lxpk_..." "$ADMIN_API_BASE_URL/public/lx-software/linkedin/posts"
-curl -H "x-api-key: lxpk_..." "$ADMIN_API_BASE_URL/public/lx-software/linkedin/posts?status=drafted"
-curl -X POST -H "x-api-key: lxpk_..." -H "Content-Type: application/json" \
+curl -H "Authorization: Bearer lxpk_..." "$ADMIN_API_BASE_URL/v1/partner/finance"
+curl -H "Authorization: Bearer lxpk_..." "$ADMIN_API_BASE_URL/v1/partner/lx-software/linkedin/posts"
+curl -H "Authorization: Bearer lxpk_..." "$ADMIN_API_BASE_URL/v1/partner/lx-software/linkedin/posts?status=drafted"
+curl -X POST -H "Authorization: Bearer lxpk_..." -H "Content-Type: application/json" \
   -d '{"body":"A hook.","firstComment":"The detail.","hashtags":["CDK"],"pillar":"platforms"}' \
-  "$ADMIN_API_BASE_URL/public/lx-software/linkedin/posts"
-curl -X PUT -H "x-api-key: lxpk_..." -H "Content-Type: application/json" \
+  "$ADMIN_API_BASE_URL/v1/partner/lx-software/linkedin/posts"
+curl -X PUT -H "Authorization: Bearer lxpk_..." -H "Content-Type: application/json" \
   -d '{"body":"A shorter hook.","firstComment":"The detail."}' \
-  "$ADMIN_API_BASE_URL/public/lx-software/linkedin/posts/li_abc"
-curl -X DELETE -H "x-api-key: lxpk_..." \
-  "$ADMIN_API_BASE_URL/public/lx-software/linkedin/posts/li_abc"
-curl -H "x-api-key: lxpk_..." "$ADMIN_API_BASE_URL/public/siu-tin-dei/board/breakers"
-curl -X POST -H "x-api-key: lxpk_..." -H "Content-Type: application/json" \
+  "$ADMIN_API_BASE_URL/v1/partner/lx-software/linkedin/posts/li_abc"
+curl -X DELETE -H "Authorization: Bearer lxpk_..." \
+  "$ADMIN_API_BASE_URL/v1/partner/lx-software/linkedin/posts/li_abc"
+curl -H "Authorization: Bearer lxpk_..." "$ADMIN_API_BASE_URL/v1/partner/siutindei/board/breakers"
+curl -X POST -H "Authorization: Bearer lxpk_..." -H "Content-Type: application/json" \
   -d '{"assignee":"support","brief":"Triage inbound"}' \
-  "$ADMIN_API_BASE_URL/public/siu-tin-dei/board/tasks"
+  "$ADMIN_API_BASE_URL/v1/partner/siutindei/board/tasks"
 ```
 
 ## Statement PDF import
@@ -880,7 +880,7 @@ All leave the permission matrix intact.
 
 Default-on seats: `support`, `provider-success`, `community-manager`,
 `business-analyst`, `data-analyst`. `maxRunningTasks` default 3. Flip
-others on from **Staff** (or `PUT /siu-tin-dei/board/staff/{id}`):
+others on from **Staff** (or `PUT /v1/admin/siutindei/board/staff/{id}`):
 
 1. Set `settings.review.digestTo` (Settings card), deploy with
    `SiutindeiBoardStaffEnabled=true` and flip `settings.staff.enabled`.
@@ -984,9 +984,9 @@ on that book returns 403. LX Software and Siu Tin Dei stay editable.
    set `enableDataApi: true`.
 4. Scheduler `lxsoftware-admin-evolvesprouts-finance-mirror` runs at 00:45
    HKT when the Data API is configured. **Sync now** queues the same
-   mirror (`POST /evolve-sprouts/sync` returns `{queued}`, internal event
+   mirror (`POST /v1/admin/evolvesprouts/sync` returns `{queued}`, internal event
    `evolvesprouts_finance_mirror`; the page polls
-   `GET /evolve-sprouts/summary`). The page load reads the last snapshot
+   `GET /v1/admin/evolvesprouts/summary`). The page load reads the last snapshot
    and does not query Aurora.
 5. Mirrored lines replace the previous mirror and leave any other lines
    alone. Issued `customer_invoices` become income `es-inv-*` (Gains).
@@ -1023,7 +1023,7 @@ micro-batch sheet into siutindei importer JSON and calls the product admin
 API as a dedicated Cognito **importer** user. This stack never writes
 Aurora and no LLM runs in that path. `catalog_import` is always an
 Approval (`always_propose`, class `catalog_import`); owner
-`POST /siu-tin-dei/board/catalog/preview`, `POST …/catalog/import`,
+`POST /v1/admin/siutindei/board/catalog/preview`, `POST …/catalog/import`,
 `POST …/catalog/skip`, `POST …/catalog/requeue` and
 `POST …/catalog/reimport` are JWT-only
 (`owner_only` on the public API). Bulk sources live on **Progress**
@@ -1346,7 +1346,7 @@ CLOUDFLARE_API_TOKEN=... python3 scripts/sync-ses-sending-dns.py \
 That upserts DNS-only CNAMEs plus the `mail.partners.siutindei.com` MX and
 SPF records and asks SES to verify again (`FAILED` never self-heals).
 Confirm `token.dkim.amazonses.com` resolves to a TXT record; `NXDOMAIN`
-means the Cloudflare targets are stale. `GET /siu-tin-dei/board` and
+means the Cloudflare targets are stale. `GET /v1/admin/siutindei/board` and
 **Pipeline → Outreach stats** show `outreachIdentity.dkimStatus` and the
 current CNAME names.
 

@@ -1,0 +1,225 @@
+openapi: 3.0.3
+info:
+  title: LX Software public API
+  version: 0.1.0
+  description: |
+    Field names on the wire are snake_case. lx-software keeps message
+    and reason beside the problem members. The address is
+    https://api.lx-software.com and callers add /v1/ themselves.
+    Website and email-link routes. The old email-link paths stay.
+servers:
+  - url: https://api.lx-software.com
+paths:
+  "/v1/public/outreach/unsubscribe/{token}":
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: token
+      security: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      summary: token
+      security: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/public/outreach/unsubscribe/{token}":
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: token
+      deprecated: true
+      security: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      summary: token
+      deprecated: true
+      security: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/public/newsletter/subscribe:
+    post:
+      summary: subscribe
+      security: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/public/newsletter/confirm/{token}":
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: token
+      security: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/public/newsletter/confirm/{token}":
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: token
+      deprecated: true
+      security: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/public/newsletter/unsubscribe/{token}":
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: token
+      security: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      summary: token
+      security: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/public/newsletter/unsubscribe/{token}":
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: token
+      deprecated: true
+      security: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      summary: token
+      deprecated: true
+      security: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+components:
+  schemas:
+    Object:
+      type: object
+      additionalProperties: true
+    Problem:
+      type: object
+      additionalProperties: true
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+        message:
+          type: string
+        reason:
+          type: string
+  responses:
+    Problem:
+      description: Problem details. lx-software keeps message and reason.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+

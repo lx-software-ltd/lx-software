@@ -1,0 +1,3130 @@
+openapi: 3.0.3
+info:
+  title: LX Software admin API
+  version: 0.1.0
+  description: |
+    Field names on the wire are snake_case. lx-software keeps message
+    and reason beside the problem members. The address is
+    https://api.lx-software.com and callers add /v1/ themselves.
+    JWT routes under /v1/admin, plus GET /health.
+servers:
+  - url: https://api.lx-software.com
+paths:
+  /health:
+    get:
+      summary: health
+      security: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/me:
+    get:
+      summary: me
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/openrouter/usage:
+    get:
+      summary: usage
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/aws/usage:
+    get:
+      summary: usage
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/aws/usage/pdf:
+    get:
+      summary: pdf
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/fx/rates:
+    get:
+      summary: rates
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/assets:
+    get:
+      summary: assets
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/assets/upload-url:
+    post:
+      summary: upload-url
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/assets/confirm:
+    post:
+      summary: confirm
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/assets/download-url:
+    get:
+      summary: download-url
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      summary: download-url
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/assets/delete:
+    post:
+      summary: delete
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/records:
+    get:
+      summary: records
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      summary: records
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    put:
+      summary: records
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/finance:
+    get:
+      summary: finance
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/finance/quotes:
+    get:
+      summary: quotes
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/finance/income:
+    put:
+      summary: income
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/finance/expenses:
+    put:
+      summary: expenses
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/finance/investments:
+    put:
+      summary: investments
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/finance/savings:
+    put:
+      summary: savings
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/finance/pension:
+    put:
+      summary: pension
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/finance/accounts:
+    put:
+      summary: accounts
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/finance/liabilities:
+    put:
+      summary: liabilities
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/finance/allocations:
+    put:
+      summary: allocations
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/finance/{house}":
+    parameters:
+      - name: house
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      summary: house
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/finance/{house}/parse-statement":
+    parameters:
+      - name: house
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: parse-statement
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/finance/{house}/parse-statement/jobs/{job_id}":
+    parameters:
+      - name: house
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: job_id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei:
+    get:
+      summary: siutindei
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    put:
+      summary: siutindei
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/parse-statement:
+    post:
+      summary: parse-statement
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/parse-statement/jobs/{job_id}":
+    parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: job_id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board:
+    get:
+      summary: board
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/charter:
+    put:
+      summary: charter
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/members/{persona_id}":
+    parameters:
+      - name: persona_id
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      summary: persona_id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      summary: persona_id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/brief:
+    put:
+      summary: brief
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/settings:
+    put:
+      summary: settings
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/updates:
+    get:
+      summary: updates
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      summary: updates
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/chat/{persona_id}":
+    parameters:
+      - name: persona_id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: persona_id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      summary: persona_id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      summary: persona_id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/chat/{persona_id}/jobs/{job_id}":
+    parameters:
+      - name: persona_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: job_id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/meetings:
+    get:
+      summary: meetings
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      summary: meetings
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/meetings/{meeting_id}":
+    parameters:
+      - name: meeting_id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: meeting_id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/meetings/{meeting_id}/cancel":
+    parameters:
+      - name: meeting_id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: cancel
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/actions:
+    get:
+      summary: actions
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/actions/{action_id}":
+    parameters:
+      - name: action_id
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      summary: action_id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/repo-snapshot/refresh:
+    post:
+      summary: refresh
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/tools:
+    get:
+      summary: tools
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    put:
+      summary: tools
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/tools/calls:
+    get:
+      summary: calls
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/approvals:
+    get:
+      summary: approvals
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/approvals/{approval_id}/approve":
+    parameters:
+      - name: approval_id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: approve
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/approvals/{approval_id}/reject":
+    parameters:
+      - name: approval_id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: reject
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/mail:
+    get:
+      summary: mail
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/mail/selftest:
+    post:
+      summary: selftest
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/mail/{thread_id}":
+    parameters:
+      - name: thread_id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: thread_id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/mail/{thread_id}/read":
+    parameters:
+      - name: thread_id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: read
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/messages:
+    get:
+      summary: messages
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/messages/status:
+    get:
+      summary: status
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/messages/{thread_id}":
+    parameters:
+      - name: thread_id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: thread_id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/messages/{thread_id}/read":
+    parameters:
+      - name: thread_id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: read
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/messages/{thread_id}/media/{index}":
+    parameters:
+      - name: thread_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: index
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: index
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/messages/connect/page:
+    post:
+      summary: page
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/messages/whatsapp/connect:
+    post:
+      summary: connect
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/messages/whatsapp/sync:
+    post:
+      summary: sync
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/receivables:
+    get:
+      summary: receivables
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/staff:
+    get:
+      summary: staff
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/staff/{seat_id}":
+    parameters:
+      - name: seat_id
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      summary: seat_id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      summary: seat_id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/tasks:
+    get:
+      summary: tasks
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      summary: tasks
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/tasks/{task_id}":
+    parameters:
+      - name: task_id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: task_id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/tasks/{task_id}/cancel":
+    parameters:
+      - name: task_id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: cancel
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/tasks/{task_id}/review":
+    parameters:
+      - name: task_id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: review
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/tasks/{task_id}/retry":
+    parameters:
+      - name: task_id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: retry
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/holds:
+    get:
+      summary: holds
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/holds/{hold_id}/veto":
+    parameters:
+      - name: hold_id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: veto
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/holds/veto-class:
+    post:
+      summary: veto-class
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/boundaries:
+    put:
+      summary: boundaries
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/ramp:
+    get:
+      summary: ramp
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/ramp/{class_key}/promote":
+    parameters:
+      - name: class_key
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: promote
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/review:
+    get:
+      summary: review
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/progress:
+    get:
+      summary: progress
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/review/sample/{call_id}/wrong":
+    parameters:
+      - name: call_id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: wrong
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/lessons:
+    get:
+      summary: lessons
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/lessons/{lesson_id}/confirm":
+    parameters:
+      - name: lesson_id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: confirm
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/lessons/{lesson_id}/dismiss":
+    parameters:
+      - name: lesson_id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: dismiss
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/breakers:
+    get:
+      summary: breakers
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/breakers/{name}/reset":
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: reset
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/watchlist:
+    get:
+      summary: watchlist
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      summary: watchlist
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/watchlist/{watch_id}":
+    parameters:
+      - name: watch_id
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      summary: watch_id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      summary: watch_id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/changes:
+    get:
+      summary: changes
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/prospects:
+    get:
+      summary: prospects
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/prospects/import:
+    post:
+      summary: import
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/prospects/{id}":
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    put:
+      summary: id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/prospects/{id}/merge":
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: merge
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/sequences/{type}":
+    parameters:
+      - name: type
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: type
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    put:
+      summary: type
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/outreach/stats:
+    get:
+      summary: stats
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/content:
+    get:
+      summary: content
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      summary: content
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/content/{id}":
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    put:
+      summary: id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/content/{id}/render":
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: render
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/content/{id}/creative/{n}":
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: n
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: n
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/code/staging:
+    get:
+      summary: staging
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/code/promote:
+    post:
+      summary: promote
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/code/sync-staging:
+    post:
+      summary: sync-staging
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/catalog/preview:
+    post:
+      summary: preview
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/catalog/import:
+    post:
+      summary: import
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/catalog/skip:
+    post:
+      summary: skip
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/catalog/requeue:
+    post:
+      summary: requeue
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/catalog/reimport:
+    post:
+      summary: reimport
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/catalog/sources:
+    get:
+      summary: sources
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/catalog/bulk/{source}/preview":
+    parameters:
+      - name: source
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: preview
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/catalog/bulk/{source}/import":
+    parameters:
+      - name: source
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: import
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/catalog/candidates:
+    get:
+      summary: candidates
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/catalog/candidates/bulk:
+    post:
+      summary: bulk
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/catalog/candidates/{candidate_id}/approve":
+    parameters:
+      - name: candidate_id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: approve
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/siutindei/board/catalog/candidates/{candidate_id}/reject":
+    parameters:
+      - name: candidate_id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: reject
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/siutindei/board/catalog/discovery/run:
+    post:
+      summary: run
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/lx-software/linkedin:
+    get:
+      summary: linkedin
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/lx-software/linkedin/settings:
+    put:
+      summary: settings
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/lx-software/linkedin/connect:
+    post:
+      summary: connect
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/lx-software/linkedin/oauth/exchange:
+    post:
+      summary: exchange
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/lx-software/linkedin/disconnect:
+    post:
+      summary: disconnect
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/lx-software/linkedin/analytics/connect:
+    post:
+      summary: connect
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/lx-software/linkedin/analytics/disconnect:
+    post:
+      summary: disconnect
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/lx-software/linkedin/connection:
+    put:
+      summary: connection
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/lx-software/linkedin/connection/refresh:
+    post:
+      summary: refresh
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/lx-software/linkedin/character:
+    get:
+      summary: character
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/lx-software/linkedin/character/photo:
+    get:
+      summary: photo
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      summary: photo
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      summary: photo
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/lx-software/linkedin/character/sheet:
+    get:
+      summary: sheet
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/lx-software/linkedin/character/draw:
+    post:
+      summary: draw
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/lx-software/linkedin/character/candidates/{id}":
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/lx-software/linkedin/character/choose:
+    post:
+      summary: choose
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/lx-software/linkedin/posts/{id}/image/regenerate":
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: regenerate
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/lx-software/linkedin/posts/{id}/image/brief":
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: brief
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/lx-software/linkedin/posts/{id}/image":
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: image
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      summary: image
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      summary: image
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/lx-software/linkedin/posts:
+    get:
+      summary: posts
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      summary: posts
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/lx-software/linkedin/posts/{id}":
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      summary: id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/lx-software/linkedin/posts/{id}/approve":
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: approve
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/lx-software/linkedin/posts/{id}/unapprove":
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: unapprove
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/lx-software/linkedin/posts/{id}/archive":
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: archive
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/lx-software/linkedin/posts/{id}/mark-posted":
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: mark-posted
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/lx-software/linkedin/posts/{id}/regenerate":
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: regenerate
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/lx-software/linkedin/ideas:
+    get:
+      summary: ideas
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      summary: ideas
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/lx-software/linkedin/ideas/{id}":
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    delete:
+      summary: id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/lx-software/linkedin/generate:
+    post:
+      summary: generate
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/lx-software/linkedin/jobs/{job_id}":
+    parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: job_id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/lx-software/resume/overview:
+    get:
+      summary: overview
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/lx-software/resume/settings:
+    get:
+      summary: settings
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    put:
+      summary: settings
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/lx-software/resume/resumes/{id}/file":
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: file
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/lx-software/resume/resumes/{id}/pdf":
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: pdf
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/lx-software/resume/resumes/{id}":
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    patch:
+      summary: id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      summary: id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/lx-software/resume/resumes:
+    get:
+      summary: resumes
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      summary: resumes
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/lx-software/resume/template:
+    put:
+      summary: template
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/lx-software/resume/postings:
+    get:
+      summary: postings
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      summary: postings
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/lx-software/resume/tailor:
+    post:
+      summary: tailor
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/lx-software/resume/applications/{id}":
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      summary: id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      summary: id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/lx-software/resume/applications:
+    get:
+      summary: applications
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      summary: applications
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/lx-software/resume/jobs/{job_id}":
+    parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: job_id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/lx-software:
+    get:
+      summary: lx-software
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    put:
+      summary: lx-software
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/lx-software/parse-statement:
+    post:
+      summary: parse-statement
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/lx-software/parse-statement/jobs/{job_id}":
+    parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: job_id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/evolvesprouts:
+    get:
+      summary: evolvesprouts
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/evolvesprouts/summary:
+    get:
+      summary: summary
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/evolvesprouts/sync:
+    post:
+      summary: sync
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/banking:
+    get:
+      summary: banking
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/banking/banks:
+    get:
+      summary: banks
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/banking/auth:
+    post:
+      summary: auth
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/banking/sessions:
+    post:
+      summary: sessions
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/admin/banking/sessions/{session_id}":
+    parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+    delete:
+      summary: session_id
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/banking/mappings:
+    put:
+      summary: mappings
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/banking/sync:
+    post:
+      summary: sync
+      security:
+        - AdminBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+components:
+
+  securitySchemes:
+    AdminBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Object:
+      type: object
+      additionalProperties: true
+    Problem:
+      type: object
+      additionalProperties: true
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+        message:
+          type: string
+        reason:
+          type: string
+  responses:
+    Problem:
+      description: Problem details. lx-software keeps message and reason.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
