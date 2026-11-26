@@ -24,7 +24,7 @@ import boto3
 from contract_constants import (
     BOARD_STAFF_OUTREACH_MAX_TOUCHES,
 )
-from http_common import _log_event
+from http_common import _log_event, html_headers
 
 CONFIG_SET = "lxsoftware-admin-siutindei-outreach"
 REPLY_TO_LOCAL = "partnerships"
@@ -546,7 +546,7 @@ def handle_unsubscribe(event: dict[str, Any], method: str, token: str) -> dict[s
 def _html_response(status: int, body: str) -> dict[str, Any]:
     return {
         "statusCode": status,
-        "headers": {"content-type": "text/html; charset=utf-8"},
+        "headers": html_headers(),
         "body": body,
     }
 

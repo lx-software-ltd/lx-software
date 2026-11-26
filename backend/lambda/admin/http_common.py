@@ -54,17 +54,15 @@ def request_id_scope(event: Any) -> Iterator[None]:
 
 
 def _problem_field(out: dict[str, Any], key: str, value: Any) -> None:
-    """Keep ``key`` only when it is already the problem value.
+    """Replace a handler field that is not already the problem value.
 
-    ``setdefault`` would otherwise leave a handler field that means something
-    else, such as a provider error number in ``code`` or a record status.
-    No error body in this Lambda sets ``code`` or ``status`` today; ``reason``
-    still carries the deny reason. ``message`` and every other key stay.
+    A provider error number in ``code`` or a record status must not stay.
+    An error that already carries the problem value keeps it. No error body
+    in this Lambda sets ``code`` or ``status`` today. ``reason`` still
+    carries the deny reason. ``message`` and every other key stay.
     """
-    if out.get(key) == value:
-        out.setdefault(key, value)
-        return
-    out[key] = value
+    if out.get(key) != value:
+        out[key] = value
 
 
 def _with_problem(status_code: int, payload: dict[str, Any]) -> dict[str, Any]:
@@ -81,14 +79,24 @@ def _with_problem(status_code: int, payload: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def request_id_headers() -> dict[str, str]:
+    """The ``x-request-id`` header when this invocation bound one."""
+    request_id = _REQUEST_ID.get()
+    if not request_id:
+        return {}
+    return {"x-request-id": request_id}
+
+
+def html_headers() -> dict[str, str]:
+    """HTML response headers, including the request id when one is bound."""
+    return {"content-type": "text/html; charset=utf-8", **request_id_headers()}
+
+
 def _json_response(status_code: int, payload: dict[str, Any] | list[Any] | str) -> dict[str, Any]:
     if status_code >= 400 and isinstance(payload, dict):
         payload = _with_problem(status_code, payload)
     body = _g if isinstance(_g := payload, str) else json.dumps(payload, default=str)
-    headers = {"Content-Type": "application/json"}
-    request_id = _REQUEST_ID.get()
-    if request_id:
-        headers["x-request-id"] = request_id
+    headers = {"Content-Type": "application/json", **request_id_headers()}
     return {"statusCode": status_code, "headers": headers, "body": body}
 
 

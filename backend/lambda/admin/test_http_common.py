@@ -106,6 +106,21 @@ class ErrorBodyTests(unittest.TestCase):
         self.assertEqual(body["status"], 400)
         self.assertEqual(body["message"], "Bad request")
 
+    def test_html_responses_carry_the_request_id(self) -> None:
+        import board_newsletter
+        import board_outreach
+
+        bind_request_id({"requestContext": {"requestId": "req-html"}})
+        for response in (
+            board_newsletter._html_response(200, "<p>ok</p>"),
+            board_outreach._html_response(200, "<p>ok</p>"),
+        ):
+            self.assertEqual(response["headers"]["content-type"], "text/html; charset=utf-8")
+            self.assertEqual(response["headers"]["x-request-id"], "req-html")
+        bind_request_id({})
+        bare = board_newsletter._html_response(200, "<p>ok</p>")
+        self.assertNotIn("x-request-id", bare["headers"])
+
 
 class _UnreadableHTTPError(urllib.error.HTTPError):
     def read(self, n: int = -1) -> bytes:
