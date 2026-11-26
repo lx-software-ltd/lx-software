@@ -35,7 +35,7 @@ class CheckContractsWireCopyTest(unittest.TestCase):
                 self.assertIsNone(check._findingalpha_checkout())
 
     def test_the_checker_does_not_hardcode_an_agent_path(self) -> None:
-        text = Path(check.__file__).read_text(encoding="utf-8")
+        text = _PATH.read_text(encoding="utf-8")
         self.assertNotIn("/agent/repos", text)
         self.assertIn(check._FINDINGALPHA_CODEC, text)
 
