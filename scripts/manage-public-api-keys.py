@@ -203,7 +203,7 @@ def cmd_revoke(args: argparse.Namespace) -> None:
             ExpressionAttributeValues={":t": True},
         )
         print(f"revoked keyId {args.key_id} (label={it.get('label')!r})")
-    print("note: API Gateway does not cache authorizer verdicts during the header overlap")
+    print("note: API Gateway caches authorizer verdicts for up to 60 seconds")
 
 
 def cmd_set_scopes(args: argparse.Namespace) -> None:
@@ -225,7 +225,7 @@ def cmd_set_scopes(args: argparse.Namespace) -> None:
             ExpressionAttributeValues={":s": scopes},
         )
         print(f"keyId {args.key_id} scopes {previous_s} -> {','.join(scopes)} (label={it.get('label')!r})")
-    print("note: API Gateway does not cache authorizer verdicts during the header overlap")
+    print("note: API Gateway caches authorizer verdicts for up to 60 seconds")
     print("note: a scope the deployed authorizer does not know is ignored until that deploy")
 
 
@@ -244,7 +244,7 @@ def cmd_set_write(args: argparse.Namespace) -> None:
             ExpressionAttributeValues={":w": allow},
         )
         print(f"{'enabled' if allow else 'disabled'} write on keyId {args.key_id} (label={it.get('label')!r})")
-    print("note: API Gateway does not cache authorizer verdicts during the header overlap")
+    print("note: API Gateway caches authorizer verdicts for up to 60 seconds")
     print("note: stack PublicApiWritesEnabled must be true for writes to succeed")
 
 
