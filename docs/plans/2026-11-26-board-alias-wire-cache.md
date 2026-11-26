@@ -25,7 +25,7 @@ Do not edit `wire_format.py` or `wireFormat.ts`. Do not remove the Meta webhook 
 
 - `dispatch.py` stays at 1344 lines. The old board path is rewritten in `legacy_http_path`.
 - New `/v1/partner/siutindei/board` responses stay snake_case.
-- Authorizer cache TTL is 0 seconds. The cache key is the source IP alone, so a positive TTL would reuse one caller's approval for every request from that address. The identity source still includes source IP.
+- This branch lists `Authorization` and source IP, and the authorizer cache stays 60 seconds. A cache keyed only by source IP used a TTL of 0, because that key would reuse one caller's approval for every request from the address.
 - The identity source lists both credential headers or neither.
 
 ## Done when

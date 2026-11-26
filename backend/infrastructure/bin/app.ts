@@ -75,12 +75,10 @@ export function assemble(app: cdk.App): cdk.App {
     description: "LX Software admin SPA delivery (S3 + CloudFront).",
     env,
     synthesizer,
-    // Import values the API stack already resolved. Passing cspApiConnectOrigin
-    // copies its Fn::If, and this template does not define UseApiCustomDomain.
-    cspApiConnectOrigin: cdk.Fn.join("", [
-      cdk.Fn.importValue("lxsoftware-AdminApiBaseUrl"),
-      cdk.Fn.importValue("lxsoftware-CspApiExecuteApiOrigin"),
-    ]),
+    // Import the origin the API stack already resolved. Passing
+    // cspApiConnectOrigin copies its Fn::If, and this template does not
+    // define UseApiCustomDomain. This stack lists that one origin.
+    cspApiConnectOrigin: cdk.Fn.importValue("lxsoftware-AdminApiBaseUrl"),
     cspAssetsConnectOrigins: cdk.Fn.join(" ", [
       cdk.Fn.join("", ["https://", lxsoftware.assetsBucket.bucketDomainName]),
       cdk.Fn.join("", [

@@ -50,7 +50,7 @@ describe("assembled templates", () => {
     const admin = stacks.find((stack) => stack.node.id === "lxsoftware-admin-web");
     const serialized = JSON.stringify(Template.fromStack(admin!).toJSON());
     expect(serialized).toContain("lxsoftware-AdminApiBaseUrl");
-    expect(serialized).toContain("lxsoftware-CspApiExecuteApiOrigin");
+    expect(serialized).not.toContain("lxsoftware-CspApiExecuteApiOrigin");
     expect(serialized).not.toContain("UseApiCustomDomain");
   });
 });
