@@ -10,7 +10,7 @@ import * as logs from "aws-cdk-lib/aws-logs";
 import type * as kms from "aws-cdk-lib/aws-kms";
 import type * as lambda from "aws-cdk-lib/aws-lambda";
 import { defineApiDomain } from "./admin-api-domain";
-import { ROUTES } from "./admin-api-routes";
+import { ROUTE_STAGE, routesForStage } from "./admin-api-route-stage";
 
 /**
  * Lambda proxy integration that does NOT add an `AWS::Lambda::Permission`
@@ -198,14 +198,15 @@ export function defineAdminHttpApi(
     ).toString(),
   );
 
-  // One pass: each path stays its own route (board paths are not collapsed
-  // into {proxy+}). The shared integration binds under the first route,
-  // which must remain GET /health.
+  // One pass over this deploy's stage, not the full ROUTES contract. The
+  // gateway quota is 300 routes and CloudFormation creates before it
+  // deletes, so each stage adds at most 70 method keys. GET /health stays
+  // first so the shared integration stays parented there.
   const routeSettings: Record<
     string,
     { ThrottlingRateLimit: number; ThrottlingBurstLimit: number }
   > = {};
-  for (const route of ROUTES) {
+  for (const route of routesForStage(ROUTE_STAGE)) {
     const created = httpApi.addRoutes({
       path: route.path,
       methods: [...route.methods],
