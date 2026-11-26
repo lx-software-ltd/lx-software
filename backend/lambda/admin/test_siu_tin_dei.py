@@ -103,18 +103,18 @@ class TestSiuTinDeiParseJobPath(unittest.TestCase):
     def test_from_path_parameters(self) -> None:
         ev = {"pathParameters": {"jobId": "abc123"}}
         self.assertEqual(
-            _path_siu_tin_dei_parse_job(ev, "/siu-tin-dei/parse-statement/jobs/abc123"),
+            _path_siu_tin_dei_parse_job(ev, "/siutindei/parse-statement/jobs/abc123"),
             "abc123",
         )
 
     def test_from_path_split(self) -> None:
         self.assertEqual(
-            _path_siu_tin_dei_parse_job({}, "/siu-tin-dei/parse-statement/jobs/j1"),
+            _path_siu_tin_dei_parse_job({}, "/siutindei/parse-statement/jobs/j1"),
             "j1",
         )
 
     def test_invalid(self) -> None:
-        self.assertIsNone(_path_siu_tin_dei_parse_job({}, "/siu-tin-dei"))
+        self.assertIsNone(_path_siu_tin_dei_parse_job({}, "/siutindei"))
         self.assertIsNone(
             _path_siu_tin_dei_parse_job({}, "/finance/hillmarton/parse-statement/jobs/j1")
         )
@@ -132,7 +132,7 @@ class TestStatementBookParseJobPath(unittest.TestCase):
     def test_lx_software_rejects_other_slug(self) -> None:
         self.assertIsNone(
             _path_statement_book_parse_job(
-                {}, "/siu-tin-dei/parse-statement/jobs/j1", "lx-software"
+                {}, "/siutindei/parse-statement/jobs/j1", "lx-software"
             )
         )
 
@@ -180,7 +180,7 @@ class TestSiuTinDeiRoutes(unittest.TestCase):
         return event
 
     def test_get_returns_empty_book(self) -> None:
-        out = lambda_handler(self._event("/siu-tin-dei"), None)
+        out = lambda_handler(self._event("/v1/admin/siutindei"), None)
         self.assertEqual(out["statusCode"], 200)
         data = json.loads(out["body"])["data"]
         self.assertEqual(data["defaultCurrency"], "HKD")
@@ -203,7 +203,7 @@ class TestSiuTinDeiRoutes(unittest.TestCase):
                 }
             ],
         }
-        out = lambda_handler(self._event("/siu-tin-dei", method="PUT", body=body), None)
+        out = lambda_handler(self._event("/v1/admin/siutindei", method="PUT", body=body), None)
         self.assertEqual(out["statusCode"], 400)
         self.assertIn("income or expenditure", json.loads(out["body"])["message"])
 
@@ -224,7 +224,7 @@ class TestSiuTinDeiRoutes(unittest.TestCase):
                 }
             ],
         }
-        out = lambda_handler(self._event("/siu-tin-dei", method="PUT", body=body), None)
+        out = lambda_handler(self._event("/v1/admin/siutindei", method="PUT", body=body), None)
         self.assertEqual(out["statusCode"], 200)
         data = json.loads(out["body"])["data"]
         self.assertEqual(data["defaultCurrency"], "HKD")
@@ -239,7 +239,7 @@ class TestSiuTinDeiRoutes(unittest.TestCase):
     def test_parse_requires_tab_scoped_type(self) -> None:
         out = lambda_handler(
             self._event(
-                "/siu-tin-dei/parse-statement",
+                "/v1/admin/siutindei/parse-statement",
                 method="POST",
                 body={"key": "uploads/admin-sub/x/inv.pdf"},
             ),
@@ -292,7 +292,7 @@ class TestLxSoftwareRoutes(unittest.TestCase):
         return event
 
     def test_get_returns_empty_book(self) -> None:
-        out = lambda_handler(self._event("/lx-software"), None)
+        out = lambda_handler(self._event("/v1/admin/lx-software"), None)
         self.assertEqual(out["statusCode"], 200)
         data = json.loads(out["body"])["data"]
         self.assertEqual(data["defaultCurrency"], "HKD")
@@ -315,7 +315,7 @@ class TestLxSoftwareRoutes(unittest.TestCase):
                 }
             ],
         }
-        out = lambda_handler(self._event("/lx-software", method="PUT", body=body), None)
+        out = lambda_handler(self._event("/v1/admin/lx-software", method="PUT", body=body), None)
         self.assertEqual(out["statusCode"], 400)
         self.assertIn("income or expenditure", json.loads(out["body"])["message"])
 
@@ -336,7 +336,7 @@ class TestLxSoftwareRoutes(unittest.TestCase):
                 }
             ],
         }
-        out = lambda_handler(self._event("/lx-software", method="PUT", body=body), None)
+        out = lambda_handler(self._event("/v1/admin/lx-software", method="PUT", body=body), None)
         self.assertEqual(out["statusCode"], 200)
         data = json.loads(out["body"])["data"]
         self.assertEqual(data["defaultCurrency"], "HKD")
@@ -351,7 +351,7 @@ class TestLxSoftwareRoutes(unittest.TestCase):
     def test_parse_requires_tab_scoped_type(self) -> None:
         out = lambda_handler(
             self._event(
-                "/lx-software/parse-statement",
+                "/v1/admin/lx-software/parse-statement",
                 method="POST",
                 body={"key": "uploads/admin-sub/x/inv.pdf"},
             ),

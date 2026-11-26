@@ -361,13 +361,13 @@ class HoldRouteTests(ToolsTestCase):
             {"message": "Hi", "reason": "test"},
         )
         hold_id = outcome.result["holdId"]
-        status, body = self.call("/siu-tin-dei/board/holds")
+        status, body = self.call("/v1/admin/siutindei/board/holds")
         self.assertEqual(status, 200)
         self.assertEqual(len(body["holds"]), 1)
-        status, body = self.call(f"/siu-tin-dei/board/holds/{hold_id}/veto", "POST", {"reason": "no"})
+        status, body = self.call(f"/v1/admin/siutindei/board/holds/{hold_id}/veto", "POST", {"reason": "no"})
         self.assertEqual(status, 200)
         self.assertEqual(body["hold"]["status"], "vetoed")
-        status, body = self.call("/siu-tin-dei/board/holds/missing/veto", "POST", {"reason": "x"})
+        status, body = self.call("/v1/admin/siutindei/board/holds/missing/veto", "POST", {"reason": "x"})
         self.assertEqual(status, 404)
 
     def test_veto_class_and_boundaries_and_ramp(self) -> None:
@@ -377,25 +377,25 @@ class HoldRouteTests(ToolsTestCase):
             _op("meta_propose_post"),
             {"message": "Hi", "reason": "test"},
         )
-        status, body = self.call("/siu-tin-dei/board/holds/veto-class", "POST", {"classKey": "publish:facebook"})
+        status, body = self.call("/v1/admin/siutindei/board/holds/veto-class", "POST", {"classKey": "publish:facebook"})
         self.assertEqual(status, 200)
         self.assertEqual(len(body["holds"]), 1)
-        status, body = self.call("/siu-tin-dei/board/holds/veto-class", "POST", {})
+        status, body = self.call("/v1/admin/siutindei/board/holds/veto-class", "POST", {})
         self.assertEqual(status, 400)
         status, body = self.call(
-            "/siu-tin-dei/board/boundaries",
+            "/v1/admin/siutindei/board/boundaries",
             "PUT",
             {"holds": {"publish": 12}, "reply": {"quietHoursHkt": [23, 7]}},
         )
         self.assertEqual(status, 200)
         self.assertEqual(body["boundaries"]["holds"]["publish"], 12)
-        status, body = self.call("/siu-tin-dei/board/ramp")
+        status, body = self.call("/v1/admin/siutindei/board/ramp")
         self.assertEqual(status, 200)
         self.assertTrue(any(r["classKey"] == "publish:facebook" for r in body["ramp"]))
 
     def test_disabled_env_returns_409(self) -> None:
         os.environ["BOARD_STAFF_ENABLED"] = "false"
-        status, body = self.call("/siu-tin-dei/board/holds")
+        status, body = self.call("/v1/admin/siutindei/board/holds")
         self.assertEqual(status, 409)
         self.assertEqual(body["message"], "Staff is disabled")
 

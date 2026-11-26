@@ -187,7 +187,7 @@ class TestAwsUsageEndpoint(BoardTestCase):
             ]
         )
         with patch("aws_billing._ce", return_value=ce):
-            status, body = self.call("/aws/usage", query="from=2026-08-01&to=2026-08-31")
+            status, body = self.call("/v1/admin/aws/usage", query="from=2026-08-01&to=2026-08-31")
         self.assertEqual(status, 200)
         self.assertEqual(body["payer"]["id"], "lxSoftware")
         by_id = {row["id"]: row for row in body["companies"]}
@@ -198,7 +198,7 @@ class TestAwsUsageEndpoint(BoardTestCase):
         ce = FakeCE([_group("LX Software", "Siu Tin Dei", "9")])
         from dispatch import lambda_handler
 
-        ev = self.event("/aws/usage.pdf", query="from=2026-08-01&to=2026-08-31")
+        ev = self.event("/v1/admin/aws/usage/pdf", query="from=2026-08-01&to=2026-08-31")
         with patch("aws_billing._ce", return_value=ce):
             resp = lambda_handler(ev, None)
         self.assertEqual(resp["statusCode"], 200)
@@ -210,7 +210,7 @@ class TestAwsUsageEndpoint(BoardTestCase):
         self.assertIn(b"Siu Tin Dei", pdf)
 
     def test_bad_range_is_400(self) -> None:
-        status, body = self.call("/aws/usage", query="from=2026-09-10&to=2026-09-01")
+        status, body = self.call("/v1/admin/aws/usage", query="from=2026-09-10&to=2026-09-01")
         self.assertEqual(status, 400)
         self.assertIn("to must be on or after from", body["message"])
 

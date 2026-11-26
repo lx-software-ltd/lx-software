@@ -2002,7 +2002,7 @@ class TestParseRepeatsImportedBasename(unittest.TestCase):
 
     def test_house_parse_enqueues_when_basename_already_imported(self) -> None:
         event = self._admin_event(
-            "/finance/morrison/parse-statement",
+            "/v1/admin/finance/morrison/parse-statement",
             {"key": "uploads/admin-sub/batch/00_advice-note.pdf"},
         )
         with patch("dispatch.enqueue_parse_statement_async_job", return_value="job-repeat") as enqueued:
@@ -2018,7 +2018,7 @@ class TestParseRepeatsImportedBasename(unittest.TestCase):
 
     def test_book_parse_enqueues_when_basename_already_imported(self) -> None:
         event = self._admin_event(
-            "/lx-software/parse-statement",
+            "/v1/admin/lx-software/parse-statement",
             {
                 "key": "uploads/admin-sub/batch/00_advice-note.pdf",
                 "lineTypeOnly": "expenditure",
@@ -2695,17 +2695,17 @@ class TestPublicReadRoutes(unittest.TestCase):
         return {"keyId": "k123", "label": "test", "scope": "read"}
 
     def test_missing_key_context_unauthorized(self) -> None:
-        out = lambda_handler(self._event("/public/finance"), None)
+        out = lambda_handler(self._event("/v1/partner/finance"), None)
         self.assertEqual(out["statusCode"], 401)
 
     def test_wrong_scope_unauthorized(self) -> None:
         ctx = {"keyId": "k123", "scope": "write"}
-        out = lambda_handler(self._event("/public/finance", key_ctx=ctx), None)
+        out = lambda_handler(self._event("/v1/partner/finance", key_ctx=ctx), None)
         self.assertEqual(out["statusCode"], 401)
 
     def test_public_finance_returns_overview(self) -> None:
         out = lambda_handler(
-            self._event("/public/finance", key_ctx=self._key_ctx()), None
+            self._event("/v1/partner/finance", key_ctx=self._key_ctx()), None
         )
         self.assertEqual(out["statusCode"], 200)
         body = json.loads(out["body"])
@@ -2725,7 +2725,7 @@ class TestPublicReadRoutes(unittest.TestCase):
 
     def test_public_records_returns_items(self) -> None:
         out = lambda_handler(
-            self._event("/public/records", key_ctx=self._key_ctx()), None
+            self._event("/v1/partner/records", key_ctx=self._key_ctx()), None
         )
         self.assertEqual(out["statusCode"], 200)
         body = json.loads(out["body"])
@@ -2734,14 +2734,14 @@ class TestPublicReadRoutes(unittest.TestCase):
 
     def test_unlisted_public_path_not_found(self) -> None:
         out = lambda_handler(
-            self._event("/public/finance/hillmarton", key_ctx=self._key_ctx()),
+            self._event("/v1/partner/finance/hillmarton", key_ctx=self._key_ctx()),
             None,
         )
         self.assertEqual(out["statusCode"], 404)
 
     def test_non_get_method_forbidden(self) -> None:
         out = lambda_handler(
-            self._event("/public/finance", method="PUT", key_ctx=self._key_ctx()),
+            self._event("/v1/partner/finance", method="PUT", key_ctx=self._key_ctx()),
             None,
         )
         self.assertEqual(out["statusCode"], 403)
@@ -2750,7 +2750,7 @@ class TestPublicReadRoutes(unittest.TestCase):
     def test_public_board_write_forbidden_when_disabled(self) -> None:
         out = lambda_handler(
             self._event(
-                "/public/siu-tin-dei/board/tasks",
+                "/v1/partner/siutindei/board/tasks",
                 method="POST",
                 key_ctx=self._key_ctx(),
             ),
@@ -2761,21 +2761,21 @@ class TestPublicReadRoutes(unittest.TestCase):
 
     def test_public_board_unknown_get_not_found(self) -> None:
         out = lambda_handler(
-            self._event("/public/siu-tin-dei/board/charter", key_ctx=self._key_ctx()),
+            self._event("/v1/partner/siutindei/board/charter", key_ctx=self._key_ctx()),
             None,
         )
         self.assertEqual(out["statusCode"], 404)
 
     def test_bare_public_prefix_not_found(self) -> None:
         out = lambda_handler(
-            self._event("/public", key_ctx=self._key_ctx()), None
+            self._event("/v1/partner", key_ctx=self._key_ctx()), None
         )
         self.assertEqual(out["statusCode"], 404)
 
     def test_linkedin_posts_need_their_scope(self) -> None:
         denied = lambda_handler(
             self._event(
-                "/public/lx-software/linkedin/posts",
+                "/v1/partner/lx-software/linkedin/posts",
                 key_ctx={"keyId": "k123", "scopes": "finance,siutindei-board-full"},
             ),
             None,
@@ -2787,7 +2787,7 @@ class TestPublicReadRoutes(unittest.TestCase):
         ) as posts:
             allowed = lambda_handler(
                 self._event(
-                    "/public/lx-software/linkedin/posts",
+                    "/v1/partner/lx-software/linkedin/posts",
                     key_ctx={"keyId": "k123", "scopes": "lxsoftware-linkedin"},
                 ),
                 None,
@@ -2798,7 +2798,7 @@ class TestPublicReadRoutes(unittest.TestCase):
 
     def test_linkedin_status_query_reaches_the_reader(self) -> None:
         event = self._event(
-            "/public/lx-software/linkedin/posts",
+            "/v1/partner/lx-software/linkedin/posts",
             key_ctx={"keyId": "k123", "scopes": "lxsoftware-linkedin"},
         )
         event["queryStringParameters"] = {"status": "drafted"}
@@ -2813,7 +2813,7 @@ class TestPublicReadRoutes(unittest.TestCase):
 
     def test_linkedin_write_is_forbidden_until_the_key_can_write(self) -> None:
         ctx = {"keyId": "k123", "scopes": "lxsoftware-linkedin", "write": "1"}
-        event = self._event("/public/lx-software/linkedin/posts", method="POST", key_ctx=ctx)
+        event = self._event("/v1/partner/lx-software/linkedin/posts", method="POST", key_ctx=ctx)
         event["body"] = '{"body":"A hook."}'
         with patch.dict("os.environ", {"PUBLIC_API_WRITES_ENABLED": "false"}):
             disabled = lambda_handler(event, None)
@@ -2823,7 +2823,7 @@ class TestPublicReadRoutes(unittest.TestCase):
         read_only["write"] = "0"
         with patch.dict("os.environ", {"PUBLIC_API_WRITES_ENABLED": "true"}):
             denied = lambda_handler(
-                self._event("/public/lx-software/linkedin/posts", method="POST", key_ctx=read_only),
+                self._event("/v1/partner/lx-software/linkedin/posts", method="POST", key_ctx=read_only),
                 None,
             )
         self.assertEqual(denied["statusCode"], 403)
@@ -2831,7 +2831,7 @@ class TestPublicReadRoutes(unittest.TestCase):
 
     def test_linkedin_write_reaches_the_handler(self) -> None:
         event = self._event(
-            "/public/lx-software/linkedin/posts/li_abc",
+            "/v1/partner/lx-software/linkedin/posts/li_abc",
             method="PUT",
             key_ctx={"keyId": "k123", "scopes": "lxsoftware-linkedin", "write": "1"},
         )
@@ -2845,14 +2845,14 @@ class TestPublicReadRoutes(unittest.TestCase):
         self.assertEqual(out["statusCode"], 200)
         self.assertEqual(json.loads(out["body"])["item"]["postId"], "li_abc")
         self.assertEqual(handle.call_args.args[1], "PUT")
-        self.assertEqual(handle.call_args.args[2], "/public/lx-software/linkedin/posts/li_abc")
+        self.assertEqual(handle.call_args.args[2], "/v1/partner/lx-software/linkedin/posts/li_abc")
         self.assertEqual(handle.call_args.args[3]["body"], '{"body":"A hook."}')
 
     def test_linkedin_action_paths_stay_unlisted(self) -> None:
         with patch.dict("os.environ", {"PUBLIC_API_WRITES_ENABLED": "true"}):
             out = lambda_handler(
                 self._event(
-                    "/public/lx-software/linkedin/posts/li_abc/approve",
+                    "/v1/partner/lx-software/linkedin/posts/li_abc/approve",
                     method="POST",
                     key_ctx={"keyId": "k123", "scopes": "lxsoftware-linkedin", "write": "1"},
                 ),
@@ -2865,12 +2865,12 @@ class TestPublicReadRoutes(unittest.TestCase):
         # An API-key principal hitting a non-/public route has no JWT claims,
         # so the admin gate must reject it.
         out = lambda_handler(
-            self._event("/finance", key_ctx=self._key_ctx()), None
+            self._event("/v1/admin/finance", key_ctx=self._key_ctx()), None
         )
         self.assertEqual(out["statusCode"], 401)
 
     def test_admin_get_finance_still_works(self) -> None:
-        event = self._event("/finance")
+        event = self._event("/v1/admin/finance")
         event["requestContext"]["authorizer"] = {
             "jwt": {
                 "claims": {"sub": "admin-sub", "cognito:groups": "[admin]"}

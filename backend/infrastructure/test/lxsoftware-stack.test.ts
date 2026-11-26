@@ -274,13 +274,23 @@ describe("HTTP API routes", () => {
     "POST /webhooks/meta",
     "GET /webhooks/meta/siutindei",
     "POST /webhooks/meta/siutindei",
+    "GET /v1/webhooks/meta",
+    "POST /v1/webhooks/meta",
+    "GET /v1/webhooks/meta/siutindei",
+    "POST /v1/webhooks/meta/siutindei",
     // RFC 8058 one-click / browser unsubscribe; HMAC in the token, no JWT.
+    // The /public copies stay because they are already in sent email.
     "GET /public/outreach/unsubscribe/{token}",
     "POST /public/outreach/unsubscribe/{token}",
-    "POST /public/newsletter/subscribe",
+    "GET /v1/public/outreach/unsubscribe/{token}",
+    "POST /v1/public/outreach/unsubscribe/{token}",
+    "POST /v1/public/newsletter/subscribe",
     "GET /public/newsletter/confirm/{token}",
+    "GET /v1/public/newsletter/confirm/{token}",
     "GET /public/newsletter/unsubscribe/{token}",
     "POST /public/newsletter/unsubscribe/{token}",
+    "GET /v1/public/newsletter/unsubscribe/{token}",
+    "POST /v1/public/newsletter/unsubscribe/{token}",
   ]);
 
   test("only the health check and Meta webhook routes lack an authorizer", () => {
@@ -308,51 +318,47 @@ describe("HTTP API routes", () => {
     }
   });
 
-  test("/public/* finance mirrors are GET-only; board proxy accepts writes", () => {
+  test("partner finance mirrors are GET-only; the board proxy accepts writes", () => {
     const routes = Object.values(resourcesOfType("AWS::ApiGatewayV2::Route"));
     const publicMirrors = routes.filter((r) => {
       const key = String(r.Properties?.RouteKey);
-      return (
-        key.includes(" /public/") &&
-        !key.includes("/public/outreach/unsubscribe/") &&
-        !key.includes("/public/newsletter/")
-      );
+      return key.includes(" /v1/partner/");
     });
     expect(publicMirrors.length).toBeGreaterThan(0);
     const keys = publicMirrors.map((r) => String(r.Properties?.RouteKey));
     expect(keys).toEqual(
       expect.arrayContaining([
-        "GET /public/lx-software/linkedin/posts",
-        "POST /public/lx-software/linkedin/posts",
-        "GET /public/lx-software/linkedin/posts/{id}",
-        "PUT /public/lx-software/linkedin/posts/{id}",
-        "DELETE /public/lx-software/linkedin/posts/{id}",
-        "GET /public/siu-tin-dei/board",
-        "GET /public/siu-tin-dei/board/{proxy+}",
-        "PUT /public/siu-tin-dei/board/{proxy+}",
-        "POST /public/siu-tin-dei/board/{proxy+}",
-        "DELETE /public/siu-tin-dei/board/{proxy+}",
+        "GET /v1/partner/lx-software/linkedin/posts",
+        "POST /v1/partner/lx-software/linkedin/posts",
+        "GET /v1/partner/lx-software/linkedin/posts/{id}",
+        "PUT /v1/partner/lx-software/linkedin/posts/{id}",
+        "DELETE /v1/partner/lx-software/linkedin/posts/{id}",
+        "GET /v1/partner/siutindei/board",
+        "GET /v1/partner/siutindei/board/{proxy+}",
+        "PUT /v1/partner/siutindei/board/{proxy+}",
+        "POST /v1/partner/siutindei/board/{proxy+}",
+        "DELETE /v1/partner/siutindei/board/{proxy+}",
       ])
     );
     const boardProxyWrites = keys
       .filter(
         (key) =>
-          key.includes("/public/siu-tin-dei/board/{proxy+}") && !key.startsWith("GET ")
+          key.includes("/v1/partner/siutindei/board/{proxy+}") && !key.startsWith("GET ")
       )
       .sort();
     expect(boardProxyWrites).toEqual([
-      "DELETE /public/siu-tin-dei/board/{proxy+}",
-      "POST /public/siu-tin-dei/board/{proxy+}",
-      "PUT /public/siu-tin-dei/board/{proxy+}",
+      "DELETE /v1/partner/siutindei/board/{proxy+}",
+      "POST /v1/partner/siutindei/board/{proxy+}",
+      "PUT /v1/partner/siutindei/board/{proxy+}",
     ]);
     for (const route of publicMirrors) {
       const key = String(route.Properties?.RouteKey);
       expect(route.Properties?.AuthorizationType).toBe("CUSTOM");
       const linkedinWrite =
-        key === "POST /public/lx-software/linkedin/posts" ||
-        key === "PUT /public/lx-software/linkedin/posts/{id}" ||
-        key === "DELETE /public/lx-software/linkedin/posts/{id}";
-      if (!key.includes("/public/siu-tin-dei/board/{proxy+}") && !linkedinWrite) {
+        key === "POST /v1/partner/lx-software/linkedin/posts" ||
+        key === "PUT /v1/partner/lx-software/linkedin/posts/{id}" ||
+        key === "DELETE /v1/partner/lx-software/linkedin/posts/{id}";
+      if (!key.includes("/v1/partner/siutindei/board/{proxy+}") && !linkedinWrite) {
         expect(key).toMatch(/^GET /);
       }
     }
@@ -361,8 +367,8 @@ describe("HTTP API routes", () => {
   test("LinkedIn analytics connect and disconnect are JWT-protected", () => {
     const routes = Object.values(resourcesOfType("AWS::ApiGatewayV2::Route"));
     for (const key of [
-      "POST /lx-software/linkedin/analytics/connect",
-      "POST /lx-software/linkedin/analytics/disconnect",
+      "POST /v1/admin/lx-software/linkedin/analytics/connect",
+      "POST /v1/admin/lx-software/linkedin/analytics/disconnect",
     ]) {
       const route = routes.find((row) => row.Properties?.RouteKey === key);
       expect(route?.Properties?.AuthorizationType).toBe("JWT");
@@ -373,19 +379,19 @@ describe("HTTP API routes", () => {
   test("LinkedIn picture and character routes are JWT-protected", () => {
     const routes = Object.values(resourcesOfType("AWS::ApiGatewayV2::Route"));
     const keys = [
-      "GET /lx-software/linkedin/posts/{id}/image",
-      "POST /lx-software/linkedin/posts/{id}/image",
-      "DELETE /lx-software/linkedin/posts/{id}/image",
-      "POST /lx-software/linkedin/posts/{id}/image/regenerate",
-      "POST /lx-software/linkedin/posts/{id}/image/brief",
-      "GET /lx-software/linkedin/character",
-      "GET /lx-software/linkedin/character/photo",
-      "POST /lx-software/linkedin/character/photo",
-      "DELETE /lx-software/linkedin/character/photo",
-      "GET /lx-software/linkedin/character/sheet",
-      "POST /lx-software/linkedin/character/draw",
-      "GET /lx-software/linkedin/character/candidates/{id}",
-      "POST /lx-software/linkedin/character/choose",
+      "GET /v1/admin/lx-software/linkedin/posts/{id}/image",
+      "POST /v1/admin/lx-software/linkedin/posts/{id}/image",
+      "DELETE /v1/admin/lx-software/linkedin/posts/{id}/image",
+      "POST /v1/admin/lx-software/linkedin/posts/{id}/image/regenerate",
+      "POST /v1/admin/lx-software/linkedin/posts/{id}/image/brief",
+      "GET /v1/admin/lx-software/linkedin/character",
+      "GET /v1/admin/lx-software/linkedin/character/photo",
+      "POST /v1/admin/lx-software/linkedin/character/photo",
+      "DELETE /v1/admin/lx-software/linkedin/character/photo",
+      "GET /v1/admin/lx-software/linkedin/character/sheet",
+      "POST /v1/admin/lx-software/linkedin/character/draw",
+      "GET /v1/admin/lx-software/linkedin/character/candidates/{id}",
+      "POST /v1/admin/lx-software/linkedin/character/choose",
     ];
     for (const key of keys) {
       const route = routes.find((row) => row.Properties?.RouteKey === key);
@@ -396,25 +402,25 @@ describe("HTTP API routes", () => {
   test("Resume routes are JWT-protected", () => {
     const routes = Object.values(resourcesOfType("AWS::ApiGatewayV2::Route"));
     const keys = [
-      "GET /lx-software/resume/overview",
-      "GET /lx-software/resume/settings",
-      "PUT /lx-software/resume/settings",
-      "GET /lx-software/resume/resumes",
-      "POST /lx-software/resume/resumes",
-      "GET /lx-software/resume/resumes/{id}",
-      "PATCH /lx-software/resume/resumes/{id}",
-      "DELETE /lx-software/resume/resumes/{id}",
-      "GET /lx-software/resume/resumes/{id}/file",
-      "GET /lx-software/resume/resumes/{id}/pdf",
-      "PUT /lx-software/resume/template",
-      "GET /lx-software/resume/postings",
-      "POST /lx-software/resume/postings",
-      "POST /lx-software/resume/tailor",
-      "GET /lx-software/resume/applications",
-      "POST /lx-software/resume/applications",
-      "PATCH /lx-software/resume/applications/{id}",
-      "DELETE /lx-software/resume/applications/{id}",
-      "GET /lx-software/resume/jobs/{jobId}",
+      "GET /v1/admin/lx-software/resume/overview",
+      "GET /v1/admin/lx-software/resume/settings",
+      "PUT /v1/admin/lx-software/resume/settings",
+      "GET /v1/admin/lx-software/resume/resumes",
+      "POST /v1/admin/lx-software/resume/resumes",
+      "GET /v1/admin/lx-software/resume/resumes/{id}",
+      "PATCH /v1/admin/lx-software/resume/resumes/{id}",
+      "DELETE /v1/admin/lx-software/resume/resumes/{id}",
+      "GET /v1/admin/lx-software/resume/resumes/{id}/file",
+      "GET /v1/admin/lx-software/resume/resumes/{id}/pdf",
+      "PUT /v1/admin/lx-software/resume/template",
+      "GET /v1/admin/lx-software/resume/postings",
+      "POST /v1/admin/lx-software/resume/postings",
+      "POST /v1/admin/lx-software/resume/tailor",
+      "GET /v1/admin/lx-software/resume/applications",
+      "POST /v1/admin/lx-software/resume/applications",
+      "PATCH /v1/admin/lx-software/resume/applications/{id}",
+      "DELETE /v1/admin/lx-software/resume/applications/{id}",
+      "GET /v1/admin/lx-software/resume/jobs/{job_id}",
     ];
     for (const key of keys) {
       const route = routes.find((row) => row.Properties?.RouteKey === key);
@@ -425,8 +431,8 @@ describe("HTTP API routes", () => {
   test("AWS usage JSON and PDF routes are JWT-protected", () => {
     const routes = Object.values(resourcesOfType("AWS::ApiGatewayV2::Route"));
     const keys = routes.map((r) => r.Properties?.RouteKey as string);
-    expect(keys).toEqual(expect.arrayContaining(["GET /aws/usage", "GET /aws/usage.pdf"]));
-    for (const key of ["GET /aws/usage", "GET /aws/usage.pdf"]) {
+    expect(keys).toEqual(expect.arrayContaining(["GET /v1/admin/aws/usage", "GET /v1/admin/aws/usage/pdf"]));
+    for (const key of ["GET /v1/admin/aws/usage", "GET /v1/admin/aws/usage/pdf"]) {
       const route = routes.find((r) => r.Properties?.RouteKey === key);
       expect(route?.Properties?.AuthorizationType).toBe("JWT");
       expect(route?.Properties?.AuthorizerId).toBeDefined();
@@ -499,11 +505,27 @@ describe("HTTP API stage throttling", () => {
           ThrottlingRateLimit: 10,
           ThrottlingBurstLimit: 20,
         },
+        "POST /v1/webhooks/meta": {
+          ThrottlingRateLimit: 10,
+          ThrottlingBurstLimit: 20,
+        },
+        "GET /v1/webhooks/meta": {
+          ThrottlingRateLimit: 10,
+          ThrottlingBurstLimit: 20,
+        },
         "POST /webhooks/meta/siutindei": {
           ThrottlingRateLimit: 10,
           ThrottlingBurstLimit: 20,
         },
         "GET /webhooks/meta/siutindei": {
+          ThrottlingRateLimit: 10,
+          ThrottlingBurstLimit: 20,
+        },
+        "POST /v1/webhooks/meta/siutindei": {
+          ThrottlingRateLimit: 10,
+          ThrottlingBurstLimit: 20,
+        },
+        "GET /v1/webhooks/meta/siutindei": {
           ThrottlingRateLimit: 10,
           ThrottlingBurstLimit: 20,
         },
@@ -525,43 +547,43 @@ describe("HTTP API stage throttling", () => {
     template.hasResourceProperties("AWS::ApiGatewayV2::Stage", {
       StageName: "$default",
       RouteSettings: Match.objectLike({
-        "GET /public/finance": {
+        "GET /v1/partner/finance": {
           ThrottlingRateLimit: 2,
           ThrottlingBurstLimit: 10,
         },
-        "GET /public/lx-software/linkedin/posts": {
+        "GET /v1/partner/lx-software/linkedin/posts": {
           ThrottlingRateLimit: 2,
           ThrottlingBurstLimit: 10,
         },
-        "POST /public/lx-software/linkedin/posts": {
+        "POST /v1/partner/lx-software/linkedin/posts": {
           ThrottlingRateLimit: 1,
           ThrottlingBurstLimit: 5,
         },
-        "GET /public/lx-software/linkedin/posts/{id}": {
+        "GET /v1/partner/lx-software/linkedin/posts/{id}": {
           ThrottlingRateLimit: 2,
           ThrottlingBurstLimit: 10,
         },
-        "PUT /public/lx-software/linkedin/posts/{id}": {
+        "PUT /v1/partner/lx-software/linkedin/posts/{id}": {
           ThrottlingRateLimit: 1,
           ThrottlingBurstLimit: 5,
         },
-        "DELETE /public/lx-software/linkedin/posts/{id}": {
+        "DELETE /v1/partner/lx-software/linkedin/posts/{id}": {
           ThrottlingRateLimit: 1,
           ThrottlingBurstLimit: 5,
         },
-        "GET /public/siu-tin-dei/board/{proxy+}": {
+        "GET /v1/partner/siutindei/board/{proxy+}": {
           ThrottlingRateLimit: 2,
           ThrottlingBurstLimit: 10,
         },
-        "POST /public/siu-tin-dei/board/{proxy+}": {
+        "POST /v1/partner/siutindei/board/{proxy+}": {
           ThrottlingRateLimit: 1,
           ThrottlingBurstLimit: 5,
         },
-        "PUT /public/siu-tin-dei/board/{proxy+}": {
+        "PUT /v1/partner/siutindei/board/{proxy+}": {
           ThrottlingRateLimit: 1,
           ThrottlingBurstLimit: 5,
         },
-        "DELETE /public/siu-tin-dei/board/{proxy+}": {
+        "DELETE /v1/partner/siutindei/board/{proxy+}": {
           ThrottlingRateLimit: 1,
           ThrottlingBurstLimit: 5,
         },
@@ -574,7 +596,7 @@ describe("HTTP API stage throttling", () => {
       AuthorizerType: "REQUEST",
       EnableSimpleResponses: true,
       AuthorizerResultTtlInSeconds: 60,
-      IdentitySource: ["$request.header.x-api-key", "$context.identity.sourceIp"],
+      IdentitySource: ["$request.header.Authorization", "$context.identity.sourceIp"],
     });
   });
 
@@ -600,7 +622,7 @@ describe("HTTP API stage throttling", () => {
     const webhookRouteIds = Object.entries(resourcesOfType("AWS::ApiGatewayV2::Route"))
       .filter(([, r]) => String(r.Properties?.RouteKey).includes("/webhooks/meta"))
       .map(([id]) => id);
-    expect(webhookRouteIds).toHaveLength(4);
+    expect(webhookRouteIds).toHaveLength(8);
     const dependsOn = asArray<string>(stage.DependsOn);
     for (const id of webhookRouteIds) {
       expect(dependsOn).toContain(id);
@@ -1092,7 +1114,7 @@ describe("Siu Tin Dei parameter naming", () => {
     expect(file["lxsoftware:LxSoftwareLinkedinPublishEnabled"]).toBe("true");
     expect(file["lxsoftware:LxSoftwareResumeEnabled"]).toBe("true");
     expect(file["lxsoftware:SiutindeiAdminApiBaseUrl"]).toBe(
-      "https://api.siutindei.com/v1",
+      "https://api.siutindei.com",
     );
     expect(file["lxsoftware:ApiCustomDomainName"]).toBe("api.lx-software.com");
     expect(file["lxsoftware:ApiCustomDomainCertificateArn"]).toBe(
@@ -1760,15 +1782,15 @@ describe("Evolve Sprouts finance mirror", () => {
     const routes = Object.values(resourcesOfType("AWS::ApiGatewayV2::Route"));
     const keys = routes
       .map((r) => String(r.Properties?.RouteKey))
-      .filter((key) => key.includes("/evolve-sprouts"))
+      .filter((key) => key.includes("/evolvesprouts"))
       .sort();
     expect(keys).toEqual([
-      "GET /evolve-sprouts",
-      "GET /evolve-sprouts/summary",
-      "POST /evolve-sprouts/sync",
+      "GET /v1/admin/evolvesprouts",
+      "GET /v1/admin/evolvesprouts/summary",
+      "POST /v1/admin/evolvesprouts/sync",
     ]);
     for (const route of routes) {
-      if (!String(route.Properties?.RouteKey).includes("/evolve-sprouts")) continue;
+      if (!String(route.Properties?.RouteKey).includes("/evolvesprouts")) continue;
       expect(route.Properties?.AuthorizationType).toBe("JWT");
     }
   });

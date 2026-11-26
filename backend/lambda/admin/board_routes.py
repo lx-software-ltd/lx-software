@@ -1,4 +1,4 @@
-"""Executive Board: HTTP routing under ``/siu-tin-dei/board``."""
+"""Executive Board: HTTP routing under ``/siutindei/board``."""
 
 from __future__ import annotations
 
@@ -53,7 +53,7 @@ from http_common import (
     not_found,
 )
 
-BOARD_BASE_PATH = "/siu-tin-dei/board"
+BOARD_BASE_PATH = "/siutindei/board"
 ALLOW_LIST_EMAIL_RE = re.compile(r"^(?:[a-z0-9._%+\-]+)?@[a-z0-9.\-]+\.[a-z]{2,}$")
 ALLOW_LIST_PHONE_RE = re.compile(r"^\+?\d{8,15}$")
 

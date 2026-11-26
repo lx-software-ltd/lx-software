@@ -1,13 +1,13 @@
 """HTTP API Lambda authorizer for the public API key routes.
 
-Validates the ``x-api-key`` header against hashed key records stored in the
+Validates ``Authorization: Bearer`` against hashed key records stored in the
 records DynamoDB table (``pk = APIKEY#<scrypt-hex>``, ``sk = META``). Only
 the scrypt digest of a key is ever persisted or logged (see
 ``api_key_hash.py`` for the digest rationale); the plaintext key is shown
 once at mint time (see ``scripts/manage-public-api-keys.py``).
 
 Returns the API Gateway v2 "simple" authorizer response. The authorizer
-result is cached by API Gateway keyed on ``x-api-key`` + source IP (not
+result is cached by API Gateway keyed on ``Authorization`` + source IP (not
 method), so this function never denies based on HTTP method — a POST deny
 would poison GETs for 60s. Write methods are enforced in
 ``board_public_api.write_allowed`` using the forwarded ``write`` flag.
@@ -65,16 +65,23 @@ def _log(level: str, **fields: Any) -> None:
         logger.info(line)
 
 
-def _extract_api_key(event: dict[str, Any]) -> str | None:
-    # HTTP API payload 2.0 lower-cases all header names.
+def _authorization_header(event: dict[str, Any]) -> str:
     headers = event.get("headers") or {}
-    raw = headers.get("x-api-key")
-    if not isinstance(raw, str):
+    for name, value in headers.items():
+        if str(name).lower() == "authorization" and isinstance(value, str):
+            return value.strip()
+    return ""
+
+
+def _extract_api_key(event: dict[str, Any]) -> str | None:
+    # HTTP API payload 2.0 lower-cases header names. Bearer is accepted in any case.
+    raw = _authorization_header(event)
+    if not raw:
         return None
-    key = raw.strip()
-    if not key or len(key) > MAX_API_KEY_LEN:
+    scheme, _, token = raw.partition(" ")
+    if scheme.lower() != "bearer" or not token or " " in token or len(token) > MAX_API_KEY_LEN:
         return None
-    return key
+    return token
 
 
 def _is_expired(expires_at: Any, now: datetime) -> bool:
@@ -188,23 +195,51 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     key_id = item.get("keyId")
     now = datetime.now(timezone.utc)
     if item.get("revoked"):
-        _log("info", tag="public_api_key_denied", reason="revoked", key_id=key_id, request_id=request_id, source_ip=source_ip)
+        _log(
+            "info",
+            tag="public_api_key_denied",
+            reason="revoked",
+            key_id=key_id,
+            request_id=request_id,
+            source_ip=source_ip,
+        )
         _enqueue_denied_notify(item, "revoked", source_ip, request_id)
         return _deny()
 
     if _is_expired(item.get("expiresAt"), now):
-        _log("info", tag="public_api_key_denied", reason="expired", key_id=key_id, request_id=request_id, source_ip=source_ip)
+        _log(
+            "info",
+            tag="public_api_key_denied",
+            reason="expired",
+            key_id=key_id,
+            request_id=request_id,
+            source_ip=source_ip,
+        )
         _enqueue_denied_notify(item, "expired", source_ip, request_id)
         return _deny()
 
     scopes = normalize_scopes(item)
     if not scopes:
-        _log("info", tag="public_api_key_denied", reason="bad_scope", key_id=key_id, request_id=request_id, source_ip=source_ip)
+        _log(
+            "info",
+            tag="public_api_key_denied",
+            reason="bad_scope",
+            key_id=key_id,
+            request_id=request_id,
+            source_ip=source_ip,
+        )
         return _deny()
 
     cidrs = parse_cidrs(item.get("allowedCidrs"))
     if not ip_allowed(source_ip, cidrs):
-        _log("info", tag="public_api_key_denied", reason="cidr", key_id=key_id, request_id=request_id, source_ip=source_ip)
+        _log(
+            "info",
+            tag="public_api_key_denied",
+            reason="cidr",
+            key_id=key_id,
+            request_id=request_id,
+            source_ip=source_ip,
+        )
         _enqueue_denied_notify(item, "cidr", source_ip, request_id)
         return _deny()
 

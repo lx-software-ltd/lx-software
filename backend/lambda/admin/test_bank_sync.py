@@ -411,7 +411,7 @@ class TestBankingRoutesDisabled(BankSyncTestCase):
     env = DISABLED_ENV
 
     def test_get_banking_reports_disabled(self) -> None:
-        out = lambda_handler(_admin_event("/banking"), None)
+        out = lambda_handler(_admin_event("/v1/admin/banking"), None)
         self.assertEqual(out["statusCode"], 200)
         body = json.loads(out["body"])
         self.assertFalse(body["enabled"])
@@ -421,7 +421,7 @@ class TestBankingRoutesDisabled(BankSyncTestCase):
     def test_auth_start_rejected_when_disabled(self) -> None:
         out = lambda_handler(
             _admin_event(
-                "/banking/auth",
+                "/v1/admin/banking/auth",
                 method="POST",
                 body={
                     "bankName": "HSBC Personal",
@@ -445,7 +445,7 @@ class TestBankingAuthRoutes(BankSyncTestCase):
     def test_auth_start_rejects_unlisted_redirect(self) -> None:
         out = lambda_handler(
             _admin_event(
-                "/banking/auth",
+                "/v1/admin/banking/auth",
                 method="POST",
                 body={
                     "bankName": "HSBC Personal",
@@ -483,7 +483,7 @@ class TestBankingAuthRoutes(BankSyncTestCase):
         with patch.object(bank_sync, "_eb_request", side_effect=fake_eb):
             out = lambda_handler(
                 _admin_event(
-                    "/banking/auth",
+                    "/v1/admin/banking/auth",
                     method="POST",
                     body={
                         "bankName": "HSBC Personal",
@@ -507,7 +507,7 @@ class TestBankingAuthRoutes(BankSyncTestCase):
         ):
             out = lambda_handler(
                 _admin_event(
-                    "/banking/auth",
+                    "/v1/admin/banking/auth",
                     method="POST",
                     body={
                         "bankName": "No Such Bank",
@@ -523,7 +523,7 @@ class TestBankingAuthRoutes(BankSyncTestCase):
     def test_sessions_rejects_unknown_state(self) -> None:
         out = lambda_handler(
             _admin_event(
-                "/banking/sessions",
+                "/v1/admin/banking/sessions",
                 method="POST",
                 body={"code": "auth-code", "state": "nope"},
             ),
@@ -561,7 +561,7 @@ class TestBankingAuthRoutes(BankSyncTestCase):
         ) as eb:
             out = lambda_handler(
                 _admin_event(
-                    "/banking/sessions",
+                    "/v1/admin/banking/sessions",
                     method="POST",
                     body={"code": "auth-code", "state": "state-1"},
                 ),
@@ -588,7 +588,7 @@ class TestBankingAuthRoutes(BankSyncTestCase):
         )
         out = lambda_handler(
             _admin_event(
-                "/banking/sessions",
+                "/v1/admin/banking/sessions",
                 method="POST",
                 body={"code": "auth-code", "state": "state-old"},
             ),
@@ -607,7 +607,7 @@ class TestBankingMappingsAndDelete(BankSyncTestCase):
     def test_put_mappings_happy_path(self) -> None:
         out = lambda_handler(
             _admin_event(
-                "/banking/mappings",
+                "/v1/admin/banking/mappings",
                 method="PUT",
                 body={
                     "mappings": [
@@ -623,7 +623,7 @@ class TestBankingMappingsAndDelete(BankSyncTestCase):
     def test_put_mappings_rejects_unknown_uid(self) -> None:
         out = lambda_handler(
             _admin_event(
-                "/banking/mappings",
+                "/v1/admin/banking/mappings",
                 method="PUT",
                 body={
                     "mappings": [
@@ -639,7 +639,7 @@ class TestBankingMappingsAndDelete(BankSyncTestCase):
     def test_put_mappings_rejects_unknown_record(self) -> None:
         out = lambda_handler(
             _admin_event(
-                "/banking/mappings",
+                "/v1/admin/banking/mappings",
                 method="PUT",
                 body={
                     "mappings": [
@@ -655,7 +655,7 @@ class TestBankingMappingsAndDelete(BankSyncTestCase):
     def test_put_mappings_rejects_duplicates(self) -> None:
         out = lambda_handler(
             _admin_event(
-                "/banking/mappings",
+                "/v1/admin/banking/mappings",
                 method="PUT",
                 body={
                     "mappings": [
@@ -680,7 +680,7 @@ class TestBankingMappingsAndDelete(BankSyncTestCase):
         )
         with patch.object(bank_sync, "_eb_request") as eb:
             out = lambda_handler(
-                _admin_event("/banking/sessions/sess-hsbc", method="DELETE"),
+                _admin_event("/v1/admin/banking/sessions/sess-hsbc", method="DELETE"),
                 None,
             )
         eb.assert_called_once_with("DELETE", "/sessions/sess-hsbc")
@@ -691,12 +691,12 @@ class TestBankingMappingsAndDelete(BankSyncTestCase):
 
     def test_delete_unknown_session_404(self) -> None:
         out = lambda_handler(
-            _admin_event("/banking/sessions/other", method="DELETE"), None
+            _admin_event("/v1/admin/banking/sessions/other", method="DELETE"), None
         )
         self.assertEqual(out["statusCode"], 404)
 
     def test_get_banking_returns_state(self) -> None:
-        out = lambda_handler(_admin_event("/banking"), None)
+        out = lambda_handler(_admin_event("/v1/admin/banking"), None)
         self.assertEqual(out["statusCode"], 200)
         body = json.loads(out["body"])
         self.assertTrue(body["enabled"])
@@ -725,7 +725,7 @@ class TestBankingSyncRoute(BankSyncTestCase):
         }
         with patch.object(bank_sync, "_eb_request", return_value=balances):
             out = lambda_handler(
-                _admin_event("/banking/sync", method="POST"), None
+                _admin_event("/v1/admin/banking/sync", method="POST"), None
             )
         self.assertEqual(out["statusCode"], 200)
         body = json.loads(out["body"])

@@ -139,7 +139,7 @@ class MetaTestCase(ToolsTestCase):
 class TestWebhook(MetaTestCase):
     def test_verify_handshake(self) -> None:
         ev = {
-            "requestContext": {"http": {"method": "GET", "path": "/webhooks/meta"}, "requestId": "w1"},
+            "requestContext": {"http": {"method": "GET", "path": "/v1/webhooks/meta"}, "requestId": "w1"},
             "rawQueryString": "hub.mode=subscribe&hub.verify_token=verify-me&hub.challenge=abc123",
         }
         out = dispatch.lambda_handler(ev, None)
@@ -150,7 +150,7 @@ class TestWebhook(MetaTestCase):
     def test_tenant_webhook_path_uses_the_same_handler(self) -> None:
         ev = {
             "requestContext": {
-                "http": {"method": "GET", "path": "/webhooks/meta/siutindei"},
+                "http": {"method": "GET", "path": "/v1/webhooks/meta/siutindei"},
                 "requestId": "w1b",
             },
             "rawQueryString": "hub.mode=subscribe&hub.verify_token=verify-me&hub.challenge=tenant",
@@ -161,7 +161,7 @@ class TestWebhook(MetaTestCase):
 
     def test_verify_rejects_wrong_token(self) -> None:
         ev = {
-            "requestContext": {"http": {"method": "GET", "path": "/webhooks/meta"}, "requestId": "w2"},
+            "requestContext": {"http": {"method": "GET", "path": "/v1/webhooks/meta"}, "requestId": "w2"},
             "rawQueryString": "hub.mode=subscribe&hub.verify_token=nope&hub.challenge=x",
         }
         out = dispatch.lambda_handler(ev, None)
@@ -193,7 +193,7 @@ class TestWebhook(MetaTestCase):
         raw = json.dumps(payload).encode()
         sig = hmac.new(b"app-secret", raw, hashlib.sha256).hexdigest()
         ev = {
-            "requestContext": {"http": {"method": "POST", "path": "/webhooks/meta"}, "requestId": "w3"},
+            "requestContext": {"http": {"method": "POST", "path": "/v1/webhooks/meta"}, "requestId": "w3"},
             "rawQueryString": "",
             "headers": {"X-Hub-Signature-256": f"sha256={sig}"},
             "body": raw.decode(),

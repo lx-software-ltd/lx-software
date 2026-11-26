@@ -93,7 +93,7 @@ export function defineAdminAuthorizers(
       // variable; a missing identity source makes API Gateway return 401
       // without invoking the authorizer.
       identitySource: [
-        "$request.header.x-api-key",
+        "$request.header.Authorization",
         "$context.identity.sourceIp",
       ],
       // Revocation / CIDR changes take up to this TTL to propagate.

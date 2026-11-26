@@ -17,7 +17,7 @@ No rename in L1. `_require_admin` and `write_blocked` stay as they are. No deplo
 
 - `backend/infrastructure/lib/admin-http-api.ts` and `backend/infrastructure/test/lxsoftware-stack.test.ts` (L1)
 - `backend/lambda/admin/http_common.py` and `backend/lambda/admin/test_http_common.py` (L1)
-- `backend/lambda/admin/dispatch.py` binds the request id without growing the file (L1)
+- `backend/lambda/admin/dispatch.py` binds the request id without growing the file (L1). L2 shortens it, and `scripts/file-length-allowlist.txt` records the new length.
 - L2 and L3 follow the actions plan. L3 deletes this note.
 
 ## Invariants this change preserves
@@ -25,7 +25,7 @@ No rename in L1. `_require_admin` and `write_blocked` stay as they are. No deplo
 - Existing error keys `message` and `reason` stay.
 - A success body is not given problem members.
 - `_require_admin` and `write_blocked` are not edited.
-- `dispatch.py` stays at its allowlisted length.
+- `dispatch.py` does not grow. Its allowlist entry shrinks when the file does.
 
 ## Done when
 

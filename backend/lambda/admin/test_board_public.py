@@ -1,4 +1,4 @@
-"""Public API-key GET mirrors of /siu-tin-dei/board (scope B)."""
+"""Public API-key GET mirrors of /siutindei/board (scope B)."""
 
 from __future__ import annotations
 
@@ -34,59 +34,59 @@ class PublicBoardReadTests(BoardTestCase):
         return out["statusCode"], json.loads(out["body"])
 
     def test_overview_and_staff_surfaces(self) -> None:
-        status, body = self.public_call("/public/siu-tin-dei/board")
+        status, body = self.public_call("/v1/partner/siutindei/board")
         self.assertEqual(status, 200)
         self.assertIn("settings", body)
         self.assertIn("members", body)
         self.assertIn("usageToday", body)
 
-        status, body = self.public_call("/public/siu-tin-dei/board/staff")
+        status, body = self.public_call("/v1/partner/siutindei/board/staff")
         self.assertEqual(status, 200)
         self.assertTrue(body.get("envEnabled"))
         self.assertIn("seats", body)
 
-        status, body = self.public_call("/public/siu-tin-dei/board/tasks")
+        status, body = self.public_call("/v1/partner/siutindei/board/tasks")
         self.assertEqual(status, 200)
         self.assertEqual(body["tasks"], [])
 
-        status, body = self.public_call("/public/siu-tin-dei/board/breakers")
+        status, body = self.public_call("/v1/partner/siutindei/board/breakers")
         self.assertEqual(status, 200)
         self.assertIn("breakers", body)
 
-        status, body = self.public_call("/public/siu-tin-dei/board/review")
+        status, body = self.public_call("/v1/partner/siutindei/board/review")
         self.assertEqual(status, 200)
         self.assertIn("review", body)
 
-        status, body = self.public_call("/public/siu-tin-dei/board/holds")
+        status, body = self.public_call("/v1/partner/siutindei/board/holds")
         self.assertEqual(status, 200)
         self.assertIn("holds", body)
 
-        status, body = self.public_call("/public/siu-tin-dei/board/tools")
+        status, body = self.public_call("/v1/partner/siutindei/board/tools")
         self.assertEqual(status, 200)
         self.assertIn("effective", body)
 
-        status, body = self.public_call("/public/siu-tin-dei/board/tools/calls")
+        status, body = self.public_call("/v1/partner/siutindei/board/tools/calls")
         self.assertEqual(status, 200)
         self.assertIn("calls", body)
 
     def test_owner_mail_and_meetings_are_readable(self) -> None:
-        status, body = self.public_call("/public/siu-tin-dei/board/mail")
+        status, body = self.public_call("/v1/partner/siutindei/board/mail")
         self.assertEqual(status, 200)
         self.assertIn("threads", body)
 
-        status, body = self.public_call("/public/siu-tin-dei/board/meetings")
+        status, body = self.public_call("/v1/partner/siutindei/board/meetings")
         self.assertEqual(status, 200)
         self.assertIn("meetings", body)
 
-        status, body = self.public_call("/public/siu-tin-dei/board/chat/ceo")
+        status, body = self.public_call("/v1/partner/siutindei/board/chat/ceo")
         self.assertEqual(status, 200)
 
     def test_write_paths_stay_closed(self) -> None:
         for path, method in (
-            ("/public/siu-tin-dei/board/tasks", "POST"),
-            ("/public/siu-tin-dei/board/breakers/tool:task/reset", "POST"),
-            ("/public/siu-tin-dei/board/settings", "PUT"),
-            ("/public/siu-tin-dei/board/charter", "PUT"),
+            ("/v1/partner/siutindei/board/tasks", "POST"),
+            ("/v1/partner/siutindei/board/breakers/tool:task/reset", "POST"),
+            ("/v1/partner/siutindei/board/settings", "PUT"),
+            ("/v1/partner/siutindei/board/charter", "PUT"),
         ):
             status, body = self.public_call(path, method)
             self.assertEqual(status, 403, msg=f"{method} {path} {body}")
@@ -95,16 +95,16 @@ class PublicBoardReadTests(BoardTestCase):
 
     def test_put_only_board_paths_are_not_gettable(self) -> None:
         for path in (
-            "/public/siu-tin-dei/board/charter",
-            "/public/siu-tin-dei/board/settings",
-            "/public/siu-tin-dei/board/brief",
-            "/public/siu-tin-dei/board/boundaries",
+            "/v1/partner/siutindei/board/charter",
+            "/v1/partner/siutindei/board/settings",
+            "/v1/partner/siutindei/board/brief",
+            "/v1/partner/siutindei/board/boundaries",
         ):
             status, _ = self.public_call(path)
             self.assertEqual(status, 404, msg=path)
 
     def test_api_key_cannot_use_jwt_board_path(self) -> None:
-        status, _ = self.public_call("/siu-tin-dei/board")
+        status, _ = self.public_call("/v1/admin/siutindei/board")
         self.assertEqual(status, 401)
 
     def test_tools_allow_list_stripped_without_pii(self) -> None:
@@ -114,7 +114,7 @@ class PublicBoardReadTests(BoardTestCase):
         settings = board_store.load_settings(table)
         settings["tools"]["allowList"] = ["owner@example.com"]
         board_store.save_settings(table, settings)
-        ev = self.event("/public/siu-tin-dei/board/tools")
+        ev = self.event("/v1/partner/siutindei/board/tools")
         ev["requestContext"]["authorizer"] = {
             "lambda": {
                 "keyId": "k-ops",
@@ -136,7 +136,7 @@ class PublicBoardReadTests(BoardTestCase):
         )
 
     def test_finance_only_key_cannot_read_board(self) -> None:
-        ev = self.event("/public/siu-tin-dei/board/breakers")
+        ev = self.event("/v1/partner/siutindei/board/breakers")
         ev["requestContext"]["authorizer"] = {
             "lambda": {"keyId": "k-fin", "label": "fin", "scope": "read", "scopes": "finance"}
         }
@@ -144,13 +144,13 @@ class PublicBoardReadTests(BoardTestCase):
         self.assertEqual(out["statusCode"], 404)
 
     def test_legacy_read_scope_is_finance_only(self) -> None:
-        ev = self.event("/public/siu-tin-dei/board")
+        ev = self.event("/v1/partner/siutindei/board")
         ev["requestContext"]["authorizer"] = {
             "lambda": {"keyId": "k-legacy", "label": "old", "scope": "read"}
         }
         out = lambda_handler(ev, None)
         self.assertEqual(out["statusCode"], 404)
-        ev = self.event("/public/finance")
+        ev = self.event("/v1/partner/finance")
         ev["requestContext"]["authorizer"] = {
             "lambda": {"keyId": "k-legacy", "label": "old", "scope": "read"}
         }
@@ -162,7 +162,7 @@ class PublicBoardReadTests(BoardTestCase):
 
         table = board_store.records_table()
         board_store.save_settings(table, board_store.load_settings(table))
-        status, body = self.public_call("/public/records")
+        status, body = self.public_call("/v1/partner/records")
         self.assertEqual(status, 200)
         pks = [str(item.get("pk") or "") for item in body["items"]]
         self.assertFalse(any(pk.startswith("BOARD#") for pk in pks))
@@ -210,7 +210,7 @@ class PublicBoardWriteTests(BoardTestCase):
 
     def test_create_task_and_put_charter(self) -> None:
         status, body = self.public_call(
-            "/public/siu-tin-dei/board/tasks",
+            "/v1/partner/siutindei/board/tasks",
             "POST",
             body={"assignee": "support", "brief": "Triage inbound"},
             scopes="siutindei-board-ops",
@@ -221,7 +221,7 @@ class PublicBoardWriteTests(BoardTestCase):
         self.assertEqual(body["task"]["createdBy"], "apikey:k123")
 
         status, body = self.public_call(
-            "/public/siu-tin-dei/board/charter",
+            "/v1/partner/siutindei/board/charter",
             "PUT",
             body={"vision": "V", "mission": "M"},
             scopes="siutindei-board-full",
@@ -251,7 +251,7 @@ class PublicBoardWriteTests(BoardTestCase):
             },
         )
         status, body = self.public_call(
-            "/public/siu-tin-dei/board/prospects/p1",
+            "/v1/partner/siutindei/board/prospects/p1",
             "PUT",
             body={"note": "from key"},
             scopes="siutindei-board-full",
@@ -259,7 +259,7 @@ class PublicBoardWriteTests(BoardTestCase):
         self.assertEqual(status, 403, msg=body)
         self.assertEqual(body["reason"], "scope")
         status, body = self.public_call(
-            "/public/siu-tin-dei/board/prospects/p1",
+            "/v1/partner/siutindei/board/prospects/p1",
             "PUT",
             body={"note": "from key"},
             scopes="siutindei-board-full,siutindei-pii",
@@ -269,21 +269,21 @@ class PublicBoardWriteTests(BoardTestCase):
 
     def test_owner_ops_and_settings_tools_stay_closed(self) -> None:
         cases: list[tuple[str, str, dict[str, Any] | None]] = [
-            ("/public/siu-tin-dei/board/approvals/a1/approve", "POST", {"note": "ok"}),
-            ("/public/siu-tin-dei/board/code/promote", "POST", {}),
-            ("/public/siu-tin-dei/board/code/sync-staging", "POST", {}),
-            ("/public/siu-tin-dei/board/catalog/preview", "POST", {"taskId": "t1"}),
-            ("/public/siu-tin-dei/board/catalog/import", "POST", {"taskId": "t1"}),
-            ("/public/siu-tin-dei/board/ramp/mail_reply/promote", "POST", {}),
-            ("/public/siu-tin-dei/board/ramp/mail_reply/pause", "POST", {}),
-            ("/public/siu-tin-dei/board/tools", "PUT", {"globalMode": "act"}),
-            ("/public/siu-tin-dei/board/settings", "PUT", {"schedule": {"morningEnabled": True}}),
-            ("/public/siu-tin-dei/board/boundaries", "PUT", {"holds": {}}),
-            ("/public/siu-tin-dei/board/staff/tick", "POST", {}),
-            ("/public/siu-tin-dei/board/chat/ceo", "DELETE", None),
-            ("/public/siu-tin-dei/board/meetings/m1/cancel", "POST", {}),
-            ("/public/siu-tin-dei/board/tasks/t1/cancel", "POST", {}),
-            ("/public/siu-tin-dei/board/mail/selftest", "POST", {}),
+            ("/v1/partner/siutindei/board/approvals/a1/approve", "POST", {"note": "ok"}),
+            ("/v1/partner/siutindei/board/code/promote", "POST", {}),
+            ("/v1/partner/siutindei/board/code/sync-staging", "POST", {}),
+            ("/v1/partner/siutindei/board/catalog/preview", "POST", {"taskId": "t1"}),
+            ("/v1/partner/siutindei/board/catalog/import", "POST", {"taskId": "t1"}),
+            ("/v1/partner/siutindei/board/ramp/mail_reply/promote", "POST", {}),
+            ("/v1/partner/siutindei/board/ramp/mail_reply/pause", "POST", {}),
+            ("/v1/partner/siutindei/board/tools", "PUT", {"globalMode": "act"}),
+            ("/v1/partner/siutindei/board/settings", "PUT", {"schedule": {"morningEnabled": True}}),
+            ("/v1/partner/siutindei/board/boundaries", "PUT", {"holds": {}}),
+            ("/v1/partner/siutindei/board/staff/tick", "POST", {}),
+            ("/v1/partner/siutindei/board/chat/ceo", "DELETE", None),
+            ("/v1/partner/siutindei/board/meetings/m1/cancel", "POST", {}),
+            ("/v1/partner/siutindei/board/tasks/t1/cancel", "POST", {}),
+            ("/v1/partner/siutindei/board/mail/selftest", "POST", {}),
         ]
         for path, method, body in cases:
             status, resp = self.public_call(path, method, body=body)
@@ -293,7 +293,7 @@ class PublicBoardWriteTests(BoardTestCase):
 
     def test_ops_key_cannot_put_member(self) -> None:
         status, body = self.public_call(
-            "/public/siu-tin-dei/board/members/ceo",
+            "/v1/partner/siutindei/board/members/ceo",
             "PUT",
             body={"mandate": "Steer"},
             scopes="siutindei-board-ops",
@@ -301,7 +301,7 @@ class PublicBoardWriteTests(BoardTestCase):
         self.assertEqual(status, 403, msg=body)
         self.assertEqual(body["reason"], "scope")
         status, body = self.public_call(
-            "/public/siu-tin-dei/board/members/ceo",
+            "/v1/partner/siutindei/board/members/ceo",
             "PUT",
             body={"mandate": "Steer"},
             scopes="siutindei-board-full",
@@ -311,7 +311,7 @@ class PublicBoardWriteTests(BoardTestCase):
 
     def test_delete_staff_override(self) -> None:
         status, body = self.public_call(
-            "/public/siu-tin-dei/board/staff/support",
+            "/v1/partner/siutindei/board/staff/support",
             "PUT",
             body={"displayName": "Desk A"},
             scopes="siutindei-board-ops",
@@ -319,7 +319,7 @@ class PublicBoardWriteTests(BoardTestCase):
         self.assertEqual(status, 200, msg=body)
         self.assertEqual(body["seat"]["displayName"], "Desk A")
         status, body = self.public_call(
-            "/public/siu-tin-dei/board/staff/support",
+            "/v1/partner/siutindei/board/staff/support",
             "DELETE",
             scopes="siutindei-board-ops",
         )
@@ -334,30 +334,30 @@ class PublicBoardWriteTests(BoardTestCase):
 
         with patch("dispatch._log_event", capture):
             self.public_call(
-                "/public/siu-tin-dei/board/tasks",
+                "/v1/partner/siutindei/board/tasks",
                 "POST",
                 body={"assignee": "support", "brief": "x"},
                 write="0",
             )
             os.environ["PUBLIC_API_WRITES_ENABLED"] = "false"
             self.public_call(
-                "/public/siu-tin-dei/board/charter",
+                "/v1/partner/siutindei/board/charter",
                 "PUT",
                 body={"vision": "V", "mission": "M"},
             )
             os.environ["PUBLIC_API_WRITES_ENABLED"] = "true"
             self.public_call(
-                "/public/siu-tin-dei/board/staff/tick",
+                "/v1/partner/siutindei/board/staff/tick",
                 "POST",
                 body={},
             )
             self.public_call(
-                "/public/siu-tin-dei/board/members/ceo",
+                "/v1/partner/siutindei/board/members/ceo",
                 "PUT",
                 body={"mandate": "x"},
                 scopes="siutindei-board-ops",
             )
-            self.public_call("/public/finance", "PUT", body={})
+            self.public_call("/v1/partner/finance", "PUT", body={})
         reasons = [str(entry.get("reason") or "") for entry in logged]
         self.assertIn("key_read_only", reasons)
         self.assertIn("writes_disabled", reasons)
@@ -367,7 +367,7 @@ class PublicBoardWriteTests(BoardTestCase):
 
     def test_kill_switch_and_missing_write_flag(self) -> None:
         status, body = self.public_call(
-            "/public/siu-tin-dei/board/tasks",
+            "/v1/partner/siutindei/board/tasks",
             "POST",
             body={"assignee": "support", "brief": "x"},
             write="0",
@@ -376,7 +376,7 @@ class PublicBoardWriteTests(BoardTestCase):
         self.assertEqual(body["reason"], "key_read_only")
         os.environ["PUBLIC_API_WRITES_ENABLED"] = "false"
         status, body = self.public_call(
-            "/public/siu-tin-dei/board/charter",
+            "/v1/partner/siutindei/board/charter",
             "PUT",
             body={"vision": "V", "mission": "M"},
         )
@@ -384,7 +384,7 @@ class PublicBoardWriteTests(BoardTestCase):
         self.assertEqual(body["reason"], "writes_disabled")
 
     def test_finance_write_stays_closed(self) -> None:
-        status, body = self.public_call("/public/finance", "PUT", body={})
+        status, body = self.public_call("/v1/partner/finance", "PUT", body={})
         self.assertEqual(status, 403)
         self.assertEqual(body["message"], "Forbidden")
         self.assertEqual(body["reason"], "not_allowlisted")

@@ -602,13 +602,13 @@ class TestArgumentValidation(ToolsTestCase):
         approval = self.propose_issue()
         approval_id = approval["approvalId"]
         status, body = self.call(
-            f"/siu-tin-dei/board/approvals/{approval_id}/approve", "POST", {"arguments": {"title": "", "labels": "billing"}}
+            f"/v1/admin/siutindei/board/approvals/{approval_id}/approve", "POST", {"arguments": {"title": "", "labels": "billing"}}
         )
         self.assertEqual(status, 400)
         self.assertIn("required", body["message"])
-        _, listing = self.call("/siu-tin-dei/board/approvals", query="status=pending")
+        _, listing = self.call("/v1/admin/siutindei/board/approvals", query="status=pending")
         self.assertEqual([a["approvalId"] for a in listing["approvals"]], [approval_id])
-        status, body = self.call(f"/siu-tin-dei/board/approvals/{approval_id}/approve", "POST", {"arguments": {"pageId": "1"}})
+        status, body = self.call(f"/v1/admin/siutindei/board/approvals/{approval_id}/approve", "POST", {"arguments": {"pageId": "1"}})
         self.assertEqual(status, 400)
         self.assertIn("unknown argument", body["message"])
 
@@ -617,24 +617,24 @@ class TestDecideApprovalGates(ToolsTestCase):
     def test_disabled_or_read_only_refuses_and_keeps_pending(self) -> None:
         approval = self.propose_issue()
         approval_id = approval["approvalId"]
-        self.call("/siu-tin-dei/board/tools", "PUT", {"enabled": False})
-        status, body = self.call(f"/siu-tin-dei/board/approvals/{approval_id}/approve", "POST", {})
+        self.call("/v1/admin/siutindei/board/tools", "PUT", {"enabled": False})
+        status, body = self.call(f"/v1/admin/siutindei/board/approvals/{approval_id}/approve", "POST", {})
         self.assertEqual(status, 409)
         self.assertIn("switched off", body["message"])
-        self.call("/siu-tin-dei/board/tools", "PUT", {"enabled": True, "globalMode": "readOnly"})
-        status, body = self.call(f"/siu-tin-dei/board/approvals/{approval_id}/approve", "POST", {})
+        self.call("/v1/admin/siutindei/board/tools", "PUT", {"enabled": True, "globalMode": "readOnly"})
+        status, body = self.call(f"/v1/admin/siutindei/board/approvals/{approval_id}/approve", "POST", {})
         self.assertEqual(status, 409)
         self.assertIn("read-only", body["message"])
         self.assertEqual(_nn(board_store.get_approval(self.table, approval_id))["status"], "pending")
         # Rejecting is always allowed: nothing executes.
-        status, body = self.call(f"/siu-tin-dei/board/approvals/{approval_id}/reject", "POST", {})
+        status, body = self.call(f"/v1/admin/siutindei/board/approvals/{approval_id}/reject", "POST", {})
         self.assertEqual(status, 200)
         self.assertEqual(body["approval"]["status"], "rejected")
 
     def test_crash_during_execution_marks_failed_not_approved(self) -> None:
         approval = self.propose_issue()
         with patch.object(board_tools, "execute_call", side_effect=RuntimeError("boom")):
-            status, body = self.call(f"/siu-tin-dei/board/approvals/{approval['approvalId']}/approve", "POST", {})
+            status, body = self.call(f"/v1/admin/siutindei/board/approvals/{approval['approvalId']}/approve", "POST", {})
         self.assertEqual(status, 200)
         self.assertEqual(body["approval"]["status"], "failed")
         self.assertIn("boom", body["approval"]["errorMessage"])
@@ -827,10 +827,10 @@ class TestLoopRuntimeLimits(ToolsTestCase):
 
 class TestUpdateActionReprioritise(ToolsTestCase):
     def test_priority_and_due_date_can_change(self) -> None:
-        self.call("/siu-tin-dei/board/tools", "PUT", {"globalMode": "act"})
+        self.call("/v1/admin/siutindei/board/tools", "PUT", {"globalMode": "act"})
         self.use_script([[("board_add_action", {"title": "Draft pricing tiers", "detail": "d", "priority": "later", "reason": "r"})]], "ok")
         self.chat("cfo")
-        action_id = self.call("/siu-tin-dei/board/actions")[1]["actions"][0]["actionId"]
+        action_id = self.call("/v1/admin/siutindei/board/actions")[1]["actions"][0]["actionId"]
         settings = board_store.load_settings(self.table)
         ctx = ToolContext(table=self.table, settings=settings, persona_id="cfo", display_name="CFO")
         op = REGISTRY["board_update_action"]
@@ -865,7 +865,7 @@ class TestExternalUsage(ToolsTestCase):
             board_research.op_search(ctx, {"query": "Tuen Mun swimming"})  # cache hit: no quota
             board_research.op_search(ctx, {"query": "Sha Tin piano"})
         self.assertEqual(board_store.load_external_usage_day(self.table), {"searchCalls": 2})
-        _, overview = self.call("/siu-tin-dei/board")
+        _, overview = self.call("/v1/admin/siutindei/board")
         self.assertEqual(overview["usageToday"]["external"], {"searchCalls": 2, "metaAdsMonthUsd": 0.0})
 
     def test_online_fallback_is_billed_to_the_daily_budget(self) -> None:

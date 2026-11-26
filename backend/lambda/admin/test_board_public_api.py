@@ -15,7 +15,7 @@ from test_board import BoardTestCase, FakeTable
 class PathClassTests(unittest.TestCase):
     def test_delegate_scope_opens_three_writes_and_not_approve(self) -> None:
         write_ctx = {"keyId": "k-w", "write": "1"}
-        base = "/public/siu-tin-dei/board"
+        base = "/v1/partner/siutindei/board"
         reject = f"{base}/approvals/a1/reject"
         approve = f"{base}/approvals/a1/approve"
         cancel = f"{base}/tasks/t1/cancel"
@@ -44,54 +44,54 @@ class PathClassTests(unittest.TestCase):
                 "key_read_only",
             )
     def test_finance_and_ops_and_full(self) -> None:
-        self.assertEqual(board_public_api.path_class("/public/finance"), "finance")
-        self.assertEqual(board_public_api.path_class("/public/siu-tin-dei/board"), "siutindei-board-ops")
+        self.assertEqual(board_public_api.path_class("/v1/partner/finance"), "finance")
+        self.assertEqual(board_public_api.path_class("/v1/partner/siutindei/board"), "siutindei-board-ops")
         self.assertEqual(
-            board_public_api.path_class("/public/siu-tin-dei/board/breakers"),
+            board_public_api.path_class("/v1/partner/siutindei/board/breakers"),
             "siutindei-board-ops",
         )
         self.assertEqual(
-            board_public_api.path_class("/public/siu-tin-dei/board/mail"),
+            board_public_api.path_class("/v1/partner/siutindei/board/mail"),
             "siutindei-board-full",
         )
         self.assertEqual(
-            board_public_api.path_class("/public/lx-software/linkedin/posts"),
+            board_public_api.path_class("/v1/partner/lx-software/linkedin/posts"),
             "lxsoftware-linkedin",
         )
         self.assertEqual(
-            board_public_api.path_class("/public/lx-software/linkedin/posts/li_abc"),
+            board_public_api.path_class("/v1/partner/lx-software/linkedin/posts/li_abc"),
             "lxsoftware-linkedin",
         )
         self.assertIsNone(
-            board_public_api.path_class("/public/lx-software/linkedin/posts/li_abc/approve")
+            board_public_api.path_class("/v1/partner/lx-software/linkedin/posts/li_abc/approve")
         )
         self.assertIsNone(
-            board_public_api.path_class("/public/lx-software/linkedin/posts/li_abc/image")
+            board_public_api.path_class("/v1/partner/lx-software/linkedin/posts/li_abc/image")
         )
 
     def test_full_scope_covers_ops(self) -> None:
         self.assertTrue(
             board_public_api.path_allowed(
-                "/public/siu-tin-dei/board/staff", ["siutindei-board-full"]
+                "/v1/partner/siutindei/board/staff", ["siutindei-board-full"]
             )
         )
         self.assertFalse(
-            board_public_api.path_allowed("/public/siu-tin-dei/board/mail", ["siutindei-board-ops"])
+            board_public_api.path_allowed("/v1/partner/siutindei/board/mail", ["siutindei-board-ops"])
         )
-        self.assertFalse(board_public_api.path_allowed("/public/siu-tin-dei/board", ["finance"]))
+        self.assertFalse(board_public_api.path_allowed("/v1/partner/siutindei/board", ["finance"]))
         self.assertTrue(
             board_public_api.path_allowed(
-                "/public/lx-software/linkedin/posts", ["lxsoftware-linkedin"]
+                "/v1/partner/lx-software/linkedin/posts", ["lxsoftware-linkedin"]
             )
         )
         self.assertFalse(
             board_public_api.path_allowed(
-                "/public/lx-software/linkedin/posts", ["finance", "siutindei-board-full"]
+                "/v1/partner/lx-software/linkedin/posts", ["finance", "siutindei-board-full"]
             )
         )
         self.assertTrue(
             board_public_api.path_allowed(
-                "/public/lx-software/linkedin/posts/li_abc", ["lxsoftware-linkedin"]
+                "/v1/partner/lx-software/linkedin/posts/li_abc", ["lxsoftware-linkedin"]
             )
         )
 
@@ -104,11 +104,11 @@ class PathClassTests(unittest.TestCase):
         with patch.dict("os.environ", {"PUBLIC_API_WRITES_ENABLED": "true"}):
             self.assertIsNone(
                 board_public_api.write_deny_reason(
-                    "POST", "/public/siu-tin-dei/board/tasks", write_ctx, ops
+                    "POST", "/v1/partner/siutindei/board/tasks", write_ctx, ops
                 )
             )
             linkedin = ["lxsoftware-linkedin"]
-            posts = "/public/lx-software/linkedin/posts"
+            posts = "/v1/partner/lx-software/linkedin/posts"
             # write_blocked fail-closes every non-board path. LinkedIn copy is
             # allowed beside that list, not by editing it.
             self.assertTrue(board_public_api.write_blocked("POST", posts))
@@ -140,25 +140,25 @@ class PathClassTests(unittest.TestCase):
             )
             self.assertEqual(
                 board_public_api.write_deny_reason(
-                    "POST", "/public/siu-tin-dei/board/tasks", read_ctx, ops
+                    "POST", "/v1/partner/siutindei/board/tasks", read_ctx, ops
                 ),
                 "key_read_only",
             )
             self.assertEqual(
                 board_public_api.write_deny_reason(
-                    "PUT", "/public/siu-tin-dei/board/charter", write_ctx, ops
+                    "PUT", "/v1/partner/siutindei/board/charter", write_ctx, ops
                 ),
                 "scope",
             )
             self.assertTrue(
                 board_public_api.write_allowed(
-                    "PUT", "/public/siu-tin-dei/board/charter", write_ctx, full
+                    "PUT", "/v1/partner/siutindei/board/charter", write_ctx, full
                 )
             )
             self.assertEqual(
                 board_public_api.write_deny_reason(
                     "POST",
-                    "/public/siu-tin-dei/board/approvals/a1/approve",
+                    "/v1/partner/siutindei/board/approvals/a1/approve",
                     write_ctx,
                     full,
                 ),
@@ -166,62 +166,62 @@ class PathClassTests(unittest.TestCase):
             )
             self.assertEqual(
                 board_public_api.write_deny_reason(
-                    "POST", "/public/siu-tin-dei/board/code/promote", write_ctx, full
+                    "POST", "/v1/partner/siutindei/board/code/promote", write_ctx, full
                 ),
                 "owner_only",
             )
             self.assertEqual(
                 board_public_api.write_deny_reason(
-                    "POST", "/public/siu-tin-dei/board/code/sync-staging", write_ctx, full
+                    "POST", "/v1/partner/siutindei/board/code/sync-staging", write_ctx, full
                 ),
                 "owner_only",
             )
             self.assertEqual(
                 board_public_api.write_deny_reason(
-                    "POST", "/public/siu-tin-dei/board/catalog/preview", write_ctx, full
+                    "POST", "/v1/partner/siutindei/board/catalog/preview", write_ctx, full
                 ),
                 "owner_only",
             )
             self.assertEqual(
                 board_public_api.write_deny_reason(
-                    "POST", "/public/siu-tin-dei/board/catalog/import", write_ctx, full
+                    "POST", "/v1/partner/siutindei/board/catalog/import", write_ctx, full
                 ),
                 "owner_only",
             )
             self.assertEqual(
                 board_public_api.write_deny_reason(
-                    "POST", "/public/siu-tin-dei/board/catalog/skip", write_ctx, full
+                    "POST", "/v1/partner/siutindei/board/catalog/skip", write_ctx, full
                 ),
                 "owner_only",
             )
             self.assertEqual(
                 board_public_api.write_deny_reason(
-                    "POST", "/public/siu-tin-dei/board/catalog/requeue", write_ctx, full
+                    "POST", "/v1/partner/siutindei/board/catalog/requeue", write_ctx, full
                 ),
                 "owner_only",
             )
             self.assertEqual(
                 board_public_api.write_deny_reason(
-                    "POST", "/public/siu-tin-dei/board/catalog/reimport", write_ctx, full
+                    "POST", "/v1/partner/siutindei/board/catalog/reimport", write_ctx, full
                 ),
                 "owner_only",
             )
             self.assertEqual(
                 board_public_api.write_deny_reason(
-                    "POST", "/public/siu-tin-dei/board/catalog/bulk/lcsd/preview", write_ctx, full
+                    "POST", "/v1/partner/siutindei/board/catalog/bulk/lcsd/preview", write_ctx, full
                 ),
                 "owner_only",
             )
             self.assertEqual(
                 board_public_api.write_deny_reason(
-                    "POST", "/public/siu-tin-dei/board/catalog/bulk/lcsd/import", write_ctx, full
+                    "POST", "/v1/partner/siutindei/board/catalog/bulk/lcsd/import", write_ctx, full
                 ),
                 "owner_only",
             )
             self.assertEqual(
                 board_public_api.write_deny_reason(
                     "POST",
-                    "/public/siu-tin-dei/board/catalog/candidates/c1/approve",
+                    "/v1/partner/siutindei/board/catalog/candidates/c1/approve",
                     write_ctx,
                     full,
                 ),
@@ -230,7 +230,7 @@ class PathClassTests(unittest.TestCase):
             self.assertEqual(
                 board_public_api.write_deny_reason(
                     "POST",
-                    "/public/siu-tin-dei/board/catalog/candidates/bulk",
+                    "/v1/partner/siutindei/board/catalog/candidates/bulk",
                     write_ctx,
                     full,
                 ),
@@ -238,14 +238,14 @@ class PathClassTests(unittest.TestCase):
             )
             self.assertEqual(
                 board_public_api.write_deny_reason(
-                    "POST", "/public/siu-tin-dei/board/catalog/discovery/run", write_ctx, full
+                    "POST", "/v1/partner/siutindei/board/catalog/discovery/run", write_ctx, full
                 ),
                 "owner_only",
             )
             self.assertEqual(
                 board_public_api.write_deny_reason(
                     "POST",
-                    "/public/siu-tin-dei/board/ramp/mail_reply/promote",
+                    "/v1/partner/siutindei/board/ramp/mail_reply/promote",
                     write_ctx,
                     ops,
                 ),
@@ -254,7 +254,7 @@ class PathClassTests(unittest.TestCase):
             self.assertEqual(
                 board_public_api.write_deny_reason(
                     "POST",
-                    "/public/siu-tin-dei/board/ramp/mail_reply/pause",
+                    "/v1/partner/siutindei/board/ramp/mail_reply/pause",
                     write_ctx,
                     ops,
                 ),
@@ -262,14 +262,14 @@ class PathClassTests(unittest.TestCase):
             )
             self.assertEqual(
                 board_public_api.write_deny_reason(
-                    "PUT", "/public/siu-tin-dei/board/tools", write_ctx, ops
+                    "PUT", "/v1/partner/siutindei/board/tools", write_ctx, ops
                 ),
                 "owner_only",
             )
             self.assertEqual(
                 board_public_api.write_deny_reason(
                     "PUT",
-                    "/public/siu-tin-dei/board/settings",
+                    "/v1/partner/siutindei/board/settings",
                     write_ctx,
                     full,
                 ),
@@ -278,7 +278,7 @@ class PathClassTests(unittest.TestCase):
             self.assertEqual(
                 board_public_api.write_deny_reason(
                     "PUT",
-                    "/public/siu-tin-dei/board/boundaries",
+                    "/v1/partner/siutindei/board/boundaries",
                     write_ctx,
                     full,
                 ),
@@ -286,20 +286,20 @@ class PathClassTests(unittest.TestCase):
             )
             self.assertEqual(
                 board_public_api.write_deny_reason(
-                    "POST", "/public/siu-tin-dei/board/staff/tick", write_ctx, ops
+                    "POST", "/v1/partner/siutindei/board/staff/tick", write_ctx, ops
                 ),
                 "owner_only",
             )
             self.assertEqual(
                 board_public_api.write_deny_reason(
-                    "DELETE", "/public/siu-tin-dei/board/chat/ceo", write_ctx, full
+                    "DELETE", "/v1/partner/siutindei/board/chat/ceo", write_ctx, full
                 ),
                 "owner_only",
             )
             self.assertEqual(
                 board_public_api.write_deny_reason(
                     "POST",
-                    "/public/siu-tin-dei/board/meetings/m1/cancel",
+                    "/v1/partner/siutindei/board/meetings/m1/cancel",
                     write_ctx,
                     full,
                 ),
@@ -308,7 +308,7 @@ class PathClassTests(unittest.TestCase):
             self.assertEqual(
                 board_public_api.write_deny_reason(
                     "POST",
-                    "/public/siu-tin-dei/board/tasks/t1/cancel",
+                    "/v1/partner/siutindei/board/tasks/t1/cancel",
                     write_ctx,
                     ops,
                 ),
@@ -316,20 +316,20 @@ class PathClassTests(unittest.TestCase):
             )
             self.assertEqual(
                 board_public_api.write_deny_reason(
-                    "POST", "/public/siu-tin-dei/board/mail/selftest", write_ctx, full
+                    "POST", "/v1/partner/siutindei/board/mail/selftest", write_ctx, full
                 ),
                 "owner_only",
             )
             self.assertEqual(
                 board_public_api.write_deny_reason(
-                    "PUT", "/public/finance", write_ctx, ["finance"]
+                    "PUT", "/v1/partner/finance", write_ctx, ["finance"]
                 ),
                 "finance_read_only",
             )
             self.assertEqual(
                 board_public_api.write_deny_reason(
                     "PUT",
-                    "/public/siu-tin-dei/board/prospects/p1",
+                    "/v1/partner/siutindei/board/prospects/p1",
                     write_ctx,
                     full,
                 ),
@@ -338,7 +338,7 @@ class PathClassTests(unittest.TestCase):
             self.assertTrue(
                 board_public_api.write_allowed(
                     "PUT",
-                    "/public/siu-tin-dei/board/prospects/p1",
+                    "/v1/partner/siutindei/board/prospects/p1",
                     write_ctx,
                     full_pii,
                 )
@@ -350,17 +350,17 @@ class PathClassTests(unittest.TestCase):
         with patch.dict("os.environ", {"PUBLIC_API_WRITES_ENABLED": "false"}):
             self.assertEqual(
                 board_public_api.write_deny_reason(
-                    "POST", "/public/siu-tin-dei/board/tasks", write_ctx, ops
+                    "POST", "/v1/partner/siutindei/board/tasks", write_ctx, ops
                 ),
                 "writes_disabled",
             )
 
     def test_contact_heavy_heads_need_pii_on_top_of_full(self) -> None:
         for path in (
-            "/public/siu-tin-dei/board/prospects",
-            "/public/siu-tin-dei/board/outreach/stats",
-            "/public/siu-tin-dei/board/outreach/identity",
-            "/public/siu-tin-dei/board/receivables",
+            "/v1/partner/siutindei/board/prospects",
+            "/v1/partner/siutindei/board/outreach/stats",
+            "/v1/partner/siutindei/board/outreach/identity",
+            "/v1/partner/siutindei/board/receivables",
         ):
             self.assertFalse(board_public_api.path_allowed(path, ["siutindei-board-full"]))
             self.assertFalse(board_public_api.path_allowed(path, ["siutindei-pii"]))
@@ -368,7 +368,7 @@ class PathClassTests(unittest.TestCase):
                 board_public_api.path_allowed(path, ["siutindei-board-full", "siutindei-pii"])
             )
         self.assertTrue(
-            board_public_api.path_allowed("/public/siu-tin-dei/board/mail", ["siutindei-board-full"])
+            board_public_api.path_allowed("/v1/partner/siutindei/board/mail", ["siutindei-board-full"])
         )
 
 
@@ -390,7 +390,7 @@ class RedactAndNotifyTests(BoardTestCase):
             ),
         }
         redacted = board_public_api.redact_board_response(
-            "/public/siu-tin-dei/board", response, ["siutindei-board-ops"]
+            "/v1/partner/siutindei/board", response, ["siutindei-board-ops"]
         )
         body = json.loads(redacted["body"])
         self.assertEqual(body["settings"]["tools"]["allowList"], [])
@@ -399,7 +399,7 @@ class RedactAndNotifyTests(BoardTestCase):
     def test_creative_url_stripped_without_assets(self) -> None:
         response = {"statusCode": 200, "body": json.dumps({"url": "https://signed", "key": "k"})}
         redacted = board_public_api.redact_board_response(
-            "/public/siu-tin-dei/board/content/abc/creative/0",
+            "/v1/partner/siutindei/board/content/abc/creative/0",
             response,
             ["siutindei-board-full"],
         )
@@ -418,7 +418,7 @@ class RedactAndNotifyTests(BoardTestCase):
             ),
         }
         redacted = board_public_api.redact_board_response(
-            "/public/siu-tin-dei/board/settings", response, ["siutindei-board-full"]
+            "/v1/partner/siutindei/board/settings", response, ["siutindei-board-full"]
         )
         body = json.loads(redacted["body"])
         self.assertEqual(body["settings"]["tools"]["allowList"], [])
@@ -430,11 +430,11 @@ class RedactAndNotifyTests(BoardTestCase):
             "body": json.dumps({"config": {"allowList": ["owner@example.com", "+85291234567"]}}),
         }
         redacted = board_public_api.redact_board_response(
-            "/public/siu-tin-dei/board/tools", response, ["siutindei-board-ops"]
+            "/v1/partner/siutindei/board/tools", response, ["siutindei-board-ops"]
         )
         self.assertEqual(json.loads(redacted["body"])["config"]["allowList"], [])
         kept = board_public_api.redact_board_response(
-            "/public/siu-tin-dei/board/tools",
+            "/v1/partner/siutindei/board/tools",
             response,
             ["siutindei-board-ops", "siutindei-pii"],
         )
@@ -473,14 +473,14 @@ class RedactAndNotifyTests(BoardTestCase):
             board_public_api.notify_key_use(
                 event,
                 key_ctx=key_ctx,
-                path="/public/siu-tin-dei/board/tasks",
+                path="/v1/partner/siutindei/board/tasks",
                 method="POST",
                 kind="write",
             )
             board_public_api.notify_key_use(
                 event,
                 key_ctx=key_ctx,
-                path="/public/siu-tin-dei/board/tasks",
+                path="/v1/partner/siutindei/board/tasks",
                 method="POST",
                 kind="write",
             )
@@ -508,8 +508,8 @@ class RedactAndNotifyTests(BoardTestCase):
             patch("board_mail.sending_enabled", lambda: True),
             patch("board_mail.send_plan", fake_send),
         ):
-            board_public_api.notify_key_use(event, key_ctx=key_ctx, path="/public/finance", method="GET")
-            board_public_api.notify_key_use(event, key_ctx=key_ctx, path="/public/finance", method="GET")
+            board_public_api.notify_key_use(event, key_ctx=key_ctx, path="/v1/partner/finance", method="GET")
+            board_public_api.notify_key_use(event, key_ctx=key_ctx, path="/v1/partner/finance", method="GET")
         self.assertEqual(len(sent), 1)
         self.assertEqual(sent[0]["to"], ["owner@example.com"])
         self.assertEqual(sent[0]["fromMailbox"], "hello")

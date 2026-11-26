@@ -542,7 +542,7 @@ class RouteTests(BoardTestCase):
 
     def test_watchlist_crud_and_changes(self) -> None:
         status, body = self.call(
-            "/siu-tin-dei/board/watchlist",
+            "/v1/admin/siutindei/board/watchlist",
             "POST",
             {
                 "name": "Kiztopia",
@@ -554,11 +554,11 @@ class RouteTests(BoardTestCase):
         self.assertEqual(status, 201)
         self.assertEqual(body["watch"]["district"], "Kwun Tong")
         watch_id = body["watch"]["watchId"]
-        status, body = self.call("/siu-tin-dei/board/watchlist")
+        status, body = self.call("/v1/admin/siutindei/board/watchlist")
         self.assertEqual(status, 200)
         self.assertEqual(len(body["watches"]), 1)
         status, body = self.call(
-            f"/siu-tin-dei/board/watchlist/{watch_id}",
+            f"/v1/admin/siutindei/board/watchlist/{watch_id}",
             "PUT",
             {"kind": "listingsIndex", "district": "tung chung"},
         )
@@ -566,38 +566,38 @@ class RouteTests(BoardTestCase):
         self.assertEqual(body["watch"]["kind"], "listingsIndex")
         self.assertEqual(body["watch"]["district"], "Islands")
         status, body = self.call(
-            f"/siu-tin-dei/board/watchlist/{watch_id}",
+            f"/v1/admin/siutindei/board/watchlist/{watch_id}",
             "PUT",
             {"district": ""},
         )
         self.assertEqual(status, 200)
         self.assertNotIn("district", body["watch"])
         status, body = self.call(
-            f"/siu-tin-dei/board/watchlist/{watch_id}",
+            f"/v1/admin/siutindei/board/watchlist/{watch_id}",
             "PUT",
             {"district": "Narnia"},
         )
         self.assertEqual(status, 400)
         self.assertIn("district", body["message"].lower())
-        status, body = self.call("/siu-tin-dei/board/changes", query="days=7")
+        status, body = self.call("/v1/admin/siutindei/board/changes", query="days=7")
         self.assertEqual(status, 200)
         self.assertEqual(body["changes"], [])
-        status, _ = self.call(f"/siu-tin-dei/board/watchlist/{watch_id}", "DELETE")
+        status, _ = self.call(f"/v1/admin/siutindei/board/watchlist/{watch_id}", "DELETE")
         self.assertEqual(status, 200)
-        status, body = self.call("/siu-tin-dei/board/watchlist")
+        status, body = self.call("/v1/admin/siutindei/board/watchlist")
         self.assertEqual(status, 200)
         self.assertIn("kiztopia.example", body["suppressedHosts"])
-        status, body = self.call("/siu-tin-dei/board/watchlist/suppressed", "DELETE", {"hosts": ["kiztopia.example"]})
+        status, body = self.call("/v1/admin/siutindei/board/watchlist/suppressed", "DELETE", {"hosts": ["kiztopia.example"]})
         self.assertEqual(status, 200)
         self.assertEqual(body["suppressedHosts"], {})
-        status, body = self.call("/siu-tin-dei/board/watchlist/suppressed", "POST", {"hosts": ["hk01.com"]})
+        status, body = self.call("/v1/admin/siutindei/board/watchlist/suppressed", "POST", {"hosts": ["hk01.com"]})
         self.assertEqual(status, 200)
         self.assertIn("hk01.com", body["suppressedHosts"])
-        status, _ = self.call("/siu-tin-dei/board/watchlist/suppressed", "POST", {"hosts": []})
+        status, _ = self.call("/v1/admin/siutindei/board/watchlist/suppressed", "POST", {"hosts": []})
         self.assertEqual(status, 400)
 
     def test_watchlist_409_when_env_off(self) -> None:
         os.environ["BOARD_STAFF_ENABLED"] = "false"
-        status, body = self.call("/siu-tin-dei/board/watchlist")
+        status, body = self.call("/v1/admin/siutindei/board/watchlist")
         self.assertEqual(status, 409)
         self.assertIn("disabled", body["message"].lower())

@@ -8,7 +8,7 @@ AdminApiFn so no single invocation approaches the Lambda timeout:
 Each phase claims the meeting row with a conditional update (idempotent
 against duplicate deliveries), does its LLM calls, stores the resulting
 "turns", advances ``phase`` and invokes the next phase. The SPA polls
-``GET /siu-tin-dei/board/meetings/{id}`` and renders the transcript live.
+``GET /siutindei/board/meetings/{id}`` and renders the transcript live.
 """
 
 from __future__ import annotations

@@ -700,7 +700,7 @@ class TestSettingsValidation(unittest.TestCase):
 
 class TestBoardRoutes(BoardTestCase):
     def test_overview_lists_members_and_defaults(self) -> None:
-        status, body = self.call("/siu-tin-dei/board")
+        status, body = self.call("/v1/admin/siutindei/board")
         self.assertEqual(status, 200)
         self.assertEqual(len(body["members"]), 8)
         self.assertEqual(body["settings"]["defaultChair"], "ceo")
@@ -713,53 +713,53 @@ class TestBoardRoutes(BoardTestCase):
 
     def test_member_put_and_reset(self) -> None:
         status, body = self.call(
-            "/siu-tin-dei/board/members/cto", "PUT", {"mandate": "Own the Flutter release.", "displayName": "Ada"}
+            "/v1/admin/siutindei/board/members/cto", "PUT", {"mandate": "Own the Flutter release.", "displayName": "Ada"}
         )
         self.assertEqual(status, 200)
         self.assertEqual(body["member"]["mandate"], "Own the Flutter release.")
         self.assertTrue(body["member"]["isOverridden"]["mandate"])
-        _, overview = self.call("/siu-tin-dei/board")
+        _, overview = self.call("/v1/admin/siutindei/board")
         cto = next(m for m in overview["members"] if m["id"] == "cto")
         self.assertEqual(cto["displayName"], "Ada")
-        status, body = self.call("/siu-tin-dei/board/members/cto", "DELETE")
+        status, body = self.call("/v1/admin/siutindei/board/members/cto", "DELETE")
         self.assertEqual(status, 200)
         self.assertFalse(body["member"]["isOverridden"]["mandate"])
 
     def test_member_unknown_and_validation(self) -> None:
-        status, _ = self.call("/siu-tin-dei/board/members/intern", "PUT", {"mandate": "x"})
+        status, _ = self.call("/v1/admin/siutindei/board/members/intern", "PUT", {"mandate": "x"})
         self.assertEqual(status, 404)
-        status, body = self.call("/siu-tin-dei/board/members/cfo", "PUT", {"vision": "x" * 3000})
+        status, body = self.call("/v1/admin/siutindei/board/members/cfo", "PUT", {"vision": "x" * 3000})
         self.assertEqual(status, 400)
         self.assertIn("2000", body["message"])
 
     def test_charter_brief_settings_roundtrip(self) -> None:
-        status, body = self.call("/siu-tin-dei/board/charter", "PUT", {"vision": "V", "mission": "M"})
+        status, body = self.call("/v1/admin/siutindei/board/charter", "PUT", {"vision": "V", "mission": "M"})
         self.assertEqual(status, 200)
         self.assertEqual(body["charter"]["vision"], "V")
-        status, body = self.call("/siu-tin-dei/board/brief", "PUT", {"markdown": "# Brief\nWe are pre-launch."})
+        status, body = self.call("/v1/admin/siutindei/board/brief", "PUT", {"markdown": "# Brief\nWe are pre-launch."})
         self.assertEqual(status, 200)
         status, body = self.call(
-            "/siu-tin-dei/board/settings", "PUT", {"schedule": {"eveningEnabled": True}, "shareFinanceSummary": True}
+            "/v1/admin/siutindei/board/settings", "PUT", {"schedule": {"eveningEnabled": True}, "shareFinanceSummary": True}
         )
         self.assertEqual(status, 200)
         self.assertTrue(body["settings"]["schedule"]["eveningEnabled"])
-        _, overview = self.call("/siu-tin-dei/board")
+        _, overview = self.call("/v1/admin/siutindei/board")
         self.assertEqual(overview["charter"]["mission"], "M")
         self.assertIn("pre-launch", overview["brief"]["markdown"])
         self.assertTrue(overview["settings"]["shareFinanceSummary"])
 
     def test_updates_post_and_list(self) -> None:
-        status, _ = self.call("/siu-tin-dei/board/updates", "POST", {"text": "Signed two providers."})
+        status, _ = self.call("/v1/admin/siutindei/board/updates", "POST", {"text": "Signed two providers."})
         self.assertEqual(status, 201)
-        status, body = self.call("/siu-tin-dei/board/updates")
+        status, body = self.call("/v1/admin/siutindei/board/updates")
         self.assertEqual(status, 200)
         self.assertEqual(body["updates"][0]["text"], "Signed two providers.")
 
     def test_records_scan_excludes_board_rows(self) -> None:
-        self.call("/siu-tin-dei/board/brief", "PUT", {"markdown": "secret strategy"})
+        self.call("/v1/admin/siutindei/board/brief", "PUT", {"markdown": "secret strategy"})
         self.table.put_item(Item={"pk": "RECORD#1", "sk": "A"})
         self.table.put_item(Item={"pk": "PARSE_JOB#j1", "sk": "META", "status": "failed"})
-        status, body = self.call("/records")
+        status, body = self.call("/v1/admin/records")
         self.assertEqual(status, 200)
         pks = [i["pk"] for i in body["items"]]
         self.assertIn("RECORD#1", pks)
@@ -794,7 +794,7 @@ class TestBoardRoutes(BoardTestCase):
             }
         )
         self.table.put_item(Item={"pk": "ASSET#uploads/admin-sub/unindexed.pdf", "sk": "META", "size": 1})
-        status, body = self.call("/assets")
+        status, body = self.call("/v1/admin/assets")
         self.assertEqual(status, 200)
         pks = [i["pk"] for i in body["items"]]
         self.assertEqual(pks, [f"ASSET#{asset_path}"])
@@ -818,7 +818,7 @@ class TestBoardRoutes(BoardTestCase):
             usage={"promptTokens": 4, "completionTokens": 1, "totalTokens": 5, "cost": 0.2},
             date_iso="2026-09-03",
         )
-        status, body = self.call("/openrouter/usage", query="from=2026-09-01&to=2026-09-08")
+        status, body = self.call("/v1/admin/openrouter/usage", query="from=2026-09-01&to=2026-09-08")
         self.assertEqual(status, 200)
         self.assertEqual(body["payer"]["id"], "lxSoftware")
         self.assertAlmostEqual(body["total"]["cost"], 0.7)
@@ -827,13 +827,13 @@ class TestBoardRoutes(BoardTestCase):
         self.assertAlmostEqual(by_id["statement-parser"]["cost"], 0.2)
         self.assertIn("evolvesprouts", by_id)
         self.table.put_item(Item={"pk": "RECORD#1", "sk": "A"})
-        _, records = self.call("/records")
+        _, records = self.call("/v1/admin/records")
         pks = [i["pk"] for i in records["items"]]
         self.assertIn("RECORD#1", pks)
         self.assertFalse(any(str(pk).startswith("OPENROUTER#") for pk in pks))
 
     def test_non_admin_forbidden(self) -> None:
-        ev = self.event("/siu-tin-dei/board")
+        ev = self.event("/v1/admin/siutindei/board")
         ev["requestContext"]["authorizer"]["jwt"]["claims"]["cognito:groups"] = "[viewer]"
         out = lambda_handler(ev, None)
         self.assertEqual(out["statusCode"], 403)
@@ -846,17 +846,17 @@ class TestBoardRoutes(BoardTestCase):
 
 class TestChat(BoardTestCase):
     def test_message_roundtrip_with_inline_worker(self) -> None:
-        self.call("/siu-tin-dei/board/members/ceo", "PUT", {"mandate": "MANDATE-VERBATIM"})
-        status, body = self.call("/siu-tin-dei/board/chat/ceo", "POST", {"text": "What should I do first?"})
+        self.call("/v1/admin/siutindei/board/members/ceo", "PUT", {"mandate": "MANDATE-VERBATIM"})
+        status, body = self.call("/v1/admin/siutindei/board/chat/ceo", "POST", {"text": "What should I do first?"})
         self.assertEqual(status, 202)
         job_id = body["jobId"]
-        status, job = self.call(f"/siu-tin-dei/board/chat/ceo/jobs/{job_id}")
+        status, job = self.call(f"/v1/admin/siutindei/board/chat/ceo/jobs/{job_id}")
         self.assertEqual(status, 200)
         self.assertEqual(job["status"], "succeeded")
         self.assertEqual(job["message"]["role"], "assistant")
         self.assertEqual(job["message"]["suggestedMeeting"], {"mode": "deepDive", "topic": "Provider onboarding"})
         self.assertNotIn("SUGGEST_MEETING", job["message"]["text"])
-        status, thread = self.call("/siu-tin-dei/board/chat/ceo")
+        status, thread = self.call("/v1/admin/siutindei/board/chat/ceo")
         self.assertEqual([m["role"] for m in thread["messages"]], ["user", "assistant"])
         system_prompt = self.openrouter.requests[0]["messages"][0]["content"]
         self.assertIn("Your mandate: MANDATE-VERBATIM", system_prompt)
@@ -877,18 +877,18 @@ class TestChat(BoardTestCase):
         self.assertAlmostEqual(ledger["total"]["cost"], 0.01)
 
     def test_budget_exhausted_refuses_new_messages(self) -> None:
-        self.call("/siu-tin-dei/board/settings", "PUT", {"dailyBudgetUsd": 0.5})
+        self.call("/v1/admin/siutindei/board/settings", "PUT", {"dailyBudgetUsd": 0.5})
         board_store.add_usage_day(self.table, {"promptTokens": 1, "completionTokens": 1, "totalTokens": 2, "cost": 0.6})
-        status, body = self.call("/siu-tin-dei/board/chat/cfo", "POST", {"text": "hi"})
+        status, body = self.call("/v1/admin/siutindei/board/chat/cfo", "POST", {"text": "hi"})
         self.assertEqual(status, 429)
         self.assertIn("budget", body["message"].lower())
 
     def test_clear_thread(self) -> None:
-        self.call("/siu-tin-dei/board/chat/cmo", "POST", {"text": "hello"})
-        status, body = self.call("/siu-tin-dei/board/chat/cmo", "DELETE")
+        self.call("/v1/admin/siutindei/board/chat/cmo", "POST", {"text": "hello"})
+        status, body = self.call("/v1/admin/siutindei/board/chat/cmo", "DELETE")
         self.assertEqual(status, 200)
         self.assertEqual(body["removed"], 2)
-        _, thread = self.call("/siu-tin-dei/board/chat/cmo")
+        _, thread = self.call("/v1/admin/siutindei/board/chat/cmo")
         self.assertEqual(thread["messages"], [])
 
     def test_extract_suggested_meeting_tolerates_bad_json(self) -> None:
@@ -904,10 +904,10 @@ class TestChat(BoardTestCase):
 
 class TestMeetings(BoardTestCase):
     def test_standup_runs_all_phases_inline(self) -> None:
-        status, body = self.call("/siu-tin-dei/board/meetings", "POST", {"mode": "standup"})
+        status, body = self.call("/v1/admin/siutindei/board/meetings", "POST", {"mode": "standup"})
         self.assertEqual(status, 202)
         meeting_id = body["meetingId"]
-        status, body = self.call(f"/siu-tin-dei/board/meetings/{meeting_id}")
+        status, body = self.call(f"/v1/admin/siutindei/board/meetings/{meeting_id}")
         self.assertEqual(status, 200)
         meeting = body["meeting"]
         self.assertEqual(meeting["status"], "succeeded")
@@ -925,7 +925,7 @@ class TestMeetings(BoardTestCase):
         priorities = [a["priority"] for a in meeting["minutes"]["actions"]]
         self.assertEqual(priorities.count("now"), 3)
         self.assertEqual(len(meeting["createdActionIds"]), 5)
-        status, actions = self.call("/siu-tin-dei/board/actions", query="status=open")
+        status, actions = self.call("/v1/admin/siutindei/board/actions", query="status=open")
         self.assertEqual(len(actions["actions"]), 5)
         self.assertEqual(actions["actions"][0]["priority"], "now")
         # Staff is off, so "prospector" is not an active seat: every action stays with the founder.
@@ -961,9 +961,9 @@ class TestMeetings(BoardTestCase):
             return real(table, doc, profile=profile, **kwargs)
 
         with patch.object(board_meeting, "_member_call", side_effect=flaky):
-            status, body = self.call("/siu-tin-dei/board/meetings", "POST", {"mode": "standup"})
+            status, body = self.call("/v1/admin/siutindei/board/meetings", "POST", {"mode": "standup"})
         self.assertEqual(status, 202)
-        _, body = self.call(f"/siu-tin-dei/board/meetings/{body['meetingId']}")
+        _, body = self.call(f"/v1/admin/siutindei/board/meetings/{body['meetingId']}")
         meeting = body["meeting"]
         self.assertEqual(meeting["status"], "succeeded")
         positions = [t for t in body["turns"] if t["phase"] == "positions"]
@@ -980,51 +980,51 @@ class TestMeetings(BoardTestCase):
             raise OpenRouterError("OpenRouter request timed out: wall-clock budget exhausted")
 
         with patch.object(board_meeting, "_member_call", side_effect=dead):
-            status, body = self.call("/siu-tin-dei/board/meetings", "POST", {"mode": "standup"})
+            status, body = self.call("/v1/admin/siutindei/board/meetings", "POST", {"mode": "standup"})
         self.assertEqual(status, 202)
-        _, body = self.call(f"/siu-tin-dei/board/meetings/{body['meetingId']}")
+        _, body = self.call(f"/v1/admin/siutindei/board/meetings/{body['meetingId']}")
         self.assertEqual(body["meeting"]["status"], "failed")
         self.assertIn("wall-clock", body["meeting"]["errorMessage"])
 
     def test_deep_dive_requires_topic_and_runs_challenge(self) -> None:
-        status, body = self.call("/siu-tin-dei/board/meetings", "POST", {"mode": "deepDive"})
+        status, body = self.call("/v1/admin/siutindei/board/meetings", "POST", {"mode": "deepDive"})
         self.assertEqual(status, 400)
         status, body = self.call(
-            "/siu-tin-dei/board/meetings", "POST", {"mode": "deepDive", "topic": "Provider onboarding"}
+            "/v1/admin/siutindei/board/meetings", "POST", {"mode": "deepDive", "topic": "Provider onboarding"}
         )
         self.assertEqual(status, 202)
-        _, body = self.call(f"/siu-tin-dei/board/meetings/{body['meetingId']}")
+        _, body = self.call(f"/v1/admin/siutindei/board/meetings/{body['meetingId']}")
         phases = [t["phase"] for t in body["turns"]]
         self.assertEqual(phases.count("challenge"), 3)  # chair summary + two rebuttals
         self.assertEqual(body["meeting"]["agenda"][0]["title"], "Provider onboarding")
         self.assertEqual(body["meeting"]["status"], "succeeded")
 
     def test_second_meeting_reaffirms_duplicate_actions(self) -> None:
-        self.call("/siu-tin-dei/board/meetings", "POST", {"mode": "standup"})
-        _, first = self.call("/siu-tin-dei/board/actions", query="status=open")
+        self.call("/v1/admin/siutindei/board/meetings", "POST", {"mode": "standup"})
+        _, first = self.call("/v1/admin/siutindei/board/actions", query="status=open")
         self.assertEqual(len(first["actions"]), 5)
-        status, body = self.call("/siu-tin-dei/board/meetings", "POST", {"mode": "standup"})
+        status, body = self.call("/v1/admin/siutindei/board/meetings", "POST", {"mode": "standup"})
         self.assertEqual(status, 202)
-        _, meeting = self.call(f"/siu-tin-dei/board/meetings/{body['meetingId']}")
+        _, meeting = self.call(f"/v1/admin/siutindei/board/meetings/{body['meetingId']}")
         self.assertEqual(meeting["meeting"]["createdActionIds"], [])
         self.assertEqual(len(meeting["meeting"]["reaffirmedActionIds"]), 5)
-        _, second = self.call("/siu-tin-dei/board/actions", query="status=open")
+        _, second = self.call("/v1/admin/siutindei/board/actions", query="status=open")
         self.assertEqual(len(second["actions"]), 5)
         self.assertEqual(len(second["actions"][0]["reaffirmedByMeetingIds"]), 1)
 
     def test_action_status_and_note_update(self) -> None:
-        self.call("/siu-tin-dei/board/meetings", "POST", {"mode": "standup"})
-        _, body = self.call("/siu-tin-dei/board/actions")
+        self.call("/v1/admin/siutindei/board/meetings", "POST", {"mode": "standup"})
+        _, body = self.call("/v1/admin/siutindei/board/actions")
         action_id = body["actions"][0]["actionId"]
         status, body = self.call(
-            f"/siu-tin-dei/board/actions/{action_id}", "PUT", {"status": "done", "note": "Done Monday"}
+            f"/v1/admin/siutindei/board/actions/{action_id}", "PUT", {"status": "done", "note": "Done Monday"}
         )
         self.assertEqual(status, 200)
         self.assertEqual(body["action"]["status"], "done")
         self.assertEqual(body["action"]["note"], "Done Monday")
-        status, _ = self.call(f"/siu-tin-dei/board/actions/{action_id}", "PUT", {"status": "bogus"})
+        status, _ = self.call(f"/v1/admin/siutindei/board/actions/{action_id}", "PUT", {"status": "bogus"})
         self.assertEqual(status, 400)
-        _, listing = self.call("/siu-tin-dei/board/actions", query="status=open")
+        _, listing = self.call("/v1/admin/siutindei/board/actions", query="status=open")
         self.assertEqual(len(listing["actions"]), 4)
 
     def test_cancel_running_meeting(self) -> None:
@@ -1038,10 +1038,10 @@ class TestMeetings(BoardTestCase):
             "updatedAt": board_store.now_iso(),
         }
         board_store.put_meeting(self.table, doc)
-        status, body = self.call("/siu-tin-dei/board/meetings/m1/cancel", "POST")
+        status, body = self.call("/v1/admin/siutindei/board/meetings/m1/cancel", "POST")
         self.assertEqual(status, 200)
         self.assertEqual(body["meeting"]["status"], "cancelled")
-        status, _ = self.call("/siu-tin-dei/board/meetings", "POST", {"mode": "standup"})
+        status, _ = self.call("/v1/admin/siutindei/board/meetings", "POST", {"mode": "standup"})
         self.assertEqual(status, 202, "a cancelled meeting must not block a new one")
 
     def test_running_meeting_blocks_second_start(self) -> None:
@@ -1056,7 +1056,7 @@ class TestMeetings(BoardTestCase):
                 "updatedAt": board_store.now_iso(),
             },
         )
-        status, body = self.call("/siu-tin-dei/board/meetings", "POST", {"mode": "standup"})
+        status, body = self.call("/v1/admin/siutindei/board/meetings", "POST", {"mode": "standup"})
         self.assertEqual(status, 409)
         self.assertIn("already running", body["message"])
 
@@ -1072,7 +1072,7 @@ class TestMeetings(BoardTestCase):
                 "updatedAt": "2020-01-01T00:00:00.000Z",
             },
         )
-        _, body = self.call("/siu-tin-dei/board/meetings/old")
+        _, body = self.call("/v1/admin/siutindei/board/meetings/old")
         self.assertEqual(body["meeting"]["status"], "failed")
         self.assertIn("stalled", body["meeting"]["errorMessage"])
 
@@ -1108,7 +1108,7 @@ class TestMeetings(BoardTestCase):
     def test_schedule_trigger_respects_settings(self) -> None:
         lambda_handler({"internal": "board_meeting", "slot": "morning"}, None)
         self.assertEqual(board_store.list_meetings(self.table), [])
-        self.call("/siu-tin-dei/board/settings", "PUT", {"schedule": {"morningEnabled": True}})
+        self.call("/v1/admin/siutindei/board/settings", "PUT", {"schedule": {"morningEnabled": True}})
         lambda_handler({"internal": "board_meeting", "slot": "morning"}, None)
         meetings = board_store.list_meetings(self.table)
         self.assertEqual(len(meetings), 1)
@@ -1118,7 +1118,7 @@ class TestMeetings(BoardTestCase):
         self.assertEqual(len(board_store.list_meetings(self.table)), 1)
 
     def test_schedule_trigger_ignores_other_board_key(self) -> None:
-        self.call("/siu-tin-dei/board/settings", "PUT", {"schedule": {"morningEnabled": True}})
+        self.call("/v1/admin/siutindei/board/settings", "PUT", {"schedule": {"morningEnabled": True}})
         lambda_handler(
             {"internal": "board_meeting", "slot": "morning", "boardKey": "lxSoftware"},
             None,
@@ -1309,13 +1309,13 @@ class TestAssets(BoardTestCase):
                 f"uploads/admin-sub/file-{i:02d}.pdf",
                 f"2024-01-01T00:00:00.{i:03d}Z",
             )
-        status, body = self.call("/assets")
+        status, body = self.call("/v1/admin/assets")
         self.assertEqual(status, 200)
         self.assertEqual(len(body["items"]), 50)
         self.assertEqual(body["items"][0]["fileName"], "file-50.pdf")
         self.assertEqual(body["items"][-1]["fileName"], "file-01.pdf")
         self.assertTrue(body["nextCursor"])
-        status, page2 = self.call("/assets", query=f"cursor={body['nextCursor']}")
+        status, page2 = self.call("/v1/admin/assets", query=f"cursor={body['nextCursor']}")
         self.assertEqual(status, 200)
         self.assertEqual([row["fileName"] for row in page2["items"]], ["file-00.pdf"])
         self.assertIsNone(page2["nextCursor"])
@@ -1325,7 +1325,7 @@ class TestAssets(BoardTestCase):
         key = "inbound/siuTinDei/" + ("b" * 32) + "/00_stmt.pdf"
         self._put_asset(key, "2026-04-01T00:00:00.000Z", house="")
         # house="" is stored; presentation treats a blank house as missing.
-        status, body = self.call("/assets")
+        status, body = self.call("/v1/admin/assets")
         self.assertEqual(status, 200)
         self.assertEqual(body["items"][0]["house"], "siuTinDei")
         self.assertEqual(body["items"][0]["fileName"], "00_stmt.pdf")
@@ -1333,14 +1333,14 @@ class TestAssets(BoardTestCase):
     def test_asset_meta_by_key_reads_unindexed_row(self) -> None:
         key = "uploads/admin-sub/old.pdf"
         self.table.put_item(Item={"pk": f"ASSET#{key}", "sk": "META", "fileName": "old.pdf", "size": 3})
-        status, body = self.call("/assets", query=f"key={key}")
+        status, body = self.call("/v1/admin/assets", query=f"key={key}")
         self.assertEqual(status, 200)
         self.assertEqual(body["item"]["fileName"], "old.pdf")
         self.assertNotIn("gsi1pk", body["item"])
-        missing, missing_body = self.call("/assets", query="key=uploads/admin-sub/missing.pdf")
+        missing, missing_body = self.call("/v1/admin/assets", query="key=uploads/admin-sub/missing.pdf")
         self.assertEqual(missing, 404)
         self.assertEqual(missing_body["message"], "Asset not found")
-        bad, bad_body = self.call("/assets", query="key=../secret")
+        bad, bad_body = self.call("/v1/admin/assets", query="key=../secret")
         self.assertEqual(bad, 400)
         self.assertEqual(bad_body["message"], "key is required")
 
@@ -1355,7 +1355,7 @@ class TestAssets(BoardTestCase):
         }
         with patch.object(runtime._s3, "head_object", return_value=head):
             status, body = self.call(
-                "/assets/confirm",
+                "/v1/admin/assets/confirm",
                 "POST",
                 {"key": key, "house": "hillmarton", "sha256": "aa", "size": 12},
             )
@@ -1365,7 +1365,7 @@ class TestAssets(BoardTestCase):
         self.assertEqual(stored["gsi1sk"], f"2026-03-01T00:00:00.000Z#{key}")
         self.assertNotIn("gsi1pk", body["item"])
         self.assertEqual(body["item"]["house"], "hillmarton")
-        listed, page = self.call("/assets")
+        listed, page = self.call("/v1/admin/assets")
         self.assertEqual(listed, 200)
         self.assertEqual(page["items"][0]["pk"], f"ASSET#{key}")
 
@@ -1407,7 +1407,7 @@ class TestAssets(BoardTestCase):
         again = backfill_asset_index(self.table, dry_run=False, house_by_key={})
         self.assertEqual(again["updated"], 0)
         self.assertEqual(again["pending"], 0)
-        status, body = self.call("/assets")
+        status, body = self.call("/v1/admin/assets")
         self.assertEqual(status, 200)
         names = {row["fileName"] for row in body["items"]}
         self.assertEqual(names, {"00_stmt.pdf", "boiler.pdf"})
@@ -1470,10 +1470,10 @@ class TestAssets(BoardTestCase):
                 house="morrison",
             )
         self._put_asset("uploads/admin-sub/needle.pdf", "2020-01-01T00:00:00.000Z", house="hillmarton")
-        status, body = self.call("/assets", query="q=needle")
+        status, body = self.call("/v1/admin/assets", query="q=needle")
         self.assertEqual(status, 200)
         self.assertEqual([row["fileName"] for row in body["items"]], ["needle.pdf"])
-        status, labelled = self.call("/assets", query="q=32%20Hill")
+        status, labelled = self.call("/v1/admin/assets", query="q=32%20Hill")
         self.assertEqual(status, 200)
         self.assertEqual([row["fileName"] for row in labelled["items"]], ["needle.pdf"])
 
@@ -1481,13 +1481,13 @@ class TestAssets(BoardTestCase):
         from http_common import _encode_cursor
 
         stale = _encode_cursor({"pk": "ASSET#uploads/admin-sub/old.pdf", "sk": "META"})
-        status, body = self.call("/assets", query=f"cursor={stale}")
+        status, body = self.call("/v1/admin/assets", query=f"cursor={stale}")
         self.assertEqual(status, 400)
         self.assertEqual(body["message"], "cursor expired")
 
     def test_records_omits_asset_index_attributes(self) -> None:
         self._put_asset("uploads/admin-sub/visible.pdf", "2024-02-02T00:00:00.000Z", house="hillmarton")
-        status, body = self.call("/records")
+        status, body = self.call("/v1/admin/records")
         self.assertEqual(status, 200)
         asset = next(row for row in body["items"] if row["pk"].endswith("visible.pdf"))
         self.assertNotIn("gsi1pk", asset)

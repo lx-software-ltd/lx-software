@@ -41,13 +41,21 @@ _KEY = "lxpk_test-key-value"
 _DIGEST = hash_api_key(_KEY)
 
 
-def _event(key: str | None = _KEY, source_ip: str = "203.0.113.10") -> dict:
-    headers = {} if key is None else {"x-api-key": key}
+def _event(
+    key: str | None = _KEY,
+    source_ip: str = "203.0.113.10",
+    authorization: str | None = None,
+) -> dict:
+    headers: dict[str, str] = {}
+    if authorization is not None:
+        headers["authorization"] = authorization
+    elif key is not None:
+        headers["authorization"] = f"Bearer {key}"
     return {
         "headers": headers,
         "requestContext": {
             "requestId": "req-1",
-            "http": {"sourceIp": source_ip, "method": "GET", "path": "/public/finance"},
+            "http": {"sourceIp": source_ip, "method": "GET", "path": "/v1/partner/finance"},
         },
     }
 
@@ -72,9 +80,7 @@ class TestAuthorizer(unittest.TestCase):
         self.mock_ddb = patcher_ddb.start()
         self.addCleanup(patcher_ddb.stop)
         self.mock_ddb.Table.return_value = self.table
-        patcher_env = patch.dict(
-            "os.environ", {"RECORDS_TABLE_NAME": "records-test"}
-        )
+        patcher_env = patch.dict("os.environ", {"RECORDS_TABLE_NAME": "records-test"})
         patcher_env.start()
         self.addCleanup(patcher_env.stop)
 
@@ -83,11 +89,17 @@ class TestAuthorizer(unittest.TestCase):
         self.assertFalse(lambda_handler(_event(key=None), None)["isAuthorized"])
         self.table.get_item.assert_not_called()
 
+    def test_bearer_scheme_is_required_in_any_letter_case(self) -> None:
+        self.table.get_item.return_value = {"Item": _valid_item()}
+        self.assertTrue(lambda_handler(_event(authorization=f"bearer {_KEY}"), None)["isAuthorized"])
+        self.assertTrue(lambda_handler(_event(authorization=f"BEARER {_KEY}"), None)["isAuthorized"])
+        self.assertFalse(lambda_handler(_event(authorization=_KEY), None)["isAuthorized"])
+        self.assertFalse(lambda_handler(_event(authorization=f"Token {_KEY}"), None)["isAuthorized"])
+        self.assertFalse(lambda_handler(_event(authorization="Bearer"), None)["isAuthorized"])
+
     def test_blank_or_oversized_key_denied(self) -> None:
         self.assertFalse(lambda_handler(_event(key="   "), None)["isAuthorized"])
-        self.assertFalse(
-            lambda_handler(_event(key="x" * 300), None)["isAuthorized"]
-        )
+        self.assertFalse(lambda_handler(_event(key="x" * 300), None)["isAuthorized"])
         self.table.get_item.assert_not_called()
 
     def test_unknown_key_denied(self) -> None:
@@ -102,30 +114,22 @@ class TestAuthorizer(unittest.TestCase):
         self.assertEqual(out["context"]["scope"], "read")
         self.assertEqual(out["context"]["scopes"], "finance")
         self.assertEqual(out["context"]["write"], "0")
-        self.table.get_item.assert_called_once_with(
-            Key={"pk": f"APIKEY#{_DIGEST}", "sk": "META"}
-        )
+        self.table.get_item.assert_called_once_with(Key={"pk": f"APIKEY#{_DIGEST}", "sk": "META"})
         self.table.update_item.assert_called()
 
     def test_explicit_scopes_allowed(self) -> None:
-        self.table.get_item.return_value = {
-            "Item": _valid_item(scopes=["finance", "siutindei-board-ops"])
-        }
+        self.table.get_item.return_value = {"Item": _valid_item(scopes=["finance", "siutindei-board-ops"])}
         out = lambda_handler(_event(), None)
         self.assertTrue(out["isAuthorized"])
         self.assertEqual(out["context"]["scopes"], "finance,siutindei-board-ops")
 
     def test_cidr_blocks_other_ip(self) -> None:
-        self.table.get_item.return_value = {
-            "Item": _valid_item(allowedCidrs=["10.0.0.0/8"])
-        }
+        self.table.get_item.return_value = {"Item": _valid_item(allowedCidrs=["10.0.0.0/8"])}
         self.assertFalse(lambda_handler(_event(source_ip="203.0.113.10"), None)["isAuthorized"])
         self.assertTrue(lambda_handler(_event(source_ip="10.1.2.3"), None)["isAuthorized"])
 
     def test_cidr_without_source_ip_denied(self) -> None:
-        self.table.get_item.return_value = {
-            "Item": _valid_item(allowedCidrs=["10.0.0.0/8"])
-        }
+        self.table.get_item.return_value = {"Item": _valid_item(allowedCidrs=["10.0.0.0/8"])}
         ev = _event()
         ev["requestContext"]["http"] = {}
         self.assertFalse(lambda_handler(ev, None)["isAuthorized"])
@@ -150,9 +154,7 @@ class TestAuthorizer(unittest.TestCase):
 
     def test_allow_write_flag_is_forwarded_not_method_gated(self) -> None:
         # Cache is key + IP, so POST must stay authorized; the handler checks write.
-        self.table.get_item.return_value = {
-            "Item": _valid_item(scopes=["siutindei-board-ops"], allowWrite=True)
-        }
+        self.table.get_item.return_value = {"Item": _valid_item(scopes=["siutindei-board-ops"], allowWrite=True)}
         get_out = lambda_handler(_event(), None)
         self.assertTrue(get_out["isAuthorized"])
         self.assertEqual(get_out["context"]["write"], "1")
@@ -174,9 +176,7 @@ class TestAuthorizer(unittest.TestCase):
     def test_ddb_error_denied(self) -> None:
         from botocore.exceptions import ClientError
 
-        self.table.get_item.side_effect = ClientError(
-            {"Error": {"Code": "InternalServerError"}}, "GetItem"
-        )
+        self.table.get_item.side_effect = ClientError({"Error": {"Code": "InternalServerError"}}, "GetItem")
         self.assertFalse(lambda_handler(_event(), None)["isAuthorized"])
 
 

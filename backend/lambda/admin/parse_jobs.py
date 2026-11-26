@@ -183,8 +183,8 @@ def _path_statement_book_parse_job(
 def _path_siu_tin_dei_parse_job(
     event: dict[str, Any], path: str
 ) -> str | None:
-    """Job id from ``/siu-tin-dei/parse-statement/jobs/{jobId}``."""
-    return _path_statement_book_parse_job(event, path, "siu-tin-dei")
+    """Job id from ``/siutindei/parse-statement/jobs/{job_id}``."""
+    return _path_statement_book_parse_job(event, path, "siutindei")
 
 
 def _notify_parse_job_quietly(doc: dict[str, Any]) -> None:

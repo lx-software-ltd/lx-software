@@ -1,6 +1,6 @@
 """Executive Board: chat with an individual board member.
 
-``POST /siu-tin-dei/board/chat/{personaId}`` stores the founder's message and
+``POST /siutindei/board/chat/{persona_id}`` stores the founder's message and
 a pending job, then self-invokes the Lambda (``internal: "board_chat"``).
 The worker builds the persona prompt, calls OpenRouter, appends the reply to
 the thread and marks the job succeeded. The SPA polls the job.

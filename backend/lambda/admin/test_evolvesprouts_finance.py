@@ -429,21 +429,21 @@ class TestEvolveSproutsRoutes(unittest.TestCase):
         return event
 
     def test_summary_and_sync_when_unconfigured(self) -> None:
-        summary = lambda_handler(self._event("/evolve-sprouts/summary"), None)
+        summary = lambda_handler(self._event("/v1/admin/evolvesprouts/summary"), None)
         self.assertEqual(summary["statusCode"], 200)
         body = json.loads(summary["body"])
         self.assertFalse(body["configured"])
         self.assertEqual(body["openInvoices"], 0)
         self.assertEqual(body["submittedExpenses"], 0)
 
-        synced = lambda_handler(self._event("/evolve-sprouts/sync", method="POST"), None)
+        synced = lambda_handler(self._event("/v1/admin/evolvesprouts/sync", method="POST"), None)
         self.assertEqual(synced["statusCode"], 200)
         self.assertEqual(json.loads(synced["body"])["skipped"], "not_configured")
 
     def test_put_and_import_are_rejected(self) -> None:
         denied = lambda_handler(
             self._event(
-                "/evolve-sprouts",
+                "/v1/admin/evolvesprouts",
                 method="PUT",
                 body={"defaultCurrency": "HKD", "float": {"amount": 0, "currency": "HKD"}, "lines": []},
             ),
@@ -455,7 +455,7 @@ class TestEvolveSproutsRoutes(unittest.TestCase):
 
         imported = lambda_handler(
             self._event(
-                "/evolve-sprouts/parse-statement",
+                "/v1/admin/evolvesprouts/parse-statement",
                 method="POST",
                 body={"key": "uploads/admin-sub/x/inv.pdf", "lineTypeOnly": "expenditure"},
             ),
@@ -464,7 +464,7 @@ class TestEvolveSproutsRoutes(unittest.TestCase):
         self.assertEqual(imported["statusCode"], 403)
 
     def test_get_book_still_returns_lines(self) -> None:
-        out = lambda_handler(self._event("/evolve-sprouts"), None)
+        out = lambda_handler(self._event("/v1/admin/evolvesprouts"), None)
         self.assertEqual(out["statusCode"], 200)
         self.assertEqual(json.loads(out["body"])["data"]["lines"], [])
 
@@ -479,7 +479,7 @@ class TestEvolveSproutsRoutes(unittest.TestCase):
             ),
             patch("board_async.try_invoke_event", return_value=True) as invoke,
         ):
-            out = lambda_handler(self._event("/evolve-sprouts/sync", method="POST"), None)
+            out = lambda_handler(self._event("/v1/admin/evolvesprouts/sync", method="POST"), None)
         self.assertEqual(out["statusCode"], 200)
         body = json.loads(out["body"])
         self.assertTrue(body["queued"])

@@ -156,9 +156,9 @@ class ToolsTestCase(BoardTestCase):
         return scripted
 
     def chat(self, persona: str, text: str = "hi") -> dict[str, Any]:
-        status, body = self.call(f"/siu-tin-dei/board/chat/{persona}", "POST", {"text": text})
+        status, body = self.call(f"/v1/admin/siutindei/board/chat/{persona}", "POST", {"text": text})
         self.assertEqual(status, 202)
-        status, job = self.call(f"/siu-tin-dei/board/chat/{persona}/jobs/{body['jobId']}")
+        status, job = self.call(f"/v1/admin/siutindei/board/chat/{persona}/jobs/{body['jobId']}")
         self.assertEqual(status, 200)
         return job
 
@@ -175,7 +175,7 @@ class ToolsTestCase(BoardTestCase):
             any(r[0] not in ("GET", "HEAD") for r in self.github.requests),
             "writes must not reach GitHub at propose level",
         )
-        status, body = self.call("/siu-tin-dei/board/approvals", query="status=pending")
+        status, body = self.call("/v1/admin/siutindei/board/approvals", query="status=pending")
         self.assertEqual(status, 200)
         self.assertEqual(len(body["approvals"]), 1)
         approval = body["approvals"][0]
@@ -183,7 +183,7 @@ class ToolsTestCase(BoardTestCase):
         self.assertEqual(approval["personaId"], "cto")
         self.assertEqual(approval["reason"], "Needed for receivables.")
         self.assertEqual(approval["arguments"]["labels"], ["billing"])
-        _, overview = self.call("/siu-tin-dei/board")
+        _, overview = self.call("/v1/admin/siutindei/board")
         self.assertEqual(overview["pendingApprovalCount"], 1)
         return approval
 
@@ -514,7 +514,7 @@ class TestChatToolLoop(ToolsTestCase):
         self.assertNotIn("Authorization", headers)
         # Usage accumulates over both rounds and the audit row is written.
         self.assertAlmostEqual(message["usage"]["cost"], 0.015)
-        status, log = self.call("/siu-tin-dei/board/tools/calls")
+        status, log = self.call("/v1/admin/siutindei/board/tools/calls")
         self.assertEqual(status, 200)
         self.assertEqual(log["calls"][0]["op"], "github_search_issues")
         self.assertEqual(log["calls"][0]["context"]["kind"], "chat")
@@ -537,7 +537,7 @@ class TestChatToolLoop(ToolsTestCase):
 
     def test_member_without_tools_gets_plain_completion(self) -> None:
         self.call(
-            "/siu-tin-dei/board/tools",
+            "/v1/admin/siutindei/board/tools",
             "PUT",
             {
                 "matrix": {
@@ -668,7 +668,7 @@ class TestChatToolLoop(ToolsTestCase):
         with patch.dict("os.environ", {"GITHUB_READ_TOKEN": "ghp_test"}):  # nosec B105
             board_github.reset_token_cache_for_tests()
             status, body = self.call(
-                f"/siu-tin-dei/board/approvals/{approval['approvalId']}/approve",
+                f"/v1/admin/siutindei/board/approvals/{approval['approvalId']}/approve",
                 "POST",
                 {"note": "Go ahead", "arguments": {"title": "Add FPS reference to invoices (edited)"}},
             )
@@ -680,17 +680,17 @@ class TestChatToolLoop(ToolsTestCase):
         self.assertEqual((method, path), ("POST", "/repos/lx-software-ltd/siutindei/issues"))
         self.assertEqual(headers["Authorization"], "Bearer ghp_test")
         self.assertEqual(sent["title"], "Add FPS reference to invoices (edited)")
-        _, log = self.call("/siu-tin-dei/board/tools/calls")
+        _, log = self.call("/v1/admin/siutindei/board/tools/calls")
         owner_call = next(c for c in log["calls"] if c["actor"] == "owner")
         self.assertEqual(owner_call["status"], "ok")
         self.assertEqual(owner_call["ownerSub"], "admin-sub")
         # A second decision on the same approval is refused.
-        status, _ = self.call(f"/siu-tin-dei/board/approvals/{approval['approvalId']}/reject", "POST", {})
+        status, _ = self.call(f"/v1/admin/siutindei/board/approvals/{approval['approvalId']}/reject", "POST", {})
         self.assertEqual(status, 409)
 
     def test_approve_without_write_token_fails_cleanly(self) -> None:
         approval = self.propose_issue()
-        status, body = self.call(f"/siu-tin-dei/board/approvals/{approval['approvalId']}/approve", "POST", {})
+        status, body = self.call(f"/v1/admin/siutindei/board/approvals/{approval['approvalId']}/approve", "POST", {})
         self.assertEqual(status, 200)
         self.assertEqual(body["approval"]["status"], "failed")
         self.assertIn("token", body["approval"]["errorMessage"].lower())
@@ -698,7 +698,7 @@ class TestChatToolLoop(ToolsTestCase):
     def test_reject_feeds_back_into_context_pack(self) -> None:
         approval = self.propose_issue()
         status, body = self.call(
-            f"/siu-tin-dei/board/approvals/{approval['approvalId']}/reject", "POST", {"note": "Not before launch."}
+            f"/v1/admin/siutindei/board/approvals/{approval['approvalId']}/reject", "POST", {"note": "Not before launch."}
         )
         self.assertEqual(status, 200)
         self.assertEqual(body["approval"]["status"], "rejected")
@@ -707,7 +707,7 @@ class TestChatToolLoop(ToolsTestCase):
         pack = scripted.requests[0]["messages"][1]["content"]
         self.assertIn("Proposals the founder rejected", pack)
         self.assertIn("Not before launch.", pack)
-        status, _ = self.call("/siu-tin-dei/board/approvals/nope/approve", "POST", {})
+        status, _ = self.call("/v1/admin/siutindei/board/approvals/nope/approve", "POST", {})
         self.assertEqual(status, 404)
 
     def test_pending_proposals_are_shown_to_the_board(self) -> None:
@@ -719,7 +719,7 @@ class TestChatToolLoop(ToolsTestCase):
         self.assertIn("Add FPS reference to invoices", pack)
 
     def test_write_at_act_level_executes_immediately(self) -> None:
-        status, body = self.call("/siu-tin-dei/board/tools", "PUT", {"globalMode": "act"})
+        status, body = self.call("/v1/admin/siutindei/board/tools", "PUT", {"globalMode": "act"})
         self.assertEqual(status, 200)
         self.assertEqual(body["effective"]["github"]["cto"], "act")
         self.assertEqual(body["effective"]["github"]["cpo"], "propose")
@@ -730,11 +730,11 @@ class TestChatToolLoop(ToolsTestCase):
         call = job["message"]["toolCalls"][0]
         self.assertEqual(call["status"], "ok")
         self.assertEqual(self.github.requests[-1][:2], ("POST", "/repos/lx-software-ltd/siutindei/issues/42/comments"))
-        _, approvals = self.call("/siu-tin-dei/board/approvals")
+        _, approvals = self.call("/v1/admin/siutindei/board/approvals")
         self.assertEqual(approvals["approvals"], [])
 
     def test_read_only_mode_hides_writes(self) -> None:
-        self.call("/siu-tin-dei/board/tools", "PUT", {"globalMode": "readOnly"})
+        self.call("/v1/admin/siutindei/board/tools", "PUT", {"globalMode": "readOnly"})
         scripted = self.use_script([], "ok")
         self.chat("cto")
         names = {t["function"]["name"] for t in scripted.requests[0]["tools"]}
@@ -743,24 +743,24 @@ class TestChatToolLoop(ToolsTestCase):
         self.assertNotIn("RECORD A PROPOSAL", scripted.requests[0]["messages"][2]["content"])
 
     def test_disabled_tools_switch(self) -> None:
-        self.call("/siu-tin-dei/board/tools", "PUT", {"enabled": False})
+        self.call("/v1/admin/siutindei/board/tools", "PUT", {"enabled": False})
         scripted = self.use_script([[("github_search_issues", {"query": "x"})]], "ok")
         self.chat("cto")
         self.assertNotIn("tools", scripted.requests[0])
-        _, overview = self.call("/siu-tin-dei/board")
+        _, overview = self.call("/v1/admin/siutindei/board")
         self.assertFalse(overview["toolsEnabled"])
 
 
 class TestBoardTools(ToolsTestCase):
     def test_add_action_owned_by_member_and_duplicate_rejected(self) -> None:
-        self.call("/siu-tin-dei/board/tools", "PUT", {"globalMode": "act"})
+        self.call("/v1/admin/siutindei/board/tools", "PUT", {"globalMode": "act"})
         self.use_script(
             [[("board_add_action", {"title": "Open the HKD business account", "detail": "Compare Airwallex and Statrys.", "priority": "now", "effort": "M", "dueInDays": 14, "metric": "Account live", "reason": "Receivables need it."})]],
             "Added.",
         )
         job = self.chat("cfo")
         self.assertEqual(job["message"]["toolCalls"][0]["status"], "ok")
-        _, actions = self.call("/siu-tin-dei/board/actions")
+        _, actions = self.call("/v1/admin/siutindei/board/actions")
         self.assertEqual(len(actions["actions"]), 1)
         action = actions["actions"][0]
         self.assertEqual(action["persona"], "cfo")
@@ -769,26 +769,26 @@ class TestBoardTools(ToolsTestCase):
         self.assertTrue(action["dueAt"])
         scripted = self.use_script([[("board_add_action", {"title": "Open the HKD business account!", "detail": "d", "priority": "next", "reason": "r"})]], "ok")
         self.chat("cfo")
-        _, actions = self.call("/siu-tin-dei/board/actions")
+        _, actions = self.call("/v1/admin/siutindei/board/actions")
         self.assertEqual(len(actions["actions"]), 1)
         self.assertIn("duplicateOf", scripted.requests[1]["messages"][-1]["content"])
 
     def test_update_action_only_own(self) -> None:
-        self.call("/siu-tin-dei/board/tools", "PUT", {"globalMode": "act"})
+        self.call("/v1/admin/siutindei/board/tools", "PUT", {"globalMode": "act"})
         self.use_script([[("board_add_action", {"title": "Draft pricing tiers", "detail": "d", "priority": "next", "reason": "r"})]], "ok")
         self.chat("cfo")
-        action_id = self.call("/siu-tin-dei/board/actions")[1]["actions"][0]["actionId"]
+        action_id = self.call("/v1/admin/siutindei/board/actions")[1]["actions"][0]["actionId"]
         scripted = self.use_script([[("board_update_action", {"actionId": action_id, "status": "done", "reason": "r"})]], "ok")
         self.chat("cto")
         self.assertIn("only update actions you own", scripted.requests[1]["messages"][-1]["content"])
         self.use_script([[("board_update_action", {"actionId": action_id, "status": "done", "note": "Tiers drafted.", "reason": "r"})]], "ok")
         self.chat("cfo")
-        action = self.call("/siu-tin-dei/board/actions")[1]["actions"][0]
+        action = self.call("/v1/admin/siutindei/board/actions")[1]["actions"][0]
         self.assertEqual(action["status"], "done")
         self.assertIn("[CFO] Tiers drafted.", action["note"])
 
     def test_board_reads(self) -> None:
-        self.call("/siu-tin-dei/board/meetings", "POST", {"mode": "standup"})
+        self.call("/v1/admin/siutindei/board/meetings", "POST", {"mode": "standup"})
         scripted = self.use_script(
             [[("board_list_actions", {"status": "open"}), ("board_get_minutes", {}), ("board_list_meetings", {"limit": 5}), ("board_search_decisions", {"query": "beta"})]],
             "ok",
@@ -835,9 +835,9 @@ class TestMeetingTools(ToolsTestCase):
     def test_position_tool_calls_become_transcript_entries(self) -> None:
         scripted = MeetingScriptedOpenRouter()
         self.router.openrouter = scripted
-        status, body = self.call("/siu-tin-dei/board/meetings", "POST", {"mode": "standup"})
+        status, body = self.call("/v1/admin/siutindei/board/meetings", "POST", {"mode": "standup"})
         self.assertEqual(status, 202)
-        _, body = self.call(f"/siu-tin-dei/board/meetings/{body['meetingId']}")
+        _, body = self.call(f"/v1/admin/siutindei/board/meetings/{body['meetingId']}")
         self.assertEqual(body["meeting"]["status"], "succeeded")
         turns = body["turns"]
         tool_turns = [t for t in turns if t.get("kind") == "tool"]
@@ -858,7 +858,7 @@ class TestMeetingTools(ToolsTestCase):
         # The synthesis prompt does not include the tool-turn text.
         synthesis = next(r for r in scripted.requests if "Write the minutes" in r["messages"][-1]["content"])
         self.assertNotIn("Checked CI runs", synthesis["messages"][-1]["content"])
-        _, log = self.call("/siu-tin-dei/board/tools/calls")
+        _, log = self.call("/v1/admin/siutindei/board/tools/calls")
         self.assertEqual(log["calls"][0]["context"]["kind"], "meeting")
         self.assertEqual(log["calls"][0]["context"]["phase"], "positions")
 
@@ -951,7 +951,7 @@ class TestGitHubOps(ToolsTestCase):
     def test_snapshot_is_enabled_without_token(self) -> None:
         self.assertTrue(board_github.snapshot_enabled())
         self.assertFalse(board_github.write_enabled())
-        _, overview = self.call("/siu-tin-dei/board")
+        _, overview = self.call("/v1/admin/siutindei/board")
         self.assertTrue(overview["repoSnapshotEnabled"])
         self.assertFalse(overview["repoWriteEnabled"])
 

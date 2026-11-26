@@ -140,13 +140,13 @@ class QualifyTests(BoardTestCase):
         dest = board_prospects.merge(self.table, a["prospectId"], b["prospectId"])
         self.assertEqual(dest["prospectId"], b["prospectId"])
         self.assertEqual(_nn(board_store.get_prospect(self.table, a["prospectId"]))["stage"], "suppressed")
-        status, body = self.call("/siu-tin-dei/board/prospects")
+        status, body = self.call("/v1/admin/siutindei/board/prospects")
         self.assertEqual(status, 200)
         self.assertGreaterEqual(len(body["prospects"]), 2)
-        status, body = self.call(f"/siu-tin-dei/board/prospects/{b['prospectId']}", "PUT", {"stage": "parked", "note": "owner"})
+        status, body = self.call(f"/v1/admin/siutindei/board/prospects/{b['prospectId']}", "PUT", {"stage": "parked", "note": "owner"})
         self.assertEqual(status, 200)
         self.assertEqual(body["prospect"]["stage"], "parked")
-        status, _ = self.call(f"/siu-tin-dei/board/prospects/{a['prospectId']}/merge", "POST", {"into": b["prospectId"]})
+        status, _ = self.call(f"/v1/admin/siutindei/board/prospects/{a['prospectId']}/merge", "POST", {"into": b["prospectId"]})
         self.assertEqual(status, 200)
 
     def test_personal_email_not_promoted_to_contact(self) -> None:

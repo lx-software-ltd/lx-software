@@ -130,7 +130,7 @@ def parse_unsub_token(token: str) -> str | None:
 
 
 def unsubscribe_url(prospect_id: str) -> str:
-    return f"{public_api_base()}/public/outreach/unsubscribe/{make_unsub_token(prospect_id)}"
+    return f"{public_api_base()}/v1/public/outreach/unsubscribe/{make_unsub_token(prospect_id)}"
 
 
 def suppress_digest(value: str) -> str:

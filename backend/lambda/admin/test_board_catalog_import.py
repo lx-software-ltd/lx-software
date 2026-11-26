@@ -1913,8 +1913,8 @@ class RouteTests(BoardTestCase):
         board_staff._blob_put(key, __import__("json").dumps(SHEET).encode())
         task["deliverableKey"] = key
         board_store.put_task(self.table, task)
-        event = self.event("/siu-tin-dei/board/catalog/preview", "POST", {"taskId": task["taskId"]})
-        resp = board_routes.handle_board_route(event, "POST", "/siu-tin-dei/board/catalog/preview", "owner")
+        event = self.event("/v1/admin/siutindei/board/catalog/preview", "POST", {"taskId": task["taskId"]})
+        resp = board_routes.handle_board_route(event, "POST", "/siutindei/board/catalog/preview", "owner")
         assert resp is not None
         self.assertEqual(resp["statusCode"], 200)
         body = __import__("json").loads(resp["body"])
@@ -1930,8 +1930,8 @@ class RouteTests(BoardTestCase):
         board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
         with patch("board_async.invoke_async", lambda payload, fallback=None: None):
             task = board_catalog.create_next(self.table, settings)
-        event = self.event("/siu-tin-dei/board/catalog/import", "POST", {"taskId": task["taskId"]})
-        resp = board_routes.handle_board_route(event, "POST", "/siu-tin-dei/board/catalog/import", "owner")
+        event = self.event("/v1/admin/siutindei/board/catalog/import", "POST", {"taskId": task["taskId"]})
+        resp = board_routes.handle_board_route(event, "POST", "/siutindei/board/catalog/import", "owner")
         assert resp is not None
         self.assertEqual(resp["statusCode"], 409)
         self.assertIn("switched off", resp["body"])
@@ -1946,8 +1946,8 @@ class RouteTests(BoardTestCase):
         task["status"] = "awaiting_import"
         task["importPhase"] = "pending"
         board_store.put_task(self.table, task)
-        event = self.event("/siu-tin-dei/board/catalog/skip", "POST", {"taskId": task["taskId"]})
-        resp = board_routes.handle_board_route(event, "POST", "/siu-tin-dei/board/catalog/skip", "owner")
+        event = self.event("/v1/admin/siutindei/board/catalog/skip", "POST", {"taskId": task["taskId"]})
+        resp = board_routes.handle_board_route(event, "POST", "/siutindei/board/catalog/skip", "owner")
         assert resp is not None
         self.assertEqual(resp["statusCode"], 200)
         saved = board_store.get_task(self.table, task["taskId"])

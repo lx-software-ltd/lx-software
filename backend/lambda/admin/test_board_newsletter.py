@@ -77,7 +77,7 @@ class NewsletterTests(BoardTestCase):
     def test_double_opt_in_required_before_send(self) -> None:
         event = {
             "requestContext": {
-                "http": {"method": "POST", "path": "/public/newsletter/subscribe", "sourceIp": "1.1.1.1"},
+                "http": {"method": "POST", "path": "/v1/public/newsletter/subscribe", "sourceIp": "1.1.1.1"},
                 "requestId": "n1",
             },
             "body": json.dumps({"list": "parents", "email": "parent@example.com", "lang": "en"}),
@@ -97,7 +97,7 @@ class NewsletterTests(BoardTestCase):
         confirmed = lambda_handler(
             {
                 "requestContext": {
-                    "http": {"method": "GET", "path": f"/public/newsletter/confirm/{confirm}", "sourceIp": "1.1.1.1"},
+                    "http": {"method": "GET", "path": f"/v1/public/newsletter/confirm/{confirm}", "sourceIp": "1.1.1.1"},
                     "requestId": "n2",
                 },
                 "rawQueryString": "",
@@ -132,7 +132,7 @@ class NewsletterTests(BoardTestCase):
         out = lambda_handler(
             {
                 "requestContext": {
-                    "http": {"method": "GET", "path": f"/public/newsletter/unsubscribe/{token}", "sourceIp": "2.2.2.2"},
+                    "http": {"method": "GET", "path": f"/v1/public/newsletter/unsubscribe/{token}", "sourceIp": "2.2.2.2"},
                     "requestId": "n3",
                 },
                 "rawQueryString": "",
@@ -290,7 +290,7 @@ class NewsletterTests(BoardTestCase):
         lambda_handler(
             {
                 "requestContext": {
-                    "http": {"method": "POST", "path": "/public/newsletter/subscribe", "sourceIp": "9.9.9.9"},
+                    "http": {"method": "POST", "path": "/v1/public/newsletter/subscribe", "sourceIp": "9.9.9.9"},
                     "requestId": "nl-x",
                 },
                 "body": json.dumps({"list": "providers", "email": "both@example.com"}),
@@ -309,7 +309,7 @@ class NewsletterTests(BoardTestCase):
             lambda_handler(
                 {
                     "requestContext": {
-                        "http": {"method": "POST", "path": "/public/newsletter/subscribe", "sourceIp": f"3.3.3.{i}"},
+                        "http": {"method": "POST", "path": "/v1/public/newsletter/subscribe", "sourceIp": f"3.3.3.{i}"},
                         "requestId": f"nl-c{i}",
                     },
                     "body": json.dumps({"list": "parents", "email": f"c{i}@example.com"}),
@@ -331,7 +331,7 @@ class NewsletterTests(BoardTestCase):
             lambda_handler(
                 {
                     "requestContext": {
-                        "http": {"method": "POST", "path": "/public/newsletter/subscribe", "sourceIp": f"4.4.4.{i}"},
+                        "http": {"method": "POST", "path": "/v1/public/newsletter/subscribe", "sourceIp": f"4.4.4.{i}"},
                         "requestId": f"nl-r{i}",
                     },
                     "body": json.dumps({"list": "parents", "email": email}),
@@ -405,7 +405,7 @@ class NewsletterTests(BoardTestCase):
         out = lambda_handler(
             {
                 "requestContext": {
-                    "http": {"method": "POST", "path": "/public/newsletter/subscribe", "sourceIp": "5.5.5.5"},
+                    "http": {"method": "POST", "path": "/v1/public/newsletter/subscribe", "sourceIp": "5.5.5.5"},
                     "requestId": "nl-again",
                 },
                 "body": json.dumps({"list": "parents", "email": "again@example.com"}),

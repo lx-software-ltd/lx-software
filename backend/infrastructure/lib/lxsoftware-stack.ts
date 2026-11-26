@@ -36,6 +36,7 @@ export class LxsoftwareStack extends cdk.Stack {
   public readonly assetsBucket: s3.Bucket;
   public readonly assetsAccessLogsBucket: s3.Bucket;
   public readonly httpApi: apigwv2.HttpApi;
+  public readonly cspApiConnectOrigin: string;
   /**
    * Shared customer-managed KMS key used to encrypt:
    * - Lambda environment variables (Checkov CKV_AWS_173)
@@ -105,7 +106,7 @@ export class LxsoftwareStack extends cdk.Stack {
       openRouterSecretPolicy: api.openRouterSecretPolicy,
     });
 
-    this.httpApi = defineAdminHttpApi(this, {
+    const http = defineAdminHttpApi(this, {
       adminFn: api.adminFn,
       jwtAuthorizer: api.jwtAuthorizer,
       publicApiKeyAuthorizer: api.publicApiKeyAuthorizer,
@@ -116,6 +117,8 @@ export class LxsoftwareStack extends cdk.Stack {
       apiCustomDomainCertificateArn: params.apiCustomDomainCertificateArn,
       sharedEncryptionKey: this.sharedEncryptionKey,
     });
+    this.httpApi = http.httpApi;
+    this.cspApiConnectOrigin = http.cspApiConnectOrigin;
 
     defineAdminOutputs(this, {
       auth: this.auth,
@@ -123,6 +126,7 @@ export class LxsoftwareStack extends cdk.Stack {
       auditLogTable: this.auditLogTable,
       assetsBucket: this.assetsBucket,
       httpApi: this.httpApi,
+      adminApiBaseUrl: http.adminApiBaseUrl,
       inboundMailDomain: params.inboundMailDomain,
       evolvesproutsInvoiceRecipient: params.evolvesproutsInvoiceRecipient,
       enableBankingSigningKey: api.enableBankingSigningKey,

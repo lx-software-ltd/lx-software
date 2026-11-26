@@ -171,7 +171,7 @@ class OutreachTests(BoardTestCase):
         self.assertEqual(board_outreach.parse_unsub_token(token), row["prospectId"])
         self.assertIsNone(board_outreach.parse_unsub_token(token[:-2] + "xx"))
         event: dict[str, Any] = {
-            "requestContext": {"http": {"method": "GET", "path": f"/public/outreach/unsubscribe/{token}", "sourceIp": "1.1.1.1"}, "requestId": "u1"},
+            "requestContext": {"http": {"method": "GET", "path": f"/v1/public/outreach/unsubscribe/{token}", "sourceIp": "1.1.1.1"}, "requestId": "u1"},
             "rawQueryString": "",
         }
         out = lambda_handler(event, None)
@@ -380,7 +380,7 @@ class OutreachTests(BoardTestCase):
         self.assertEqual(health["mailFromDomain"], "mail.partners.siutindei.com")
         stats = board_outreach.stats(self.table, self.settings, days=7)
         self.assertEqual(stats["identity"]["dkimStatus"], "FAILED")
-        status, body = self.call("/siu-tin-dei/board/outreach/identity")
+        status, body = self.call("/v1/admin/siutindei/board/outreach/identity")
         self.assertEqual(status, 200)
         self.assertEqual(body["dkimStatus"], "FAILED")
 
@@ -414,7 +414,7 @@ class OutreachTests(BoardTestCase):
         self.assertEqual(preview["cc"], [])
         self.assertEqual(preview["subject"], "Hello Sha Tin Playhouse")
         self.assertIn("Could you send your schedule?", preview["text"])
-        self.assertIn("https://api.example/public/outreach/unsubscribe/", preview["text"])
+        self.assertIn("https://api.example/v1/public/outreach/unsubscribe/", preview["text"])
         self.assertTrue(preview["sendEnabled"])
         self.assertEqual(self.ses.calls, [])
 

@@ -273,11 +273,11 @@ class MediaTests(InboxCase):
         stored = self.messages(thread["threadId"])[0]["attachments"][0]
         self.assertTrue(stored["key"].startswith("board/meta-media/"))
         self.assertNotIn("url", stored)
-        status, body = self.owner_get(f"/siu-tin-dei/board/messages/{thread['threadId']}")
+        status, body = self.owner_get(f"/siutindei/board/messages/{thread['threadId']}")
         attachment = body["messages"][0]["attachments"][0]
         self.assertTrue(attachment["stored"])
         self.assertNotIn("key", attachment)
-        status, body = self.owner_get(f"/siu-tin-dei/board/messages/{thread['threadId']}/media/{attachment['ref']}")
+        status, body = self.owner_get(f"/siutindei/board/messages/{thread['threadId']}/media/{attachment['ref']}")
         self.assertEqual(status, 200)
         self.assertTrue(body["url"].startswith("https://signed.example/board/meta-media/"))
 
@@ -303,11 +303,11 @@ class MediaTests(InboxCase):
             self.ingest(wa_history(image), follow=True)
             fetch.assert_not_called()
             thread = self.only_thread()
-            _, body = self.owner_get(f"/siu-tin-dei/board/messages/{thread['threadId']}")
+            _, body = self.owner_get(f"/siutindei/board/messages/{thread['threadId']}")
             attachment = body["messages"][0]["attachments"][0]
             self.assertFalse(attachment["stored"])
             self.graph.queue.append({"url": "https://lookaside.example.com/media-old", "mime_type": "image/jpeg"})
-            status, body = self.owner_get(f"/siu-tin-dei/board/messages/{thread['threadId']}/media/{attachment['ref']}")
+            status, body = self.owner_get(f"/siutindei/board/messages/{thread['threadId']}/media/{attachment['ref']}")
         self.assertEqual(status, 200)
         fetch.assert_called_once()
 
@@ -315,13 +315,13 @@ class MediaTests(InboxCase):
         image = {"from": NUMBER, "id": "gone", "timestamp": "1690000000", "type": "image", "image": {"id": "media-gone"}}
         self.ingest(wa_history(image))
         thread = self.only_thread()
-        _, body = self.owner_get(f"/siu-tin-dei/board/messages/{thread['threadId']}")
+        _, body = self.owner_get(f"/siutindei/board/messages/{thread['threadId']}")
         ref = body["messages"][0]["attachments"][0]["ref"]
         with patch.object(board_meta_attachments, "_fetch", return_value=None):
-            status, body = self.owner_get(f"/siu-tin-dei/board/messages/{thread['threadId']}/media/{ref}")
+            status, body = self.owner_get(f"/siutindei/board/messages/{thread['threadId']}/media/{ref}")
         self.assertEqual(status, 404)
         self.assertIn("no longer available", body["message"])
-        status, _ = self.owner_get(f"/siu-tin-dei/board/messages/{thread['threadId']}/media/not-a-ref")
+        status, _ = self.owner_get(f"/siutindei/board/messages/{thread['threadId']}/media/not-a-ref")
         self.assertEqual(status, 404)
 
     def test_a_file_a_browser_could_run_is_downloaded_not_shown(self) -> None:
@@ -361,15 +361,15 @@ class MaskingTests(InboxCase):
             out = board_public_api.redact_board_response(path, {"statusCode": 200, "body": json.dumps(body)}, ["siutindei-board-full"])
             return json.loads(out["body"])
 
-        listed = as_key("/public/siu-tin-dei/board/messages", board_meta_inbox.list_for_owner(self.table))
+        listed = as_key("/v1/partner/siutindei/board/messages", board_meta_inbox.list_for_owner(self.table))
         self.assertEqual(listed["threads"][0]["displayName"], "contact#hidden")
         self.assertEqual(listed["threads"][0]["phone"], "phone#hidden")
-        detail = as_key(f"/public/siu-tin-dei/board/messages/{self.thread_id}", _nn(board_meta_inbox.thread_for_owner(self.table, self.thread_id)))
+        detail = as_key(f"/v1/partner/siutindei/board/messages/{self.thread_id}", _nn(board_meta_inbox.thread_for_owner(self.table, self.thread_id)))
         self.assertEqual(detail["messages"][0]["senderName"], "contact#hidden")
         self.assertNotIn("Ada", json.dumps([listed, detail]))
         self.assertNotIn("9123", json.dumps([listed, detail]))
         board_store.put_cache(self.table, "meta:whatsapp", {"phoneNumberId": "222", "wabaId": "111", "connectedAt": "2026-11-18T00:00:00.000Z", "displayPhoneNumber": "+852 5000 1111"})
-        status = as_key("/public/siu-tin-dei/board/messages/status", board_meta_inbox.status(self.table))
+        status = as_key("/v1/partner/siutindei/board/messages/status", board_meta_inbox.status(self.table))
         self.assertTrue(status["whatsapp"]["connected"])
         for hidden in ("phoneNumberId", "wabaId", "displayPhoneNumber", "verifiedName"):
             self.assertNotIn(hidden, status["whatsapp"])
@@ -536,7 +536,7 @@ class WhatsAppConnectTests(InboxCase):
 
 class RouteTests(InboxCase):
     def test_subscribing_the_page_names_the_fields(self) -> None:
-        path = "/siu-tin-dei/board/messages/connect/page"
+        path = "/siutindei/board/messages/connect/page"
         self.graph.queue.append({"success": True})
         out = board_routes.handle_board_route(BoardTestCase.event(path, "POST", {}), "POST", path, "owner")
         assert out is not None

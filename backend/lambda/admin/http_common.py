@@ -128,6 +128,49 @@ def _route(event: dict[str, Any]) -> tuple[str, str]:
     return http.get("method", ""), http.get("path", "")
 
 
+# Links already sent keep these paths. Subscribe moved and has no old copy.
+_LEGACY_EXACT = {
+    "/webhooks/meta": "/v1/webhooks/meta",
+    "/webhooks/meta/siutindei": "/v1/webhooks/meta/siutindei",
+}
+_LEGACY_PREFIX = (
+    ("/public/outreach/unsubscribe/", "/v1/public/outreach/unsubscribe/"),
+    ("/public/newsletter/confirm/", "/v1/public/newsletter/confirm/"),
+    ("/public/newsletter/unsubscribe/", "/v1/public/newsletter/unsubscribe/"),
+)
+
+
+def legacy_http_path(path: str) -> str:
+    """Map a route that stays forever onto the path the table matches."""
+    mapped = _LEGACY_EXACT.get(path)
+    if mapped:
+        return mapped
+    for old, new in _LEGACY_PREFIX:
+        if path.startswith(old):
+            return new + path[len(old) :]
+    return path
+
+
+def http_audience(path: str) -> tuple[str, str]:
+    """Return ``(audience, path the route table matches)``.
+
+    Admin paths are the inner path (``/v1/admin`` removed). Partner paths stay
+    whole, because ``/finance`` is both an admin route and a partner route.
+    """
+    path = legacy_http_path(path)
+    if path == "/health":
+        return "none", path
+    if path == "/v1/admin" or path.startswith("/v1/admin/"):
+        return "admin", path[len("/v1/admin") :] or "/"
+    if path == "/v1/partner" or path.startswith("/v1/partner/"):
+        return "partner", path
+    if path == "/v1/public" or path.startswith("/v1/public/"):
+        return "public", path
+    if path == "/v1/webhooks" or path.startswith("/v1/webhooks/"):
+        return "webhooks", path[len("/v1") :]
+    return "unknown", path
+
+
 def _request_id(event: dict[str, Any]) -> str:
     return (
         event.get("requestContext", {}).get("requestId", "")

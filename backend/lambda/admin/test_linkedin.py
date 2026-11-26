@@ -1104,7 +1104,7 @@ class LinkedInHttpTests(unittest.TestCase):
         self.addCleanup(self.env.stop)
 
     def test_plan_view_returns_only_the_dashboard_counts(self) -> None:
-        event = _event("/lx-software/linkedin")
+        event = _event("/v1/admin/lx-software/linkedin")
         event["rawQueryString"] = "view=plan"
         response = lambda_handler(event, None)
         self.assertEqual(response["statusCode"], 200)
@@ -1117,22 +1117,22 @@ class LinkedInHttpTests(unittest.TestCase):
 
     def test_writes_are_refused_when_the_switch_is_off(self) -> None:
         with patch.dict("os.environ", {"LINKEDIN_ENABLED": "false"}):
-            overview = lambda_handler(_event("/lx-software/linkedin"), None)
+            overview = lambda_handler(_event("/v1/admin/lx-software/linkedin"), None)
             self.assertEqual(overview["statusCode"], 200)
             self.assertFalse(_body(overview)["enabled"])
             created = lambda_handler(
-                _event("/lx-software/linkedin/posts", "POST", {"body": "A short hook."}),
+                _event("/v1/admin/lx-software/linkedin/posts", "POST", {"body": "A short hook."}),
                 None,
             )
             self.assertEqual(created["statusCode"], 403)
 
     def test_settings_put_stores_model_and_overview_exposes_default(self) -> None:
         with patch.dict("os.environ", {"OPENROUTER_MODEL": "mistralai/mistral-large-4-0"}):
-            overview = lambda_handler(_event("/lx-software/linkedin"), None)
+            overview = lambda_handler(_event("/v1/admin/lx-software/linkedin"), None)
             self.assertEqual(_body(overview)["defaultModel"], "mistralai/mistral-large-4-0")
             saved = lambda_handler(
                 _event(
-                    "/lx-software/linkedin/settings",
+                    "/v1/admin/lx-software/linkedin/settings",
                     "PUT",
                     {**linkedin_store.default_settings(), "model": "openai/gpt-4.1-mini"},
                 ),
@@ -1144,7 +1144,7 @@ class LinkedInHttpTests(unittest.TestCase):
     def test_create_approve_and_mark_posted(self) -> None:
         created = lambda_handler(
             _event(
-                "/lx-software/linkedin/posts",
+                "/v1/admin/lx-software/linkedin/posts",
                 "POST",
                 {"body": "A short hook.\n\nOne lesson.", "pillar": "platforms"},
             ),
@@ -1153,14 +1153,14 @@ class LinkedInHttpTests(unittest.TestCase):
         self.assertEqual(created["statusCode"], 201)
         post_id = _body(created)["item"]["postId"]
         approved = lambda_handler(
-            _event(f"/lx-software/linkedin/posts/{post_id}/approve", "POST", {}),
+            _event(f"/v1/admin/lx-software/linkedin/posts/{post_id}/approve", "POST", {}),
             None,
         )
         self.assertEqual(approved["statusCode"], 200)
         self.assertEqual(_body(approved)["item"]["status"], "approved")
         posted = lambda_handler(
             _event(
-                f"/lx-software/linkedin/posts/{post_id}/mark-posted",
+                f"/v1/admin/lx-software/linkedin/posts/{post_id}/mark-posted",
                 "POST",
                 {"url": "https://www.linkedin.com/feed/update/urn:li:share:9"},
             ),
@@ -1251,12 +1251,12 @@ class LinkedInHttpTests(unittest.TestCase):
 
     def test_idea_create_and_delete_are_audited(self) -> None:
         created = lambda_handler(
-            _event("/lx-software/linkedin/ideas", "POST", {"text": "A lesson about reviews.", "pillar": "leadership"}),
+            _event("/v1/admin/lx-software/linkedin/ideas", "POST", {"text": "A lesson about reviews.", "pillar": "leadership"}),
             None,
         )
         self.assertEqual(created["statusCode"], 201)
         idea_id = _body(created)["item"]["ideaId"]
-        deleted = lambda_handler(_event(f"/lx-software/linkedin/ideas/{idea_id}", "DELETE"), None)
+        deleted = lambda_handler(_event(f"/v1/admin/lx-software/linkedin/ideas/{idea_id}", "DELETE"), None)
         self.assertEqual(deleted["statusCode"], 200)
         actions = [str(item["sk"]) for item in self.table.items.values() if str(item.get("pk")) == "USER#admin-sub"]
         self.assertTrue(any(action.endswith("#LINKEDIN_IDEA_CREATE") for action in actions))
@@ -1576,9 +1576,9 @@ class LinkedInHttpTests(unittest.TestCase):
 
     def test_connect_keeps_company_pages_off_unless_asked(self) -> None:
         with patch.object(linkedin_api, "load_credentials", return_value=("client", "secret")):
-            plain = lambda_handler(_event("/lx-software/linkedin/connect", "POST", {}), None)
+            plain = lambda_handler(_event("/v1/admin/lx-software/linkedin/connect", "POST", {}), None)
             pages = lambda_handler(
-                _event("/lx-software/linkedin/connect", "POST", {"includeOrganizations": True}),
+                _event("/v1/admin/lx-software/linkedin/connect", "POST", {"includeOrganizations": True}),
                 None,
             )
         self.assertEqual(plain["statusCode"], 200)
@@ -1595,7 +1595,7 @@ class LinkedInHttpTests(unittest.TestCase):
     def test_connect_requests_personal_post_analytics_when_asked(self) -> None:
         with patch.object(linkedin_api, "load_credentials", return_value=("client", "secret")):
             response = lambda_handler(
-                _event("/lx-software/linkedin/connect", "POST", {"includeMemberAnalytics": True}),
+                _event("/v1/admin/lx-software/linkedin/connect", "POST", {"includeMemberAnalytics": True}),
                 None,
             )
         self.assertEqual(response["statusCode"], 200)
@@ -1984,7 +1984,7 @@ class LinkedInHttpTests(unittest.TestCase):
             with patch("board_async.try_invoke_event", return_value=True) as plain_invoke:
                 plain = lambda_handler(
                     _event(
-                        "/lx-software/linkedin/oauth/exchange",
+                        "/v1/admin/lx-software/linkedin/oauth/exchange",
                         "POST",
                         {"code": "code-1", "state": "plain-state"},
                     ),
@@ -1995,7 +1995,7 @@ class LinkedInHttpTests(unittest.TestCase):
             with patch("board_async.try_invoke_event", return_value=True) as queued:
                 response = lambda_handler(
                     _event(
-                        "/lx-software/linkedin/oauth/exchange",
+                        "/v1/admin/lx-software/linkedin/oauth/exchange",
                         "POST",
                         {"code": "code-2", "state": "analytics-state"},
                     ),
@@ -2239,7 +2239,7 @@ class LinkedInHttpTests(unittest.TestCase):
     def test_overview_reports_analytics_when_the_secret_is_unset(self) -> None:
         with patch.dict("os.environ", {"LINKEDIN_APP_SECRET_ID": ""}, clear=False):  # nosec B105
             linkedin_analytics.reset_credentials_cache_for_tests()
-            response = lambda_handler(_event("/lx-software/linkedin"), None)
+            response = lambda_handler(_event("/v1/admin/lx-software/linkedin"), None)
         self.assertEqual(response["statusCode"], 200)
         analytics = _body(response)["analytics"]
         self.assertEqual(analytics["status"], "not_connected")
@@ -2260,7 +2260,7 @@ class LinkedInHttpTests(unittest.TestCase):
         with patch.object(
             linkedin_analytics, "load_credentials", return_value=("analytics-client", "analytics-secret")
         ):
-            response = lambda_handler(_event("/lx-software/linkedin/analytics/connect", "POST", {}), None)
+            response = lambda_handler(_event("/v1/admin/lx-software/linkedin/analytics/connect", "POST", {}), None)
         self.assertEqual(response["statusCode"], 200)
         url = _body(response)["url"]
         self.assertIn("r_member_postAnalytics", url)
@@ -2304,7 +2304,7 @@ class LinkedInHttpTests(unittest.TestCase):
         ):
             response = lambda_handler(
                 _event(
-                    "/lx-software/linkedin/oauth/exchange",
+                    "/v1/admin/lx-software/linkedin/oauth/exchange",
                     "POST",
                     {"code": "code-1", "state": "analytics-state"},
                 ),
@@ -2338,7 +2338,7 @@ class LinkedInHttpTests(unittest.TestCase):
             },
         )
         self._save_analytics()
-        response = lambda_handler(_event("/lx-software/linkedin/analytics/disconnect", "POST", {}), None)
+        response = lambda_handler(_event("/v1/admin/lx-software/linkedin/analytics/disconnect", "POST", {}), None)
         self.assertEqual(response["statusCode"], 200)
         self.assertEqual(_body(response)["analytics"]["status"], "not_connected")
         self.assertEqual(linkedin_analytics.load_connection(self.table), {})
@@ -2930,7 +2930,7 @@ class LinkedInHttpTests(unittest.TestCase):
 
     def test_generate_queues_a_job(self) -> None:
         with patch("board_async.try_invoke_event", return_value=True) as invoke:
-            response = lambda_handler(_event("/lx-software/linkedin/generate", "POST", {"count": 1}), None)
+            response = lambda_handler(_event("/v1/admin/lx-software/linkedin/generate", "POST", {"count": 1}), None)
         self.assertEqual(response["statusCode"], 202)
         invoke.assert_called_once()
         self.assertEqual(invoke.call_args.args[0]["internal"], "linkedin_generate")
@@ -3103,7 +3103,7 @@ class LinkedInImageTests(unittest.TestCase):
         with patch("board_async.try_invoke_event", return_value=True) as invoke:
             created = lambda_handler(
                 _event(
-                    "/lx-software/linkedin/posts", "POST", {"body": "The lift queue was the bottleneck.\n\nOne lesson."}
+                    "/v1/admin/lx-software/linkedin/posts", "POST", {"body": "The lift queue was the bottleneck.\n\nOne lesson."}
                 ),
                 None,
             )
@@ -3121,12 +3121,12 @@ class LinkedInImageTests(unittest.TestCase):
             patch("linkedin_draft.picture_brief", side_effect=AssertionError("must not run in the request")),
         ):
             response = lambda_handler(
-                _event(f"/lx-software/linkedin/posts/{item['postId']}/image/brief", "POST", {}), None
+                _event(f"/v1/admin/lx-software/linkedin/posts/{item['postId']}/image/brief", "POST", {}), None
             )
         self.assertEqual(response["statusCode"], 202)
         self.assertEqual(queued.call_args.args[0], {"internal": "linkedin_image_brief", "postId": item["postId"]})
         self.assertEqual(_body(response)["item"]["image"]["brief"]["status"], "pending")
-        again = lambda_handler(_event(f"/lx-software/linkedin/posts/{item['postId']}/image/brief", "POST", {}), None)
+        again = lambda_handler(_event(f"/v1/admin/lx-software/linkedin/posts/{item['postId']}/image/brief", "POST", {}), None)
         self.assertEqual(again["statusCode"], 409)
         written = (
             {
@@ -3139,18 +3139,18 @@ class LinkedInImageTests(unittest.TestCase):
         with patch("linkedin_draft.picture_brief", return_value=written):
             worked = linkedin.handle_post_brief({"postId": item["postId"]})
         self.assertTrue(worked["ok"])
-        listed = lambda_handler(_event("/lx-software/linkedin/posts"), None)
+        listed = lambda_handler(_event("/v1/admin/lx-software/linkedin/posts"), None)
         row = next(r for r in _body(listed)["items"] if r["postId"] == item["postId"])
         self.assertEqual(row["image"]["caption"], "Why is it Tuesday.")
         self.assertEqual(row["image"]["expression"], "baffled")
         self.assertEqual(row["image"]["brief"]["status"], "done")
         with patch("board_async.try_invoke_event", return_value=False):
             dropped = lambda_handler(
-                _event(f"/lx-software/linkedin/posts/{item['postId']}/image/brief", "POST", {}), None
+                _event(f"/v1/admin/lx-software/linkedin/posts/{item['postId']}/image/brief", "POST", {}), None
             )
         self.assertEqual(dropped["statusCode"], 202)
         self.assertEqual(_body(dropped)["item"]["image"]["brief"]["status"], "failed")
-        missing = lambda_handler(_event("/lx-software/linkedin/posts/nope/image/brief", "POST", {}), None)
+        missing = lambda_handler(_event("/v1/admin/lx-software/linkedin/posts/nope/image/brief", "POST", {}), None)
         self.assertEqual(missing["statusCode"], 404)
 
     def test_a_post_without_a_brief_has_one_written_from_the_post(self) -> None:
@@ -3513,7 +3513,7 @@ class LinkedInImageTests(unittest.TestCase):
             with patch("board_store.records_table", return_value=self.table):
                 with patch("board_async.try_invoke_event", return_value=True):
                     created = lambda_handler(
-                        _event("/lx-software/linkedin/posts", "POST", {"body": "A short hook.\n\nOne lesson."}),
+                        _event("/v1/admin/lx-software/linkedin/posts", "POST", {"body": "A short hook.\n\nOne lesson."}),
                         None,
                     )
                     post_id = _body(created)["item"]["postId"]
@@ -3524,14 +3524,14 @@ class LinkedInImageTests(unittest.TestCase):
                     )
                     first = lambda_handler(
                         _event(
-                            f"/lx-software/linkedin/posts/{post_id}/image/regenerate",
+                            f"/v1/admin/lx-software/linkedin/posts/{post_id}/image/regenerate",
                             "POST",
                             {"scene": "The author and a huge envelope.", "caption": "It barely fits."},
                         ),
                         None,
                     )
                     second = lambda_handler(
-                        _event(f"/lx-software/linkedin/posts/{post_id}/image/regenerate", "POST", {}),
+                        _event(f"/v1/admin/lx-software/linkedin/posts/{post_id}/image/regenerate", "POST", {}),
                         None,
                     )
         self.assertEqual(first["statusCode"], 202)
@@ -3711,7 +3711,7 @@ class LinkedInImageTests(unittest.TestCase):
         with patch.dict("os.environ", ENABLED):
             with patch("board_store.records_table", return_value=self.table):
                 response = lambda_handler(
-                    _event("/lx-software/linkedin/character/candidates/c9", "GET"),
+                    _event("/v1/admin/lx-software/linkedin/character/candidates/c9", "GET"),
                     None,
                 )
         self.assertEqual(response["statusCode"], 400)
@@ -3762,7 +3762,7 @@ class LinkedInImageTests(unittest.TestCase):
         with patch.dict("os.environ", ENABLED):
             with patch("board_store.records_table", return_value=self.table):
                 response = lambda_handler(
-                    _event(f"/lx-software/linkedin/jobs/{job['jobId']}", "GET"),
+                    _event(f"/v1/admin/lx-software/linkedin/jobs/{job['jobId']}", "GET"),
                     None,
                 )
         self.assertEqual(response["statusCode"], 200)

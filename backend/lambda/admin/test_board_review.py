@@ -90,7 +90,7 @@ class ReviewCompileTests(BoardTestCase):
         assert stored is not None
         self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in stored["configGaps"]))
         board_duties.clear_config_gap(self.table, "dmarc:siutindei.com")
-        status, body = self.call("/siu-tin-dei/board/review")
+        status, body = self.call("/v1/admin/siutindei/board/review")
         self.assertEqual(status, 200)
         live = body["review"]["configGaps"]
         self.assertFalse(any(str(row.get("gapId") or "") == "dmarc:siutindei.com" for row in live))
@@ -113,7 +113,7 @@ class ReviewCompileTests(BoardTestCase):
                 "digestHtml": "dmarc:siutindei.com",
             },
         )
-        status, body = self.call("/siu-tin-dei/board/review", query=f"date={yesterday}")
+        status, body = self.call("/v1/admin/siutindei/board/review", query=f"date={yesterday}")
         self.assertEqual(status, 200)
         self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in body["review"]["configGaps"]))
         self.assertIn("dmarc:siutindei.com", body["review"]["digestHtml"])
@@ -125,7 +125,7 @@ class ReviewCompileTests(BoardTestCase):
             board_review.compile(self.table, self.settings, date)
         board_duties.clear_config_gap(self.table, "dmarc:siutindei.com")
         with patch.object(board_config_gaps, "list_config_gaps", side_effect=RuntimeError("ddb")):
-            status, body = self.call("/siu-tin-dei/board/review")
+            status, body = self.call("/v1/admin/siutindei/board/review")
         self.assertEqual(status, 200)
         self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in body["review"]["configGaps"]))
         self.assertIn("dmarc:siutindei.com", body["review"]["digestHtml"])
@@ -141,11 +141,11 @@ class ReviewCompileTests(BoardTestCase):
                 {"date": day, "configGaps": [gap], "digestHtml": "dmarc:siutindei.com"},
             )
         with patch.object(board_hk, "today_hkt", return_value=fixed):
-            status, body = self.call("/siu-tin-dei/board/review")
+            status, body = self.call("/v1/admin/siutindei/board/review")
             self.assertEqual(status, 200)
             self.assertFalse(any(row.get("gapId") == "dmarc:siutindei.com" for row in body["review"]["configGaps"]))
             self.assertNotIn("dmarc:siutindei.com", body["review"]["digestHtml"])
-            status, past = self.call("/siu-tin-dei/board/review", query=f"date={other}")
+            status, past = self.call("/v1/admin/siutindei/board/review", query=f"date={other}")
         self.assertEqual(status, 200)
         self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in past["review"]["configGaps"]))
         self.assertIn("dmarc:siutindei.com", past["review"]["digestHtml"])
@@ -167,7 +167,7 @@ class ReviewCompileTests(BoardTestCase):
             board_review.compile(self.table, self.settings, date)
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         self._summary(generated_at=now, findings=[])
-        status, body = self.call("/siu-tin-dei/board/review")
+        status, body = self.call("/v1/admin/siutindei/board/review")
         self.assertEqual(status, 200)
         self.assertFalse(any(row.get("gapId") == "dmarc:siutindei.com" for row in body["review"]["configGaps"]))
         self.assertNotIn("dmarc:siutindei.com", body["review"]["digestHtml"])
@@ -185,11 +185,11 @@ class ReviewCompileTests(BoardTestCase):
             board_review.compile(self.table, self.settings, date)
         old = (datetime.now(timezone.utc) - timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%SZ")
         self._summary(generated_at=old, findings=[])
-        status, body = self.call("/siu-tin-dei/board/review")
+        status, body = self.call("/v1/admin/siutindei/board/review")
         self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in body["review"]["configGaps"]))
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         self._summary(generated_at=now, findings=[], enabled=False)
-        status, body = self.call("/siu-tin-dei/board/review")
+        status, body = self.call("/v1/admin/siutindei/board/review")
         self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in body["review"]["configGaps"]))
         self._summary(
             generated_at=now,
@@ -209,13 +209,13 @@ class ReviewCompileTests(BoardTestCase):
                 }
             ],
         )
-        status, body = self.call("/siu-tin-dei/board/review")
+        status, body = self.call("/v1/admin/siutindei/board/review")
         self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in body["review"]["configGaps"]))
         self._summary(
             generated_at=now,
             findings=[{"kind": "policy_drift", "evidence": {"domain": f"d{i}.example"}} for i in range(30)],
         )
-        status, body = self.call("/siu-tin-dei/board/review")
+        status, body = self.call("/v1/admin/siutindei/board/review")
         self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in body["review"]["configGaps"]))
 
     def test_compile_uses_cached_staging_preview(self) -> None:

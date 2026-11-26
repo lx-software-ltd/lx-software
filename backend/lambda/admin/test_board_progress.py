@@ -145,7 +145,7 @@ class ProgressSnapshotTests(BoardTestCase):
         self.assertIn("content-empty", ids)
 
     def test_route_returns_snapshot(self) -> None:
-        status, body = self.call("/siu-tin-dei/board/progress")
+        status, body = self.call("/v1/admin/siutindei/board/progress")
         self.assertEqual(status, 200)
         self.assertIn("listings", body)
         self.assertIn("signings", body)
