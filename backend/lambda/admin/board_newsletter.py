@@ -16,7 +16,7 @@ import board_pii
 import board_staff
 import board_store
 from contract_constants import BOARD_STAFF_NEWSLETTER_LISTS
-from http_common import _json_response, _log_event, _parse_json_body
+from http_common import _json_response, _log_event, _parse_json_body, html_headers
 
 LISTS = tuple(BOARD_STAFF_NEWSLETTER_LISTS)
 BATCH = 50
@@ -36,7 +36,7 @@ def from_address() -> str:
 def _html_response(status: int, body: str) -> dict[str, Any]:
     return {
         "statusCode": status,
-        "headers": {"content-type": "text/html; charset=utf-8"},
+        "headers": html_headers(),
         "body": body,
     }
 

@@ -203,6 +203,7 @@ class TestAwsUsageEndpoint(BoardTestCase):
             resp = lambda_handler(ev, None)
         self.assertEqual(resp["statusCode"], 200)
         self.assertEqual(resp["headers"]["Content-Type"], "application/pdf")
+        self.assertEqual(resp["headers"]["x-request-id"], "req-board-1")
         self.assertIn("lx-software-aws-2026-08.pdf", resp["headers"]["Content-Disposition"])
         self.assertTrue(resp["isBase64Encoded"])
         pdf = base64.b64decode(resp["body"])
