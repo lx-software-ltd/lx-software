@@ -89,27 +89,9 @@ class TestAuthorizer(unittest.TestCase):
         self.assertFalse(lambda_handler(_event(key=None), None)["isAuthorized"])
         self.table.get_item.assert_not_called()
 
-    def test_legacy_header_is_accepted_and_logged(self) -> None:
+    def test_the_legacy_header_is_not_accepted(self) -> None:
         self.table.get_item.return_value = {"Item": _valid_item()}
         event = _event(key=None)
-        event["headers"]["X-Api-Key"] = _KEY
-        with self.assertLogs(handler.logger, level="INFO") as captured:
-            out = lambda_handler(event, None)
-        self.assertTrue(out["isAuthorized"])
-        self.assertTrue(any('"auth_scheme": "legacy"' in line for line in captured.output))
-        self.table.get_item.assert_called_once_with(Key={"pk": f"APIKEY#{_DIGEST}", "sk": "META"})
-
-    def test_bearer_logs_its_scheme_and_wins_when_both_headers_are_present(self) -> None:
-        self.table.get_item.return_value = {"Item": _valid_item()}
-        event = _event()
-        event["headers"]["x-api-key"] = "lxpk_other-key"
-        with self.assertLogs(handler.logger, level="INFO") as captured:
-            self.assertTrue(lambda_handler(event, None)["isAuthorized"])
-        self.assertTrue(any('"auth_scheme": "bearer"' in line for line in captured.output))
-        self.table.get_item.assert_called_once_with(Key={"pk": f"APIKEY#{_DIGEST}", "sk": "META"})
-
-    def test_a_non_bearer_authorization_does_not_use_the_legacy_header(self) -> None:
-        event = _event(authorization="Token nope")
         event["headers"]["x-api-key"] = _KEY
         self.assertFalse(lambda_handler(event, None)["isAuthorized"])
         self.table.get_item.assert_not_called()

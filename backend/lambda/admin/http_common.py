@@ -165,20 +165,11 @@ _LEGACY_PREFIX = (
     ("/public/newsletter/confirm/", "/v1/public/newsletter/confirm/"),
     ("/public/newsletter/unsubscribe/", "/v1/public/newsletter/unsubscribe/"),
 )
-# One deploy of the previous board URL. Callers still send camelCase.
-_LEGACY_BOARD = "/public/siu-tin-dei/board"
-_LEGACY_BOARD_TARGET = "/v1/partner/siutindei/board"
 _WIRE_CONTRACT: dict[str, Any] | None = None
-
-
-def _legacy_board(path: str) -> bool:
-    return path == _LEGACY_BOARD or path.startswith(_LEGACY_BOARD + "/")
 
 
 def legacy_http_path(path: str) -> str:
     """Map a route that stays forever onto the path the table matches."""
-    if _legacy_board(path):
-        return _LEGACY_BOARD_TARGET + path[len(_LEGACY_BOARD) :]
     for old, new in _LEGACY_PREFIX:
         if path.startswith(old):
             return new + path[len(old) :]
@@ -225,8 +216,7 @@ def apply_wire(event: dict[str, Any], respond: Any) -> Any:
         if not wire_format.excluded(path, contract):
             event = wire_format.prepare_request(event, contract)
         response = respond(event)
-        # The old board path keeps camelCase. The new path is snake_case.
-        if _legacy_board(path) or wire_format.excluded(path, contract):
+        if wire_format.excluded(path, contract):
             return response
         prepared = wire_format.prepare_response(response, contract, f"{method} {path}")
         if prepared is None:

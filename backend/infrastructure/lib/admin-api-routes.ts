@@ -213,8 +213,4 @@ export const ROUTES: readonly AdminApiRoute[] = [
   { path: "/v1/partner/siutindei/board", methods: [GET], auth: "apiKey", throttle: PUBLIC_READ_THROTTLE },
   { path: "/v1/partner/siutindei/board/{proxy+}", methods: [GET], auth: "apiKey", throttle: PUBLIC_READ_THROTTLE },
   { path: "/v1/partner/siutindei/board/{proxy+}", methods: [PUT, POST, DELETE], auth: "apiKey", throttle: PUBLIC_WRITE_THROTTLE },
-  // Previous board URL. Same handler. Removed in the following change.
-  { path: "/public/siu-tin-dei/board", methods: [GET], auth: "apiKey", throttle: PUBLIC_READ_THROTTLE },
-  { path: "/public/siu-tin-dei/board/{proxy+}", methods: [GET], auth: "apiKey", throttle: PUBLIC_READ_THROTTLE },
-  { path: "/public/siu-tin-dei/board/{proxy+}", methods: [PUT, POST, DELETE], auth: "apiKey", throttle: PUBLIC_WRITE_THROTTLE },
 ];

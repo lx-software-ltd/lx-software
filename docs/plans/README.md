@@ -14,3 +14,4 @@ before any write. The zone map is [`docs/architecture/zones.md`](../architecture
 | [`2026-11-26-semgrep-category.md`](2026-11-26-semgrep-category.md) | Upload Semgrep to the category the open alerts already use |
 | [`2026-11-26-request-id-problem-code.md`](2026-11-26-request-id-problem-code.md) | Reset the request id per invocation and keep only a matching problem code |
 | [`2026-11-26-board-alias-wire-cache.md`](2026-11-26-board-alias-wire-cache.md) | Keep the old board paths and header for one deploy, and cache the wire contract |
+| [`2026-11-26-drop-board-alias.md`](2026-11-26-drop-board-alias.md) | Remove the board aliases and check the admin SPA uses the API hostname |

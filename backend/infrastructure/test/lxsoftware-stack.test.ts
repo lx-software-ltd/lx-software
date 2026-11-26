@@ -347,23 +347,6 @@ describe("HTTP API routes", () => {
       "POST /v1/partner/siutindei/board/{proxy+}",
       "PUT /v1/partner/siutindei/board/{proxy+}",
     ]);
-    const legacyBoard = routes
-      .filter((route) => String(route.Properties?.RouteKey).includes("/public/siu-tin-dei/board"))
-      .map((route) => String(route.Properties?.RouteKey))
-      .sort();
-    expect(legacyBoard).toEqual([
-      "DELETE /public/siu-tin-dei/board/{proxy+}",
-      "GET /public/siu-tin-dei/board",
-      "GET /public/siu-tin-dei/board/{proxy+}",
-      "POST /public/siu-tin-dei/board/{proxy+}",
-      "PUT /public/siu-tin-dei/board/{proxy+}",
-    ]);
-    for (const route of routes) {
-      const key = String(route.Properties?.RouteKey);
-      if (key.includes("/public/siu-tin-dei/board")) {
-        expect(route.Properties?.AuthorizationType).toBe("CUSTOM");
-      }
-    }
     for (const route of publicMirrors) {
       const key = String(route.Properties?.RouteKey);
       expect(route.Properties?.AuthorizationType).toBe("CUSTOM");
@@ -586,46 +569,17 @@ describe("HTTP API stage throttling", () => {
           ThrottlingRateLimit: 1,
           ThrottlingBurstLimit: 5,
         },
-        "GET /public/siu-tin-dei/board": {
-          ThrottlingRateLimit: 2,
-          ThrottlingBurstLimit: 10,
-        },
-        "GET /public/siu-tin-dei/board/{proxy+}": {
-          ThrottlingRateLimit: 2,
-          ThrottlingBurstLimit: 10,
-        },
-        "POST /public/siu-tin-dei/board/{proxy+}": {
-          ThrottlingRateLimit: 1,
-          ThrottlingBurstLimit: 5,
-        },
-        "PUT /public/siu-tin-dei/board/{proxy+}": {
-          ThrottlingRateLimit: 1,
-          ThrottlingBurstLimit: 5,
-        },
-        "DELETE /public/siu-tin-dei/board/{proxy+}": {
-          ThrottlingRateLimit: 1,
-          ThrottlingBurstLimit: 5,
-        },
       }),
     });
   });
 
-  test("public API-key authorizer caches source IP for 60 seconds and both headers or neither", () => {
+  test("public API-key authorizer caches on key + a supported source-IP context variable", () => {
     template.hasResourceProperties("AWS::ApiGatewayV2::Authorizer", {
       AuthorizerType: "REQUEST",
       EnableSimpleResponses: true,
       AuthorizerResultTtlInSeconds: 60,
-      IdentitySource: ["$context.identity.sourceIp"],
+      IdentitySource: ["$request.header.Authorization", "$context.identity.sourceIp"],
     });
-    const sources = Object.values(resourcesOfType("AWS::ApiGatewayV2::Authorizer"))
-      .filter((item) => item.Properties?.AuthorizerType === "REQUEST")
-      .flatMap((item) => (item.Properties?.IdentitySource ?? []) as string[]);
-    const headers = sources.filter((item) => item.includes(".header."));
-    const both =
-      headers.includes("$request.header.Authorization") &&
-      headers.includes("$request.header.x-api-key");
-    expect(headers.length === 0 || both).toBe(true);
-    expect(sources).toContain("$context.identity.sourceIp");
   });
 
   test("public API-key metric filters use term patterns (Lambda log lines are not JSON)", () => {
