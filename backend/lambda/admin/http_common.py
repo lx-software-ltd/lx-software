@@ -172,6 +172,89 @@ def _route(event: dict[str, Any]) -> tuple[str, str]:
     return http.get("method", ""), http.get("path", "")
 
 
+# Links already sent keep these paths. Subscribe moved and has no old copy.
+_LEGACY_EXACT = {
+    "/webhooks/meta": "/v1/webhooks/meta",
+    "/webhooks/meta/siutindei": "/v1/webhooks/meta/siutindei",
+}
+_LEGACY_PREFIX = (
+    ("/public/outreach/unsubscribe/", "/v1/public/outreach/unsubscribe/"),
+    ("/public/newsletter/confirm/", "/v1/public/newsletter/confirm/"),
+    ("/public/newsletter/unsubscribe/", "/v1/public/newsletter/unsubscribe/"),
+)
+# One deploy of the previous board URL. Callers still send camelCase.
+_LEGACY_BOARD = "/public/siu-tin-dei/board"
+_LEGACY_BOARD_TARGET = "/v1/partner/siutindei/board"
+_WIRE_CONTRACT: dict[str, Any] | None = None
+
+
+def _legacy_board(path: str) -> bool:
+    return path == _LEGACY_BOARD or path.startswith(_LEGACY_BOARD + "/")
+
+
+def legacy_http_path(path: str) -> str:
+    """Map a route that stays forever onto the path the table matches."""
+    mapped = _LEGACY_EXACT.get(path)
+    if mapped:
+        return mapped
+    if _legacy_board(path):
+        return _LEGACY_BOARD_TARGET + path[len(_LEGACY_BOARD) :]
+    for old, new in _LEGACY_PREFIX:
+        if path.startswith(old):
+            return new + path[len(old) :]
+    return path
+
+
+def http_audience(path: str) -> tuple[str, str]:
+    """Return ``(audience, path the route table matches)``.
+
+    Admin paths are the inner path (``/v1/admin`` removed). Partner paths stay
+    whole, because ``/finance`` is both an admin route and a partner route.
+    """
+    path = legacy_http_path(path)
+    if path == "/health":
+        return "none", path
+    if path == "/v1/admin" or path.startswith("/v1/admin/"):
+        return "admin", path[len("/v1/admin") :] or "/"
+    if path == "/v1/partner" or path.startswith("/v1/partner/"):
+        return "partner", path
+    if path == "/v1/public" or path.startswith("/v1/public/"):
+        return "public", path
+    if path == "/v1/webhooks" or path.startswith("/v1/webhooks/"):
+        return "webhooks", path[len("/v1") :]
+    return "unknown", path
+
+
+def _wire_contract() -> dict[str, Any]:
+    """The product contract, read once per process."""
+    global _WIRE_CONTRACT
+    if _WIRE_CONTRACT is None:
+        import wire_format
+
+        _WIRE_CONTRACT = wire_format.load_contract()
+    return _WIRE_CONTRACT
+
+
+def apply_wire(event: dict[str, Any], respond: Any) -> Any:
+    """Convert JSON keys at the HTTP boundary, after the handler returns."""
+    import wire_format
+
+    with request_id_scope(event):
+        method, path = _route(event)
+        contract = _wire_contract()
+        if not wire_format.excluded(path, contract):
+            event = wire_format.prepare_request(event, contract)
+        response = respond(event)
+        # The old board path keeps camelCase. The new path is snake_case.
+        if _legacy_board(path) or wire_format.excluded(path, contract):
+            return response
+        prepared = wire_format.prepare_response(response, contract, f"{method} {path}")
+        if prepared is None:
+            _log_event("warning", tag="wire_format_pass_through", path=path)
+            return response
+        return prepared
+
+
 def _request_id(event: dict[str, Any]) -> str:
     return (
         event.get("requestContext", {}).get("requestId", "")

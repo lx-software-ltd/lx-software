@@ -92,8 +92,9 @@ from http_common import (
     _require_admin,
     _route,
     _utc_iso_z,
+    apply_wire,
+    http_audience,
     not_found,
-    request_id_scope,
 )
 from openrouter_usage import USAGE_PK_PREFIX, handle_usage_get
 from parse_jobs import (
@@ -111,17 +112,17 @@ from proxies import _proxy_finance_quotes, _proxy_fx_v2_rates
 from router import Route, route_matches
 from runtime import PARSE_JOB_PK_PREFIX, RECORD_PK_PREFIX
 
-# API-key mirrors under /public/*. Writes stay on the board prefix and LinkedIn posts. Assets and parse jobs are excluded.
+# API-key mirrors under /v1/partner/*. Writes stay on the board prefix and LinkedIn posts. Assets and parse jobs are excluded.
 PUBLIC_READ_PATHS = frozenset(
     {
-        "/public/finance",
-        "/public/finance/quotes",
-        "/public/records",
-        "/public/fx/v2/rates",
+        "/v1/partner/finance",
+        "/v1/partner/finance/quotes",
+        "/v1/partner/records",
+        "/v1/partner/fx/rates",
         board_public_api_mod.LINKEDIN_POSTS_PATH,
     }
 )
-PUBLIC_BOARD_PREFIX = "/public/siu-tin-dei/board"
+PUBLIC_BOARD_PREFIX = "/v1/partner/siutindei/board"
 
 def _is_public_path(path: str) -> bool:
     if path in PUBLIC_READ_PATHS or board_public_api_mod.path_class(path) == board_public_api_mod.SCOPE_LINKEDIN:
@@ -141,6 +142,8 @@ _STATEMENT_BOOK_MIRRORS = {
 
 
 def _statement_book_slug(book_key: str) -> str:
+    if book_key in ("siuTinDei", "evolveSprouts"):
+        return book_key.lower()
     out: list[str] = []
     for ch in book_key:
         if ch.isupper():
@@ -224,7 +227,7 @@ def _finance_get_response() -> dict[str, Any]:
 def _handle_public(
     event: dict[str, Any], method: str, path: str
 ) -> dict[str, Any]:
-    """Serve /public/* routes for API key principals.
+    """Serve /v1/partner/* routes for API key principals.
 
     API Gateway already enforced the key via the Lambda authorizer; the
     context check here is defense in depth against direct Lambda invocation
@@ -305,7 +308,7 @@ def _handle_public(
     )
 
     if path == PUBLIC_BOARD_PREFIX or path.startswith(PUBLIC_BOARD_PREFIX + "/"):
-        board_path = path[len("/public") :]
+        board_path = path[len("/v1/partner") :]
         actor = f"apikey:{key_id}" if is_write else None
         board_response = handle_board_route(event, method, board_path, actor)
         if board_response is None:
@@ -320,14 +323,14 @@ def _handle_public(
             path_cls=path_cls,
         )
         return board_response
-    if path == "/public/finance":
+    if path == "/v1/partner/finance":
         response = _finance_get_response()
-    elif path == "/public/finance/quotes":
+    elif path == "/v1/partner/finance/quotes":
         response = _proxy_finance_quotes(
             event.get("queryStringParameters"),
             _request_id(event),
         )
-    elif path == "/public/fx/v2/rates":
+    elif path == "/v1/partner/fx/rates":
         response = _proxy_fx_v2_rates(
             event.get("queryStringParameters"),
             _request_id(event),
@@ -519,7 +522,7 @@ def _http_meta_webhook(event, method, path, user_sub, admin_claims):
 def _http_outreach_unsubscribe(event, method, path, user_sub, admin_claims):
     import board_outreach as board_outreach_mod
 
-    token = path[len("/public/outreach/unsubscribe/") :]
+    token = path[len("/v1/public/outreach/unsubscribe/") :]
     return board_outreach_mod.handle_unsubscribe(event, method, token)
 
 def _http_newsletter_subscribe(event, method, path, user_sub, admin_claims):
@@ -530,20 +533,17 @@ def _http_newsletter_subscribe(event, method, path, user_sub, admin_claims):
 def _http_newsletter_confirm(event, method, path, user_sub, admin_claims):
     import board_newsletter as board_newsletter_mod
 
-    token = path[len("/public/newsletter/confirm/") :]
+    token = path[len("/v1/public/newsletter/confirm/") :]
     return board_newsletter_mod.handle_confirm(event, token)
 
 def _http_newsletter_unsubscribe(event, method, path, user_sub, admin_claims):
     import board_newsletter as board_newsletter_mod
 
-    token = path[len("/public/newsletter/unsubscribe/") :]
+    token = path[len("/v1/public/newsletter/unsubscribe/") :]
     return board_newsletter_mod.handle_unsubscribe(event, method, token)
 
 def _http_health(event, method, path, user_sub, admin_claims):
     return _json_response(200, {"status": "ok"})
-
-def _http_public_api(event, method, path, user_sub, admin_claims):
-    return _handle_public(event, method, path)
 
 def _http_me(event, method, path, user_sub, admin_claims):
     return _json_response(
@@ -1251,17 +1251,16 @@ LATE_INTERNAL = {
 HTTP_ROUTES = [
     Route('*', '/webhooks/meta', _http_meta_webhook, 'none', kind='exact', match=None),
     Route('*', '/webhooks/meta/siutindei', _http_meta_webhook, 'none', kind='exact', match=None),
-    Route('*', '/public/outreach/unsubscribe/', _http_outreach_unsubscribe, 'none', kind='prefix', match=None),
-    Route('POST', '/public/newsletter/subscribe', _http_newsletter_subscribe, 'none', kind='exact', match=None),
-    Route('*', '/public/newsletter/confirm/', _http_newsletter_confirm, 'none', kind='prefix', match=None),
-    Route('*', '/public/newsletter/unsubscribe/', _http_newsletter_unsubscribe, 'none', kind='prefix', match=None),
+    Route('*', '/v1/public/outreach/unsubscribe/', _http_outreach_unsubscribe, 'none', kind='prefix', match=None),
+    Route('POST', '/v1/public/newsletter/subscribe', _http_newsletter_subscribe, 'none', kind='exact', match=None),
+    Route('*', '/v1/public/newsletter/confirm/', _http_newsletter_confirm, 'none', kind='prefix', match=None),
+    Route('*', '/v1/public/newsletter/unsubscribe/', _http_newsletter_unsubscribe, 'none', kind='prefix', match=None),
     Route('GET', '/health', _http_health, 'none', kind='exact', match=None),
-    Route('*', '/public', _http_public_api, 'public', kind='public', match=None),
     Route('GET', '/me', _http_me, 'admin', kind='exact', match=None),
     Route('GET', '/openrouter/usage', _http_openrouter_usage, 'admin', kind='exact', match=None),
     Route('GET', '/aws/usage', _http_aws_usage, 'admin', kind='exact', match=None),
-    Route('GET', '/aws/usage.pdf', _http_aws_usage_pdf, 'admin', kind='exact', match=None),
-    Route('GET', '/fx/v2/rates', _http_fx_rates, 'admin', kind='exact', match=None),
+    Route('GET', '/aws/usage/pdf', _http_aws_usage_pdf, 'admin', kind='exact', match=None),
+    Route('GET', '/fx/rates', _http_fx_rates, 'admin', kind='exact', match=None),
     Route('GET', '/finance/quotes', _http_finance_quotes, 'admin', kind='exact', match=None),
     Route('*', '/lx-software/linkedin', _http_linkedin, 'admin', kind='custom', match=_match_prefix('/lx-software/linkedin')),
     Route('*', '/lx-software/resume', _http_resume, 'admin', kind='custom', match=_match_prefix('/lx-software/resume')),
@@ -1298,18 +1297,18 @@ HTTP_ROUTES = [
 ]
 
 def _dispatch_http(event):
-    method, path = _route(event)
-    for route in HTTP_ROUTES:
-        if route.auth != "none":
-            continue
-        if not route_matches(route, method, path):
-            continue
-        return route.handler(event, method, path, None, None)
-    for route in HTTP_ROUTES:
-        if route.auth != "public":
-            continue
-        if route_matches(route, method, path):
+    method, raw = _route(event)
+    audience, path = http_audience(raw)
+    if audience == "partner":
+        return _handle_public(event, method, path)
+    if audience in ("none", "public", "webhooks"):
+        for route in HTTP_ROUTES:
+            if route.auth != "none" or not route_matches(route, method, path):
+                continue
             return route.handler(event, method, path, None, None)
+        return not_found()
+    if audience != "admin":
+        return not_found()
     admin_claims = _require_admin(event)
     if admin_claims is None:
         if not _claims(event):
@@ -1331,16 +1330,15 @@ def _dispatch_http(event):
 
 
 def lambda_handler(event, context):
-    with request_id_scope(event):
-        if isinstance(event, dict):
-            early = EARLY_INTERNAL.get(event.get("internal"))
-            if early is not None:
-                return early(event)
-        sqs = _handle_sqs_batch(event)
-        if sqs is not None:
-            return sqs
-        if isinstance(event, dict):
-            late = LATE_INTERNAL.get(event.get("internal"))
-            if late is not None:
-                return late(event)
-        return _dispatch_http(event)
+    if isinstance(event, dict):
+        early = EARLY_INTERNAL.get(event.get("internal"))
+        if early is not None:
+            return early(event)
+    sqs = _handle_sqs_batch(event)
+    if sqs is not None:
+        return sqs
+    if isinstance(event, dict):
+        late = LATE_INTERNAL.get(event.get("internal"))
+        if late is not None:
+            return late(event)
+    return apply_wire(event, _dispatch_http)

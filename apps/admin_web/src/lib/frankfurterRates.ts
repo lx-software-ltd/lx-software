@@ -17,7 +17,7 @@ export async function fetchFrankfurterRatesToBase(
   }
 
   const quotesParam = need.map((q) => encodeURIComponent(q)).join(",");
-  const path = `/fx/v2/rates?base=${encodeURIComponent(upperBase)}&quotes=${quotesParam}`;
+  const path = `/v1/admin/fx/rates?base=${encodeURIComponent(upperBase)}&quotes=${quotesParam}`;
   let res: Response;
   try {
     res = await adminFetch(path);

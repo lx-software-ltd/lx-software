@@ -147,7 +147,7 @@ from the first wave to the second.
   analytics leaves a stored analytics reaction or comment in place. Until the
   app is connected the refresh stores `impressions: null`, and profile
   reactions stay on the posting app's social-actions read.
-  `GET /public/lx-software/linkedin/posts` returns whatever the refresh stored.
+  `GET /v1/partner/lx-software/linkedin/posts` returns whatever the refresh stored.
 - One personal post is one data point. The rules above are the measurable
   differences, not a proof. Re-measure after four posts written under them
   and update this page.

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Mint, list, revoke, and toggle write or scopes on public API keys.
 
-Keys authenticate the /public/* routes on the admin HTTP API via the
-`x-api-key` header (finance GET, records, FX, and GET/PUT/POST/DELETE
-``/public/siu-tin-dei/board*``). Only the scrypt digest of a key is stored
+Keys authenticate the /v1/partner/* routes on the admin HTTP API via an
+``Authorization: Bearer`` header (finance GET, records, FX, and
+GET/PUT/POST/DELETE ``/v1/partner/siutindei/board*``). Only the scrypt digest of a key is stored
 (as ``pk = APIKEY#<digest>``, ``sk = META`` in the records table); the
 plaintext key is printed exactly once by ``create``.
 
@@ -42,12 +42,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 # Reuse the authorizer's digest helper so mint and verify never drift apart.
-_AUTHORIZER_DIR = (
-    Path(__file__).resolve().parents[1]
-    / "backend"
-    / "lambda"
-    / "public_api_authorizer"
-)
+_AUTHORIZER_DIR = Path(__file__).resolve().parents[1] / "backend" / "lambda" / "public_api_authorizer"
 sys.path.insert(0, str(_AUTHORIZER_DIR))
 from api_key_hash import hash_api_key  # noqa: E402
 from api_key_scopes import ALL_SCOPES, SCOPE_FINANCE, key_allows_write  # noqa: E402
@@ -155,9 +150,9 @@ def cmd_create(args: argparse.Namespace) -> None:
     print(f"  {plaintext}")
     print()
     print("Example:")
-    print(f'  curl -H "x-api-key: {plaintext}" <AdminApiBaseUrl>/public/finance')
+    print(f'  curl -H "Authorization: Bearer {plaintext}" <AdminApiBaseUrl>/v1/partner/finance')
     if "siutindei-board-ops" in scopes or "siutindei-board-full" in scopes:
-        print(f'  curl -H "x-api-key: {plaintext}" <AdminApiBaseUrl>/public/siu-tin-dei/board')
+        print(f'  curl -H "Authorization: Bearer {plaintext}" <AdminApiBaseUrl>/v1/partner/siutindei/board')
 
 
 def _scan_keys(args: argparse.Namespace) -> list[dict]:
@@ -208,7 +203,7 @@ def cmd_revoke(args: argparse.Namespace) -> None:
             ExpressionAttributeValues={":t": True},
         )
         print(f"revoked keyId {args.key_id} (label={it.get('label')!r})")
-    print("note: API Gateway caches authorizer verdicts for up to 60 seconds")
+    print("note: API Gateway does not cache authorizer verdicts during the header overlap")
 
 
 def cmd_set_scopes(args: argparse.Namespace) -> None:
@@ -230,7 +225,7 @@ def cmd_set_scopes(args: argparse.Namespace) -> None:
             ExpressionAttributeValues={":s": scopes},
         )
         print(f"keyId {args.key_id} scopes {previous_s} -> {','.join(scopes)} (label={it.get('label')!r})")
-    print("note: API Gateway caches authorizer verdicts for up to 60 seconds")
+    print("note: API Gateway does not cache authorizer verdicts during the header overlap")
     print("note: a scope the deployed authorizer does not know is ignored until that deploy")
 
 
@@ -248,11 +243,8 @@ def cmd_set_write(args: argparse.Namespace) -> None:
             UpdateExpression="SET allowWrite = :w",
             ExpressionAttributeValues={":w": allow},
         )
-        print(
-            f"{'enabled' if allow else 'disabled'} write on keyId {args.key_id} "
-            f"(label={it.get('label')!r})"
-        )
-    print("note: API Gateway caches authorizer verdicts for up to 60 seconds")
+        print(f"{'enabled' if allow else 'disabled'} write on keyId {args.key_id} (label={it.get('label')!r})")
+    print("note: API Gateway does not cache authorizer verdicts during the header overlap")
     print("note: stack PublicApiWritesEnabled must be true for writes to succeed")
 
 
@@ -263,15 +255,12 @@ def main() -> None:
     common.add_argument("--region", default=DEFAULT_REGION)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p_create = sub.add_parser(
-        "create", parents=[common], help="mint a new API key"
-    )
+    p_create = sub.add_parser("create", parents=[common], help="mint a new API key")
     p_create.add_argument("--label", required=True, help="human-readable key name")
     p_create.add_argument(
         "--scopes",
         default=SCOPE_FINANCE,
-        help="comma-separated scopes (default: finance). "
-        f"Allowed: {', '.join(sorted(ALL_SCOPES))}",
+        help=f"comma-separated scopes (default: finance). Allowed: {', '.join(sorted(ALL_SCOPES))}",
     )
     p_create.add_argument(
         "--allow-write",
@@ -296,9 +285,7 @@ def main() -> None:
     )
     p_create.set_defaults(func=cmd_create)
 
-    p_list = sub.add_parser(
-        "list", parents=[common], help="list all API keys (hashes never shown)"
-    )
+    p_list = sub.add_parser("list", parents=[common], help="list all API keys (hashes never shown)")
     p_list.set_defaults(func=cmd_list)
 
     p_revoke = sub.add_parser("revoke", parents=[common], help="revoke a key by keyId")

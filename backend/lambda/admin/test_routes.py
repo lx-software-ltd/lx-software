@@ -9,20 +9,21 @@ from test_support import install_aws_stubs
 install_aws_stubs()
 
 from dispatch import EARLY_INTERNAL, HTTP_ROUTES, LATE_INTERNAL  # noqa: E402
+from http_common import http_audience  # noqa: E402
 from router import route_matches  # noqa: E402
 
-# Paths and methods passed to lambda_handler in test_handler.py.
-_HANDLER_CASES = (
-    ("GET", "/public/finance", "public"),
-    ("GET", "/public/lx-software/linkedin/posts", "public"),
-    ("PUT", "/public/finance", "public"),
-    ("GET", "/public/records", "public"),
-    ("GET", "/public/finance/hillmarton", "public"),
-    ("POST", "/public/siu-tin-dei/board/tasks", "public"),
-    ("GET", "/public/siu-tin-dei/board/charter", "public"),
-    ("GET", "/public", "public"),
-    ("GET", "/finance", "admin"),
+# Gateway paths. Partner requests never enter the admin route table.
+_PARTNER_CASES = (
+    ("GET", "/v1/partner/finance"),
+    ("GET", "/v1/partner/lx-software/linkedin/posts"),
+    ("PUT", "/v1/partner/finance"),
+    ("GET", "/v1/partner/records"),
+    ("GET", "/v1/partner/finance/hillmarton"),
+    ("POST", "/v1/partner/siutindei/board/tasks"),
+    ("GET", "/v1/partner/siutindei/board/charter"),
+    ("GET", "/v1/partner"),
 )
+_ADMIN_CASES = (("GET", "/finance", "admin"),)
 
 
 def _first_specific_route(method: str, path: str):
@@ -37,11 +38,16 @@ def _first_specific_route(method: str, path: str):
 
 class RouteTableTests(unittest.TestCase):
     def test_handler_paths_are_in_the_route_table(self) -> None:
-        for method, path, auth in _HANDLER_CASES:
+        for method, path, auth in _ADMIN_CASES:
             route = _first_specific_route(method, path)
             self.assertIsNotNone(route, path)
             assert route is not None
             self.assertEqual(route.auth, auth, path)
+        for _method, path in _PARTNER_CASES:
+            audience, routed = http_audience(path)
+            self.assertEqual(audience, "partner", path)
+            self.assertEqual(routed, path)
+            self.assertIsNone(_first_specific_route("GET", path), path)
 
     def test_get_finance_is_exact_admin_route(self) -> None:
         route = _first_specific_route("GET", "/finance")
@@ -58,15 +64,12 @@ class RouteTableTests(unittest.TestCase):
         self.assertEqual(health.auth, "none")
         self.assertIsNone(_first_specific_route("POST", "/health"))
 
-    def test_public_kind_matches_the_public_prefix_only(self) -> None:
-        route = _first_specific_route("GET", "/public/finance")
-        self.assertIsNotNone(route)
-        assert route is not None
-        self.assertEqual(route.kind, "public")
-        self.assertTrue(route_matches(route, "GET", "/public"))
-        self.assertTrue(route_matches(route, "PUT", "/public/finance"))
-        self.assertFalse(route_matches(route, "GET", "/publicity"))
-        self.assertFalse(route_matches(route, "GET", "/health"))
+    def test_partner_audience_is_the_partner_prefix_only(self) -> None:
+        self.assertEqual(http_audience("/v1/partner/finance")[0], "partner")
+        self.assertEqual(http_audience("/v1/partner")[0], "partner")
+        self.assertNotEqual(http_audience("/v1/partnerfinance")[0], "partner")
+        self.assertEqual(http_audience("/health")[0], "none")
+        self.assertEqual(http_audience("/v1/admin/finance"), ("admin", "/finance"))
 
     def test_internal_workers_from_handler_tests_are_registered(self) -> None:
         self.assertIn("parse_statement_async", EARLY_INTERNAL)

@@ -141,34 +141,34 @@ class RouteTests(BoardTestCase):
                     ],
                 },
             )
-        status, body = self._board("GET", "/siu-tin-dei/board/messages")
+        status, body = self._board("GET", "/siutindei/board/messages")
         self.assertEqual(status, 200)
         self.assertEqual(body["count"], 1)
         self.assertIn("Saturday", body["threads"][0]["lastText"])
         thread_id = body["threads"][0]["threadId"]
-        status, body = self._board("GET", f"/siu-tin-dei/board/messages/{thread_id}")
+        status, body = self._board("GET", f"/siutindei/board/messages/{thread_id}")
         self.assertEqual(body["messages"][0]["text"], "see you Saturday")
-        status, body = self._board("POST", f"/siu-tin-dei/board/messages/{thread_id}/read", {})
+        status, body = self._board("POST", f"/siutindei/board/messages/{thread_id}/read", {})
         self.assertFalse(body["thread"]["unread"])
 
     def test_key_without_pii_is_masked_and_media_is_refused(self) -> None:
         raw = {"threads": [{"displayName": "Ada", "phone": "85291234567", "lastText": "call 9123 4567", "lastTextMasked": "call 9123 4567"}]}
         response = {"statusCode": 200, "body": json.dumps(raw)}
         masked = board_public_api.redact_board_response(
-            "/public/siu-tin-dei/board/messages", response, ["siutindei-board-full"]
+            "/v1/partner/siutindei/board/messages", response, ["siutindei-board-full"]
         )
         shown = json.loads(masked["body"])["threads"][0]
         self.assertNotIn("91234567", shown["phone"])
         self.assertNotIn("91234567", shown["lastText"])
         refused = board_public_api.redact_board_response(
-            "/public/siu-tin-dei/board/messages/thread-1/media/0",
+            "/v1/partner/siutindei/board/messages/thread-1/media/0",
             {"statusCode": 200, "body": json.dumps({"url": "https://example.com/photo"})},
             ["siutindei-board-full"],
         )
         self.assertEqual(refused["statusCode"], 403)
-        self.assertTrue(board_public_api.write_blocked("POST", "/public/siu-tin-dei/board/messages/whatsapp/connect"))
-        self.assertTrue(board_public_api.write_blocked("POST", "/public/siu-tin-dei/board/messages/whatsapp/sync"))
-        self.assertTrue(board_public_api.write_blocked("POST", "/public/siu-tin-dei/board/messages/connect/page"))
+        self.assertTrue(board_public_api.write_blocked("POST", "/v1/partner/siutindei/board/messages/whatsapp/connect"))
+        self.assertTrue(board_public_api.write_blocked("POST", "/v1/partner/siutindei/board/messages/whatsapp/sync"))
+        self.assertTrue(board_public_api.write_blocked("POST", "/v1/partner/siutindei/board/messages/connect/page"))
 
     def _board(self, method: str, path: str, body: dict | None = None) -> tuple[int, Any]:
         out = board_routes.handle_board_route(self.event(path, method, body), method, path, "owner")

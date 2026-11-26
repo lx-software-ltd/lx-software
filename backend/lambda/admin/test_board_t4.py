@@ -13,8 +13,8 @@ import board_data_api
 import board_product
 import board_receivables
 import board_store
-import dispatch
 from board_tools import REGISTRY, ToolContext, execute_call
+from http_call import http_call
 from test_board import BoardTestCase
 from test_board_tools import ToolsTestCase
 
@@ -404,13 +404,13 @@ class TestFinanceReadsAndDraft(ReceivablesTestCase):
         self.assertEqual(len(aging["buckets"]["d7"]), 1)
         self.assertEqual(len(aging["buckets"]["d35"]), 1)
         self.assertEqual(aging["outstandingHkd"], 600.0)
-        status, body = self.call("/siu-tin-dei/board/receivables")
+        status, body = self.call("/v1/admin/siutindei/board/receivables")
         self.assertEqual(status, 200)
         self.assertTrue(body["configured"])
         self.assertEqual(body["aging"]["outstandingHkd"], 600.0)
         digest = board_receivables.digest_for_context()
         self.assertEqual(digest["overdue"], 2)
-        status, overview = self.call("/siu-tin-dei/board")
+        status, overview = self.call("/v1/admin/siutindei/board")
         self.assertEqual(status, 200)
         self.assertEqual(overview["overdueInvoiceCount"], 2)
 
@@ -601,8 +601,8 @@ class TestMirrorAndDunning(ReceivablesTestCase):
 
     def test_schedule_triggers_dispatch(self) -> None:
         with patch.object(board_store, "records_table", return_value=self.table):
-            dispatch.lambda_handler({"internal": "board_receivables_mirror"}, None)
-            dispatch.lambda_handler({"internal": "board_dunning"}, None)
+            http_call({"internal": "board_receivables_mirror"}, None)
+            http_call({"internal": "board_dunning"}, None)
 
 
 class TestProductViews(ReceivablesTestCase):

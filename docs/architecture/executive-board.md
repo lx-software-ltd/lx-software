@@ -32,13 +32,13 @@ bucket. Reused pieces:
 |---|---|---|
 | OpenRouter client (`chat_completion`, key cache, JSON mode, retry on 429/5xx, 403/504 provider ignore, `models` fallbacks, tool calls, `remaining_credits`) | `openrouter_client.py` | Every persona, seat and classifier call. `provider.data_collection = "deny"` on every request. |
 | Async job pattern (DDB row + fire-and-forget self-invoke + browser polling) | `board_async.invoke_async`, `parse_jobs.py` | Chat replies, meeting phases, staff steps, crawl pages, ingest workers |
-| Admin-only routing, audit log, structured logs | `dispatch.py`, `http_common.py` | `/siu-tin-dei/board/*` routes |
+| Admin-only routing, audit log, structured logs | `dispatch.py`, `http_common.py` | `/v1/admin/siutindei/board/*` routes |
 | Shared contracts synced to Python / TS / CDK | `contracts/executive-board.json`, `board-timeouts.json`, `board-tools.json`, `board-staff.json` | Roster, limits, tool matrix, seats |
-| Public API key authorizer | `backend/lambda/public_api_authorizer/` | `/public/siu-tin-dei/board[/{proxy+}]` mirrors |
+| Public API key authorizer | `backend/lambda/public_api_authorizer/` | `/v1/partner/siutindei/board[/{proxy+}]` mirrors |
 
 All board rows use `pk = BOARD#siuTinDei#…` (`board_store.board_pk`). The
 `siuTinDei` segment leaves room for a second board later. `GET /records`
-and `GET /public/records` filter `BOARD#` rows out.
+and `GET /v1/partner/records` filter `BOARD#` rows out.
 
 ## 2. The board
 
@@ -132,7 +132,7 @@ next. The SPA polls the meeting row.
 
 ### 3.2 Chat
 
-`POST /siu-tin-dei/board/chat/{personaId}` stores the owner message,
+`POST /v1/admin/siutindei/board/chat/{personaId}` stores the owner message,
 writes a chat job (TTL 7 days) and self-invokes `internal: "board_chat"`.
 The worker prompts with the persona system prompt, the context pack, that
 persona's open actions and the last `chatHistoryTurns` (30) turns, runs the
@@ -409,8 +409,10 @@ Send test email** (`POST …/mail/selftest`) checks SES `GetEmailIdentity` /
 
 One Business-type app under the Siu Tin Dei Business Manager with a System
 User token (`…-meta-token`) and app secret (`…-meta-app-secret`).
-`GET/POST /webhooks/meta/siutindei` (canonical) and `/webhooks/meta`
-(already-subscribed app) are **non-JWT** routes: GET answers the verify
+`GET/POST https://api.lx-software.com/v1/webhooks/meta/siutindei` and
+`GET/POST https://api.lx-software.com/v1/webhooks/meta` are the callback
+URLs. The old `/webhooks/meta/siutindei` and `/webhooks/meta` paths still
+answer. They are **non-JWT** routes: GET answers the verify
 handshake (`SiutindeiBoardMetaVerifyToken`), POST checks
 `X-Hub-Signature-256`, stores the message (full text, plus a masked copy)
 and returns 200. Triage and media download run on `board_meta_after_ingest`,
@@ -621,7 +623,7 @@ dedicated Cognito **importer** user in the siutindei pool
 (`AdminInitiateAuth` / `ADMIN_USER_PASSWORD_AUTH`, secret
 `…-board-importer-credentials`, IAM statement gated on
 `SiutindeiUserPoolId`) and calls the product admin API
-(`SiutindeiAdminApiBaseUrl`): presign, PUT, `POST /admin/imports`. This
+(`SiutindeiAdminApiBaseUrl`): presign `POST /v1/admin/imports/presign`, PUT, `POST /v1/admin/imports`. This
 stack never writes Aurora in that path and no LLM runs. `catalog_import`
 is `always_propose` (action class `catalog_import`) and refuses while
 `SiutindeiBoardCatalogImportEnabled` is off; preview and local dry-run
@@ -1204,7 +1206,7 @@ the `content-readout` gap and does not open a task. **Content** section. `AdminA
 ### 10.4 Newsletter (`board_newsletter.py`)
 
 Lists `parents` and `providers`. Public routes without JWT:
-`POST /public/newsletter/subscribe {list, email, lang}` (rate-limited;
+`POST /v1/public/newsletter/subscribe {list, email, lang}` (rate-limited;
 double opt-in mail from `news@{SiutindeiBoardMailDomain}`),
 `GET /public/newsletter/confirm/{token}`,
 `GET/POST /public/newsletter/unsubscribe/{token}`. Subscriber key
@@ -1395,7 +1397,7 @@ DynamoDB access, settings normalisation), `board_personas.py`,
 `board_context.py`, `board_chat.py`, `board_meeting.py`,
 `board_actions.py`, `board_budget.py`, `board_async.py`,
 `board_deadline.py`, `board_hk.py` (HKT helpers, districts),
-`board_pii.py`, `board_routes.py` (all `/siu-tin-dei/board/*` handlers),
+`board_pii.py`, `board_routes.py` (all `/v1/admin/siutindei/board/*` handlers),
 `board_public_api.py` (API-key mirror rules). Tools and connectors:
 `board_tools.py` plus the modules in §6. Autonomy: `board_staff.py`,
 `board_holds.py`, `board_breakers.py`, `board_triage.py`,

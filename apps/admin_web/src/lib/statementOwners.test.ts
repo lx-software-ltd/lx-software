@@ -3,7 +3,6 @@ import { houseDisplayLabel } from "./houses";
 import {
   isHouseKey,
   isStatementBookKey,
-  kebabBookKey,
   parseStatementJobPath,
   parseStatementStartPath,
   statementBookApiPath,
@@ -31,19 +30,19 @@ describe("statementOwners", () => {
 
   it("builds parse paths for houses and statement books", () => {
     expect(parseStatementStartPath("hillmarton")).toBe(
-      "/finance/hillmarton/parse-statement",
+      "/v1/admin/finance/hillmarton/parse-statement",
     );
     expect(parseStatementStartPath(SIU_TIN_DEI_BOOK_KEY)).toBe(
-      "/siu-tin-dei/parse-statement",
+      "/v1/admin/siutindei/parse-statement",
     );
     expect(parseStatementJobPath(SIU_TIN_DEI_BOOK_KEY, "abc 1")).toBe(
-      "/siu-tin-dei/parse-statement/jobs/abc%201",
+      "/v1/admin/siutindei/parse-statement/jobs/abc%201",
     );
     expect(parseStatementStartPath(LX_SOFTWARE_BOOK_KEY)).toBe(
-      "/lx-software/parse-statement",
+      "/v1/admin/lx-software/parse-statement",
     );
     expect(parseStatementJobPath(LX_SOFTWARE_BOOK_KEY, "abc 1")).toBe(
-      "/lx-software/parse-statement/jobs/abc%201",
+      "/v1/admin/lx-software/parse-statement/jobs/abc%201",
     );
   });
 
@@ -54,12 +53,10 @@ describe("statementOwners", () => {
     expect(statementOwnerQueryKey(EVOLVE_SPROUTS_BOOK_KEY)).toEqual(["evolveSprouts"]);
   });
 
-  it("maps camelCase book keys to kebab API slugs", () => {
-    expect(kebabBookKey(SIU_TIN_DEI_BOOK_KEY)).toBe("siu-tin-dei");
-    expect(kebabBookKey(LX_SOFTWARE_BOOK_KEY)).toBe("lx-software");
-    expect(statementBookApiPath(LX_SOFTWARE_BOOK_KEY)).toBe("/lx-software");
-    expect(kebabBookKey(EVOLVE_SPROUTS_BOOK_KEY)).toBe("evolve-sprouts");
-    expect(statementBookApiPath(EVOLVE_SPROUTS_BOOK_KEY)).toBe("/evolve-sprouts");
+  it("maps camelCase book keys to API slugs", () => {
+    expect(statementBookApiPath(SIU_TIN_DEI_BOOK_KEY)).toBe("/v1/admin/siutindei");
+    expect(statementBookApiPath(LX_SOFTWARE_BOOK_KEY)).toBe("/v1/admin/lx-software");
+    expect(statementBookApiPath(EVOLVE_SPROUTS_BOOK_KEY)).toBe("/v1/admin/evolvesprouts");
     expect(STATEMENT_BOOK_DASHBOARD_ORDER).toEqual([
       "lxSoftware",
       "siuTinDei",

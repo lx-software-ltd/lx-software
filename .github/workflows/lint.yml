@@ -144,6 +144,18 @@ jobs:
         run: npm run synth:ci
         working-directory: backend/infrastructure
 
+  # template:optional openapi
+  lint-openapi:
+    name: Lint OpenAPI
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Lint OpenAPI specs
+        run: npx --yes @redocly/cli@1.34.11 lint docs/api/*.yaml
+
+  # template:end
   type-check:
     name: Type-check
     runs-on: ubuntu-26.04
@@ -187,6 +199,7 @@ jobs:
       - lint-admin-web
       - lint-public-www
       - lint-cdk
+      - lint-openapi
       - type-check
       - workflow-conformance
     # template:end

@@ -682,8 +682,8 @@ function CharacterSitting({ enabled }: { readonly enabled: boolean }) {
         </div>
       ) : null}
       <div className="d-flex flex-wrap gap-3 align-items-start">
-        {character?.photo ? <StoredImage path="/lx-software/linkedin/character/photo" alt="Reference photo" /> : null}
-        {character?.sheet ? <StoredImage path="/lx-software/linkedin/character/sheet" alt="Chosen character sheet" /> : null}
+        {character?.photo ? <StoredImage path="/v1/admin/lx-software/linkedin/character/photo" alt="Reference photo" /> : null}
+        {character?.sheet ? <StoredImage path="/v1/admin/lx-software/linkedin/character/sheet" alt="Chosen character sheet" /> : null}
         {character?.candidates.map((row) => (
           <button
             key={row.id}
@@ -692,7 +692,7 @@ function CharacterSitting({ enabled }: { readonly enabled: boolean }) {
             disabled={!enabled || linkedIn.chooseCharacter.isPending}
             onClick={() => void linkedIn.chooseCharacter.mutate(row.id)}
           >
-            <StoredImage path={`/lx-software/linkedin/character/candidates/${row.id}`} alt={`Candidate ${row.id}`} />
+            <StoredImage path={`/v1/admin/lx-software/linkedin/character/candidates/${row.id}`} alt={`Candidate ${row.id}`} />
           </button>
         ))}
       </div>

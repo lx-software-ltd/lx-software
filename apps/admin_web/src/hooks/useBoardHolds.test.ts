@@ -24,7 +24,7 @@ describe("holdVetoMutationOptions", () => {
     await mutationFn({ holdId: "h1", reason: "not this week" });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [path, init] = fetchMock.mock.calls[0];
-    expect(path).toBe("/siu-tin-dei/board/holds/h1/veto");
+    expect(path).toBe("/v1/admin/siutindei/board/holds/h1/veto");
     expect(init?.method).toBe("POST");
     expect(JSON.parse(init?.body as string)).toEqual({ reason: "not this week" });
   });

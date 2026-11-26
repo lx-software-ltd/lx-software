@@ -47,7 +47,7 @@ test.describe("admin viewport smoke", () => {
   });
 
   test("Evolve Sprouts lines are read-only", async ({ page }) => {
-    await page.goto("/evolve-sprouts");
+    await page.goto("/evolvesprouts");
     await expect(page.getByRole("heading", { name: "Evolve Sprouts", level: 1 })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "About this page" })).toHaveCount(0);
     await expect(page.getByRole("tab", { name: "Dashboard" })).toBeVisible();
@@ -228,7 +228,7 @@ test.describe("admin viewport smoke", () => {
   });
 
   test("siu tin dei board sections stay reachable", async ({ page }, testInfo) => {
-    await page.goto("/siu-tin-dei");
+    await page.goto("/siutindei");
     await expect(page.getByRole("heading", { name: "Siu Tin Dei", level: 1 })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "About this page" })).toHaveCount(0);
     await expect(page.getByRole("tab", { name: "Executive Board" })).toHaveAttribute(

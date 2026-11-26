@@ -22,7 +22,7 @@ import resume_extract  # noqa: E402
 import resume_store  # noqa: E402
 import resume_tracker  # noqa: E402
 import runtime  # noqa: E402
-from dispatch import lambda_handler  # noqa: E402
+from http_call import http_call  # noqa: E402
 from resume_store import ResumeError  # noqa: E402
 
 ENABLED = {
@@ -141,12 +141,12 @@ class ResumeHttpTests(unittest.TestCase):
 
     def test_reads_work_and_writes_fail_when_resume_is_off(self) -> None:
         with patch.dict("os.environ", {"RESUME_ENABLED": "false"}):
-            overview = lambda_handler(_event("/lx-software/resume/overview"), None)
+            overview = http_call(_event("/v1/admin/lx-software/resume/overview"), None)
             self.assertEqual(overview["statusCode"], 200)
             self.assertFalse(_body(overview)["enabled"])
-            created = lambda_handler(
+            created = http_call(
                 _event(
-                    "/lx-software/resume/resumes",
+                    "/v1/admin/lx-software/resume/resumes",
                     "POST",
                     {"title": "Alex Example", "contentType": DOCX, "dataBase64": base64.b64encode(_docx("A")).decode()},
                 ),
@@ -157,9 +157,9 @@ class ResumeHttpTests(unittest.TestCase):
 
     def test_upload_queues_extract_and_lists_without_paragraphs(self) -> None:
         with patch("board_async.try_invoke_event", return_value=True) as queued:
-            uploaded = lambda_handler(
+            uploaded = http_call(
                 _event(
-                    "/lx-software/resume/resumes",
+                    "/v1/admin/lx-software/resume/resumes",
                     "POST",
                     {
                         "title": "Alex Example",
@@ -176,7 +176,7 @@ class ResumeHttpTests(unittest.TestCase):
         self.assertNotIn("paragraphs", body["resume"])
         queued.assert_called_once()
         self.assertEqual(queued.call_args.args[0]["internal"], "resume_extract")
-        listed = lambda_handler(_event("/lx-software/resume/resumes"), None)
+        listed = http_call(_event("/v1/admin/lx-software/resume/resumes"), None)
         self.assertEqual(_body(listed)["items"][0]["id"], body["resume"]["id"])
 
     def test_a_rejected_word_file_writes_no_row(self) -> None:
@@ -188,9 +188,9 @@ class ResumeHttpTests(unittest.TestCase):
                 for name in archive.namelist():
                     out.writestr(name, xml if name == "word/document.xml" else archive.read(name))
         with patch("board_async.try_invoke_event", return_value=True) as queued:
-            uploaded = lambda_handler(
+            uploaded = http_call(
                 _event(
-                    "/lx-software/resume/resumes",
+                    "/v1/admin/lx-software/resume/resumes",
                     "POST",
                     {
                         "title": "Alex Example",
@@ -203,18 +203,18 @@ class ResumeHttpTests(unittest.TestCase):
         self.assertEqual(uploaded["statusCode"], 400)
         self.assertIn("Accept all changes", _body(uploaded)["message"])
         queued.assert_not_called()
-        listed = lambda_handler(_event("/lx-software/resume/resumes"), None)
+        listed = http_call(_event("/v1/admin/lx-software/resume/resumes"), None)
         self.assertEqual(_body(listed)["items"], [])
 
     def test_settings_reject_an_unknown_page_size(self) -> None:
-        saved = lambda_handler(
-            _event("/lx-software/resume/settings", "PUT", {**resume_store.default_settings(), "pageSize": "A3"}),
+        saved = http_call(
+            _event("/v1/admin/lx-software/resume/settings", "PUT", {**resume_store.default_settings(), "pageSize": "A3"}),
             None,
         )
         self.assertEqual(saved["statusCode"], 400)
-        ok = lambda_handler(
+        ok = http_call(
             _event(
-                "/lx-software/resume/settings",
+                "/v1/admin/lx-software/resume/settings",
                 "PUT",
                 {**resume_store.default_settings(), "model": "openai/gpt-4.1-mini", "pageSize": "Letter"},
             ),
@@ -226,24 +226,24 @@ class ResumeHttpTests(unittest.TestCase):
     def test_records_scan_excludes_resume_rows(self) -> None:
         self.table.put_item(Item={"pk": "RECORD#1", "sk": "A"})
         self.table.put_item(Item={"pk": "RESUME#resume#1", "sk": "RESUME", "title": "hidden"})
-        (status,) = (lambda_handler(_event("/records"), None),)
+        (status,) = (http_call(_event("/v1/admin/records"), None),)
         self.assertEqual(status["statusCode"], 200)
         self.assertEqual(self.table.scan_calls[-1]["ExpressionAttributeValues"][":resume"], "RESUME#")
         self.assertIn("NOT begins_with(pk, :resume)", self.table.scan_calls[-1]["FilterExpression"])
 
     def test_application_patch_stores_the_recruiter(self) -> None:
-        created = lambda_handler(
+        created = http_call(
             _event(
-                "/lx-software/resume/applications",
+                "/v1/admin/lx-software/resume/applications",
                 "POST",
                 {"company": "Northwind", "position": "Engineer", "status": "saved"},
             ),
             None,
         )
         application_id = _body(created)["item"]["id"]
-        patched = lambda_handler(
+        patched = http_call(
             _event(
-                f"/lx-software/resume/applications/{application_id}",
+                f"/v1/admin/lx-software/resume/applications/{application_id}",
                 "PATCH",
                 {
                     "recruiter": {
@@ -261,9 +261,9 @@ class ResumeHttpTests(unittest.TestCase):
 
     def test_tailor_while_off_does_not_save_a_pasted_job_post(self) -> None:
         with patch.dict("os.environ", {"RESUME_ENABLED": "false"}):
-            created = lambda_handler(
+            created = http_call(
                 _event(
-                    "/lx-software/resume/tailor",
+                    "/v1/admin/lx-software/resume/tailor",
                     "POST",
                     {"posting": {"title": "Engineer", "company": "Northwind", "adText": "An engineer role."}},
                 ),
@@ -271,14 +271,14 @@ class ResumeHttpTests(unittest.TestCase):
             )
         self.assertEqual(created["statusCode"], 403)
         self.assertEqual(_body(created)["reason"], "resume_disabled")
-        listed = lambda_handler(_event("/lx-software/resume/postings"), None)
+        listed = http_call(_event("/v1/admin/lx-software/resume/postings"), None)
         self.assertEqual(_body(listed)["items"], [])
 
     def test_tailor_rejects_a_missing_template_before_saving_the_job_post(self) -> None:
         with patch("board_async.try_invoke_event", return_value=True) as queued:
-            created = lambda_handler(
+            created = http_call(
                 _event(
-                    "/lx-software/resume/tailor",
+                    "/v1/admin/lx-software/resume/tailor",
                     "POST",
                     {"posting": {"title": "Engineer", "company": "Northwind", "adText": "An engineer role."}},
                 ),
@@ -296,34 +296,34 @@ class ResumeHttpTests(unittest.TestCase):
         doc["extract"] = {"status": "ready", "error": ""}
         resume_store.save_resume(self.table, doc)
         with patch("board_async.try_invoke_event", return_value=True) as queued:
-            created = lambda_handler(
-                _event("/lx-software/resume/tailor", "POST", {"templateId": doc["resumeId"], "postingId": "missing"}),
+            created = http_call(
+                _event("/v1/admin/lx-software/resume/tailor", "POST", {"templateId": doc["resumeId"], "postingId": "missing"}),
                 None,
             )
         self.assertEqual(created["statusCode"], 404)
         queued.assert_not_called()
 
     def test_settings_reject_an_empty_rewrite_scope(self) -> None:
-        saved = lambda_handler(
-            _event("/lx-software/resume/settings", "PUT", {**resume_store.default_settings(), "rewriteScope": []}),
+        saved = http_call(
+            _event("/v1/admin/lx-software/resume/settings", "PUT", {**resume_store.default_settings(), "rewriteScope": []}),
             None,
         )
         self.assertEqual(saved["statusCode"], 400)
         self.assertIn("at least one", _body(saved)["message"])
 
     def test_application_dates_must_be_calendar_days(self) -> None:
-        rejected = lambda_handler(
+        rejected = http_call(
             _event(
-                "/lx-software/resume/applications",
+                "/v1/admin/lx-software/resume/applications",
                 "POST",
                 {"company": "Northwind", "position": "Engineer", "appliedAt": "tomorrow"},
             ),
             None,
         )
         self.assertEqual(rejected["statusCode"], 400)
-        accepted = lambda_handler(
+        accepted = http_call(
             _event(
-                "/lx-software/resume/applications",
+                "/v1/admin/lx-software/resume/applications",
                 "POST",
                 {"company": "Northwind", "position": "Engineer", "appliedAt": "2026-10-30", "nextStepAt": ""},
             ),
@@ -331,9 +331,9 @@ class ResumeHttpTests(unittest.TestCase):
         )
         self.assertEqual(accepted["statusCode"], 201)
         self.assertEqual(_body(accepted)["item"]["appliedAt"], "2026-10-30")
-        impossible = lambda_handler(
+        impossible = http_call(
             _event(
-                "/lx-software/resume/applications",
+                "/v1/admin/lx-software/resume/applications",
                 "POST",
                 {"company": "Northwind", "position": "Engineer", "nextStepAt": "2026-02-31"},
             ),
@@ -354,13 +354,13 @@ class ResumeHttpTests(unittest.TestCase):
             }
         )
         resume_store.put_job(self.table, job)
-        response = lambda_handler(_event(f"/lx-software/resume/jobs/{job['jobId']}"), None)
+        response = http_call(_event(f"/v1/admin/lx-software/resume/jobs/{job['jobId']}"), None)
         self.assertEqual(response["statusCode"], 200)
         body = _body(response)["job"]
         self.assertEqual(body["status"], "failed")
         self.assertIn("ran out of time", body["error"])
         self.assertAlmostEqual(resume_store.month_spend(self.table), 0.02)
-        again = lambda_handler(_event(f"/lx-software/resume/jobs/{job['jobId']}"), None)
+        again = http_call(_event(f"/v1/admin/lx-software/resume/jobs/{job['jobId']}"), None)
         self.assertEqual(_body(again)["job"]["status"], "failed")
         self.assertAlmostEqual(resume_store.month_spend(self.table), 0.02)
 

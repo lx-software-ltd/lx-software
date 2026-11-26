@@ -24,7 +24,7 @@ function invalidateBanking(qc: QueryClient): void {
 export function startBankAuthMutationOptions() {
   return {
     mutationFn: (vars: { readonly bankName: string; readonly country: string }) =>
-      adminFetchJson<{ url: string; state: string }>("/banking/auth", {
+      adminFetchJson<{ url: string; state: string }>("/v1/admin/banking/auth", {
         method: "POST",
         body: JSON.stringify({
           ...vars,
@@ -37,7 +37,7 @@ export function startBankAuthMutationOptions() {
 export function completeBankAuthMutationOptions(qc: QueryClient) {
   return {
     mutationFn: (vars: { readonly code: string; readonly state: string }) =>
-      adminFetchJson<{ session: BankSyncSession }>("/banking/sessions", {
+      adminFetchJson<{ session: BankSyncSession }>("/v1/admin/banking/sessions", {
         method: "POST",
         body: JSON.stringify(vars),
       }),
@@ -48,7 +48,7 @@ export function completeBankAuthMutationOptions(qc: QueryClient) {
 export function saveBankMappingsMutationOptions(qc: QueryClient) {
   return {
     mutationFn: (mappings: readonly BankSyncMapping[]) =>
-      adminFetchJson<{ mappings: readonly BankSyncMapping[] }>("/banking/mappings", {
+      adminFetchJson<{ mappings: readonly BankSyncMapping[] }>("/v1/admin/banking/mappings", {
         method: "PUT",
         body: JSON.stringify({ mappings }),
       }),
@@ -59,7 +59,7 @@ export function saveBankMappingsMutationOptions(qc: QueryClient) {
 export function syncBankNowMutationOptions(qc: QueryClient) {
   return {
     mutationFn: () =>
-      adminFetchJson<BankSyncReport>("/banking/sync", {
+      adminFetchJson<BankSyncReport>("/v1/admin/banking/sync", {
         method: "POST",
         body: JSON.stringify({}),
       }),
@@ -74,7 +74,7 @@ export function deleteBankSessionMutationOptions(qc: QueryClient) {
   return {
     mutationFn: (sessionId: string) =>
       adminFetchJson<{ sessions: readonly BankSyncSession[] }>(
-        `/banking/sessions/${encodeURIComponent(sessionId)}`,
+        `/v1/admin/banking/sessions/${encodeURIComponent(sessionId)}`,
         { method: "DELETE" },
       ),
     onSuccess: () => invalidateBanking(qc),
@@ -86,7 +86,7 @@ export function useBankSync() {
 
   const q = useQuery({
     queryKey: BANKING_QUERY_KEY,
-    queryFn: () => adminFetchJson<BankSyncState>("/banking"),
+    queryFn: () => adminFetchJson<BankSyncState>("/v1/admin/banking"),
   });
 
   const startAuth = useMutation(startBankAuthMutationOptions());
@@ -115,7 +115,7 @@ export function useBankOptions(country: string) {
     queryKey: [...keys.banking, "banks", country],
     queryFn: () =>
       adminFetchJson<{ banks: readonly BankOption[] }>(
-        `/banking/banks?country=${encodeURIComponent(country)}`,
+        `/v1/admin/banking/banks?country=${encodeURIComponent(country)}`,
       ),
     enabled: country.length === 2,
     staleTime: 10 * 60 * 1000,

@@ -122,7 +122,7 @@ class PlacesRouteHiddenWhenStaffOff(BoardTestCase):
     def test_prospects_409_when_env_off(self) -> None:
         os.environ["BOARD_STAFF_ENABLED"] = "false"
         self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
-        status, body = self.call("/siu-tin-dei/board/prospects")
+        status, body = self.call("/v1/admin/siutindei/board/prospects")
         self.assertEqual(status, 409)
         self.assertIn("disabled", body["message"].lower())
 

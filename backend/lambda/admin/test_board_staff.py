@@ -2513,7 +2513,7 @@ class StaffRouteTests(BoardTestCase):
     def test_post_disabled_is_409(self) -> None:
         os.environ["BOARD_STAFF_ENABLED"] = "false"
         status, body = self.call(
-            "/siu-tin-dei/board/tasks",
+            "/v1/admin/siutindei/board/tasks",
             "POST",
             {"assignee": "cfo", "brief": "List costs", "deliverableType": "markdown"},
         )
@@ -2522,12 +2522,12 @@ class StaffRouteTests(BoardTestCase):
 
     def test_unknown_seat_is_404_and_bad_body_is_400(self) -> None:
         os.environ["BOARD_STAFF_ENABLED"] = "true"
-        status, body = self.call("/siu-tin-dei/board/staff/not-a-seat", "PUT", {"isActive": True})
+        status, body = self.call("/v1/admin/siutindei/board/staff/not-a-seat", "PUT", {"isActive": True})
         self.assertEqual(status, 404)
         _enable_staff(self.table)
-        status, body = self.call("/siu-tin-dei/board/tasks", "POST", {"assignee": "cfo", "brief": "", "deliverableType": "markdown"})
+        status, body = self.call("/v1/admin/siutindei/board/tasks", "POST", {"assignee": "cfo", "brief": "", "deliverableType": "markdown"})
         self.assertEqual(status, 400)
-        status, body = self.call("/siu-tin-dei/board/tasks/missing")
+        status, body = self.call("/v1/admin/siutindei/board/tasks/missing")
         self.assertEqual(status, 404)
 
     def test_post_staff_tick_enqueues_and_never_runs_inline(self) -> None:
@@ -2542,7 +2542,7 @@ class StaffRouteTests(BoardTestCase):
         with patch.object(board_async, "try_invoke_event", side_effect=fake_invoke), patch.object(
             board_staff, "handle_tick"
         ) as tick:
-            status, body = self.call("/siu-tin-dei/board/staff/tick", "POST", {})
+            status, body = self.call("/v1/admin/siutindei/board/staff/tick", "POST", {})
         self.assertEqual(status, 200)
         self.assertTrue(body.get("queued"))
         self.assertTrue(body.get("invoked"))
@@ -2553,17 +2553,17 @@ class StaffRouteTests(BoardTestCase):
         with patch.object(board_async, "try_invoke_event", return_value=False), patch.object(
             board_staff, "handle_tick"
         ) as inline:
-            status, body = self.call("/siu-tin-dei/board/staff/tick", "POST", {})
+            status, body = self.call("/v1/admin/siutindei/board/staff/tick", "POST", {})
         self.assertEqual(status, 200)
         self.assertTrue(body.get("queued"))
         self.assertFalse(body.get("invoked"))
         inline.assert_not_called()
-        status, _ = self.call("/siu-tin-dei/board/staff/tick", "GET")
+        status, _ = self.call("/v1/admin/siutindei/board/staff/tick", "GET")
         self.assertEqual(status, 405)
 
     def test_post_staff_tick_disabled_is_409(self) -> None:
         os.environ["BOARD_STAFF_ENABLED"] = "false"
-        status, body = self.call("/siu-tin-dei/board/staff/tick", "POST", {})
+        status, body = self.call("/v1/admin/siutindei/board/staff/tick", "POST", {})
         self.assertEqual(status, 409)
         self.assertEqual(body["message"], "Staff is disabled")
 
@@ -2571,18 +2571,18 @@ class StaffRouteTests(BoardTestCase):
         os.environ["BOARD_STAFF_ENABLED"] = "true"
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
             _enable_staff(self.table)
-            status, body = self.call("/siu-tin-dei/board/staff")
+            status, body = self.call("/v1/admin/siutindei/board/staff")
             self.assertEqual(status, 200)
             self.assertTrue(body["enabled"])
             self.assertEqual(len(body["seats"]), 15)
             status, created = self.call(
-                "/siu-tin-dei/board/tasks",
+                "/v1/admin/siutindei/board/tasks",
                 "POST",
                 {"assignee": "cfo", "brief": "List our three biggest monthly costs from AWS and finance", "deliverableType": "markdown"},
             )
             self.assertEqual(status, 201)
             self.assertEqual(created["task"]["assignee"], "cfo")
-            status, listed = self.call("/siu-tin-dei/board/tasks")
+            status, listed = self.call("/v1/admin/siutindei/board/tasks")
             self.assertEqual(status, 200)
             self.assertGreaterEqual(len(listed["tasks"]), 1)
 
@@ -2601,7 +2601,7 @@ class StaffRouteTests(BoardTestCase):
         ):
             _enable_staff(self.table)
             status, created = self.call(
-                "/siu-tin-dei/board/tasks",
+                "/v1/admin/siutindei/board/tasks",
                 "POST",
                 {
                     "assignee": "cfo",
@@ -2631,7 +2631,7 @@ class StaffRouteTests(BoardTestCase):
             _enable_staff(self.table)
             board_store.save_staff_override(self.table, "engineer-1", {"isActive": True})
             status, created = self.call(
-                "/siu-tin-dei/board/tasks",
+                "/v1/admin/siutindei/board/tasks",
                 "POST",
                 {
                     "assignee": "engineer-1",
@@ -2661,7 +2661,7 @@ class StaffRouteTests(BoardTestCase):
             _enable_staff(self.table)
             board_store.save_staff_override(self.table, "engineer-2", {"isActive": True})
             status, created = self.call(
-                "/siu-tin-dei/board/tasks",
+                "/v1/admin/siutindei/board/tasks",
                 "POST",
                 {
                     "assignee": "engineer-2",
@@ -2682,7 +2682,7 @@ class StaffRouteTests(BoardTestCase):
             _enable_staff(self.table)
             board_store.save_staff_override(self.table, "engineer-1", {"isActive": True})
             status, created = self.call(
-                "/siu-tin-dei/board/tasks",
+                "/v1/admin/siutindei/board/tasks",
                 "POST",
                 {
                     "assignee": "engineer-1",
@@ -2704,7 +2704,7 @@ class StaffRouteTests(BoardTestCase):
             _enable_staff(self.table)
             board_store.save_staff_override(self.table, "engineer-1", {"isActive": True})
             status, created = self.call(
-                "/siu-tin-dei/board/tasks",
+                "/v1/admin/siutindei/board/tasks",
                 "POST",
                 {
                     "assignee": "engineer-1",
@@ -2725,7 +2725,7 @@ class StaffRouteTests(BoardTestCase):
         ) as revision:
             _enable_staff(self.table)
             status, created = self.call(
-                "/siu-tin-dei/board/tasks",
+                "/v1/admin/siutindei/board/tasks",
                 "POST",
                 {
                     "assignee": "cfo",
@@ -2746,7 +2746,7 @@ class StaffRouteTests(BoardTestCase):
         ):
             _enable_staff(self.table)
             status, body = self.call(
-                "/siu-tin-dei/board/tasks",
+                "/v1/admin/siutindei/board/tasks",
                 "POST",
                 {
                     "assignee": "cfo",
@@ -2763,7 +2763,7 @@ class StaffRouteTests(BoardTestCase):
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
             _enable_staff(self.table)
             status, created = self.call(
-                "/siu-tin-dei/board/tasks",
+                "/v1/admin/siutindei/board/tasks",
                 "POST",
                 {"assignee": "cfo", "brief": "List our three biggest monthly costs from AWS and finance", "deliverableType": "markdown"},
             )
@@ -2780,12 +2780,12 @@ class StaffRouteTests(BoardTestCase):
                 }
             )
             board_store.put_task(self.table, row)
-            status, body = self.call(f"/siu-tin-dei/board/tasks/{task_id}/retry", "POST", {})
+            status, body = self.call(f"/v1/admin/siutindei/board/tasks/{task_id}/retry", "POST", {})
             self.assertEqual(status, 200)
             self.assertIn(body["task"]["status"], ("queued", "running"))
             self.assertEqual(body["task"].get("failureReason") or "", "")
             self.assertFalse(body["task"].get("lastReview"))
-            status, again = self.call(f"/siu-tin-dei/board/tasks/{task_id}/retry", "POST", {})
+            status, again = self.call(f"/v1/admin/siutindei/board/tasks/{task_id}/retry", "POST", {})
             self.assertEqual(status, 409)
 
     def test_retry_labels_stale_scratchpad(self) -> None:
@@ -2793,7 +2793,7 @@ class StaffRouteTests(BoardTestCase):
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
             _enable_staff(self.table)
             status, created = self.call(
-                "/siu-tin-dei/board/tasks",
+                "/v1/admin/siutindei/board/tasks",
                 "POST",
                 {"assignee": "cfo", "brief": "List our three biggest monthly costs from AWS and finance", "deliverableType": "markdown"},
             )
@@ -2804,7 +2804,7 @@ class StaffRouteTests(BoardTestCase):
             board_staff._append_scratchpad(row, "run already scheduled")  # noqa: SLF001
             row.update({"status": "needs_owner", "failureReason": "breaker tripped"})
             board_store.put_task(self.table, row)
-            status, body = self.call(f"/siu-tin-dei/board/tasks/{task_id}/retry", "POST", {})
+            status, body = self.call(f"/v1/admin/siutindei/board/tasks/{task_id}/retry", "POST", {})
             self.assertEqual(status, 200)
             scratch = board_staff._blob_get(body["task"]["scratchpadKey"]).decode()  # noqa: SLF001
             self.assertIn("RETRY — the notes below are from a failed attempt", scratch)
@@ -2828,7 +2828,7 @@ class StaffRouteTests(BoardTestCase):
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
             _enable_staff(self.table)
             status, created = self.call(
-                "/siu-tin-dei/board/tasks",
+                "/v1/admin/siutindei/board/tasks",
                 "POST",
                 {"assignee": "cfo", "brief": "List our three biggest monthly costs from AWS and finance", "deliverableType": "markdown"},
             )
@@ -2838,7 +2838,7 @@ class StaffRouteTests(BoardTestCase):
             assert row is not None
             row.update({"status": "failed", "failureReason": "step limit"})
             board_store.put_task(self.table, row)
-            status, body = self.call(f"/siu-tin-dei/board/tasks/{task_id}/cancel", "POST", {})
+            status, body = self.call(f"/v1/admin/siutindei/board/tasks/{task_id}/cancel", "POST", {})
             self.assertEqual(status, 200)
             self.assertEqual(body["task"]["status"], "cancelled")
             self.assertIn("step limit", body["task"].get("failureReason") or "")
@@ -2848,7 +2848,7 @@ class StaffRouteTests(BoardTestCase):
             row["status"] = "delivered"
             row.pop("failureReason", None)
             board_store.put_task(self.table, row)
-            status, body = self.call(f"/siu-tin-dei/board/tasks/{task_id}/cancel", "POST", {})
+            status, body = self.call(f"/v1/admin/siutindei/board/tasks/{task_id}/cancel", "POST", {})
             self.assertEqual(status, 409)
 
     def test_persona_cancel_appends_reason_and_refuses_delivered(self) -> None:
@@ -2856,7 +2856,7 @@ class StaffRouteTests(BoardTestCase):
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
             settings = _enable_staff(self.table)
             status, created = self.call(
-                "/siu-tin-dei/board/tasks",
+                "/v1/admin/siutindei/board/tasks",
                 "POST",
                 {"assignee": "cfo", "brief": "List our three biggest monthly costs from AWS and finance", "deliverableType": "markdown"},
             )
@@ -2896,7 +2896,7 @@ class StaffRouteTests(BoardTestCase):
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
             _enable_staff(self.table)
             status, created = self.call(
-                "/siu-tin-dei/board/tasks",
+                "/v1/admin/siutindei/board/tasks",
                 "POST",
                 {"assignee": "cfo", "brief": "List our three biggest monthly costs from AWS and finance", "deliverableType": "markdown"},
             )
@@ -2911,7 +2911,7 @@ class StaffRouteTests(BoardTestCase):
                 "budgetUsd": 1.0,
             })
             board_store.put_task(self.table, row)
-            status, body = self.call(f"/siu-tin-dei/board/tasks/{task_id}/retry", "POST", {})
+            status, body = self.call(f"/v1/admin/siutindei/board/tasks/{task_id}/retry", "POST", {})
             self.assertEqual(status, 200)
             self.assertEqual((body["task"].get("usage") or {}).get("cost") or 0, 0)
             self.assertEqual((body["task"].get("previousUsage") or {}).get("cost"), 1.0)
@@ -2923,7 +2923,7 @@ class StaffRouteTests(BoardTestCase):
             _enable_staff(self.table)
             board_store.save_staff_override(self.table, "support", {"isActive": True})
             status, created = self.call(
-                "/siu-tin-dei/board/tasks",
+                "/v1/admin/siutindei/board/tasks",
                 "POST",
                 {"assignee": "support", "brief": "Reply to the parent who asked about lunch", "deliverableType": "markdown"},
             )
@@ -2934,7 +2934,7 @@ class StaffRouteTests(BoardTestCase):
             row.update({"status": "failed", "failureReason": "stuck"})
             board_store.put_task(self.table, row)
             board_store.save_staff_override(self.table, "support", {"isActive": False})
-            status, body = self.call(f"/siu-tin-dei/board/tasks/{task_id}/retry", "POST", {})
+            status, body = self.call(f"/v1/admin/siutindei/board/tasks/{task_id}/retry", "POST", {})
             self.assertEqual(status, 409)
             self.assertIn("not active", body["message"])
             board_store.save_staff_override(self.table, "support", {"isActive": True})
@@ -2953,7 +2953,7 @@ class StaffRouteTests(BoardTestCase):
             assert row is not None
             row["actionId"] = action_id
             board_store.put_task(self.table, row)
-            status, body = self.call(f"/siu-tin-dei/board/tasks/{task_id}/retry", "POST", {})
+            status, body = self.call(f"/v1/admin/siutindei/board/tasks/{task_id}/retry", "POST", {})
             self.assertEqual(status, 409)
             self.assertIn("closed", body["message"])
 
@@ -3297,7 +3297,7 @@ class StaffActionHandoffTests(BoardTestCase):
         board_store.save_staff_override(self.table, "prospector", {"isActive": True})
         action = self._open_action()
         status, body = self.call(
-            "/siu-tin-dei/board/tasks",
+            "/v1/admin/siutindei/board/tasks",
             "POST",
             {"assignee": "prospector", "brief": "Call 10 providers", "deliverableType": "markdown", "actionId": action["actionId"]},
         )
@@ -3312,7 +3312,7 @@ class StaffActionHandoffTests(BoardTestCase):
         self.assertEqual(linked["status"], "open")
         # A second hand-off while the first task is open is refused.
         status, body = self.call(
-            "/siu-tin-dei/board/tasks",
+            "/v1/admin/siutindei/board/tasks",
             "POST",
             {"assignee": "prospector", "brief": "Again", "deliverableType": "markdown", "actionId": action["actionId"]},
         )
@@ -3322,7 +3322,7 @@ class StaffActionHandoffTests(BoardTestCase):
         assert stored is not None
         stored["status"] = "review"
         board_store.put_task(self.table, stored)
-        status, body = self.call(f"/siu-tin-dei/board/tasks/{task['taskId']}/review", "POST", {"verdict": "accept", "notes": "Good"})
+        status, body = self.call(f"/v1/admin/siutindei/board/tasks/{task['taskId']}/review", "POST", {"verdict": "accept", "notes": "Good"})
         self.assertEqual(status, 200, body)
         closed = board_store.get_action(self.table, action["actionId"])
         assert closed is not None
@@ -3333,14 +3333,14 @@ class StaffActionHandoffTests(BoardTestCase):
     def test_owner_hand_off_validates_action(self) -> None:
         _enable_staff(self.table)
         status, body = self.call(
-            "/siu-tin-dei/board/tasks",
+            "/v1/admin/siutindei/board/tasks",
             "POST",
             {"assignee": "cfo", "brief": "x", "deliverableType": "markdown", "actionId": "does-not-exist"},
         )
         self.assertEqual(status, 400, body)
         done = self._open_action(status="done")
         status, body = self.call(
-            "/siu-tin-dei/board/tasks",
+            "/v1/admin/siutindei/board/tasks",
             "POST",
             {"assignee": "cfo", "brief": "x", "deliverableType": "markdown", "actionId": done["actionId"]},
         )
@@ -3349,22 +3349,22 @@ class StaffActionHandoffTests(BoardTestCase):
     def test_minutes_assignee_becomes_approval_then_task(self) -> None:
         _enable_staff(self.table)
         board_store.save_staff_override(self.table, "prospector", {"isActive": True})
-        status, body = self.call("/siu-tin-dei/board/meetings", "POST", {"mode": "standup"})
+        status, body = self.call("/v1/admin/siutindei/board/meetings", "POST", {"mode": "standup"})
         self.assertEqual(status, 202, body)
-        _, meeting = self.call(f"/siu-tin-dei/board/meetings/{body['meetingId']}")
+        _, meeting = self.call(f"/v1/admin/siutindei/board/meetings/{body['meetingId']}")
         self.assertEqual(meeting["meeting"]["status"], "succeeded")
         minutes_request = next(r for r in self.openrouter.requests if "Write the minutes" in r["messages"][-1]["content"])
         prompt = minutes_request["messages"][-1]["content"]
         self.assertIn("Active staff seats", prompt)
         self.assertIn("- prospector —", prompt)
-        _, actions = self.call("/siu-tin-dei/board/actions", query="status=open")
+        _, actions = self.call("/v1/admin/siutindei/board/actions", query="status=open")
         by_title = {a["title"]: a for a in actions["actions"]}
         self.assertEqual(by_title["Pick the beta launch date"]["assignee"], "")
         self.assertEqual(by_title["Call 10 activity providers"]["assignee"], "prospector")
         action = by_title["Call 10 activity providers"]
         # The chair's staff tool defaults to propose: the hand-off waits for the owner.
         self.assertEqual(board_store.list_tasks(self.table, None), [])
-        status, approvals = self.call("/siu-tin-dei/board/approvals", query="status=pending")
+        status, approvals = self.call("/v1/admin/siutindei/board/approvals", query="status=pending")
         self.assertEqual(status, 200)
         self.assertEqual(len(approvals["approvals"]), 1)
         approval = approvals["approvals"][0]
@@ -3374,7 +3374,7 @@ class StaffActionHandoffTests(BoardTestCase):
         self.assertEqual(approval["arguments"]["actionId"], action["actionId"])
         self.assertIn("Done looks like: Book calls.", approval["arguments"]["brief"])
         self.assertIn("Success metric: 10 calls", approval["arguments"]["brief"])
-        status, body = self.call(f"/siu-tin-dei/board/approvals/{approval['approvalId']}/approve", "POST", {})
+        status, body = self.call(f"/v1/admin/siutindei/board/approvals/{approval['approvalId']}/approve", "POST", {})
         self.assertEqual(status, 200, body)
         tasks = board_store.list_tasks(self.table, None)
         self.assertEqual(len(tasks), 1)
@@ -3390,12 +3390,12 @@ class StaffActionHandoffTests(BoardTestCase):
         settings["tools"]["matrix"]["staff"]["ceo"] = "act"
         board_store.save_settings(self.table, settings)
         board_store.save_staff_override(self.table, "prospector", {"isActive": True})
-        status, body = self.call("/siu-tin-dei/board/meetings", "POST", {"mode": "standup"})
+        status, body = self.call("/v1/admin/siutindei/board/meetings", "POST", {"mode": "standup"})
         self.assertEqual(status, 202, body)
         tasks = board_store.list_tasks(self.table, None)
         self.assertEqual([t["assignee"] for t in tasks], ["prospector"])
         self.assertEqual(tasks[0]["origin"], "minutes")
-        status, approvals = self.call("/siu-tin-dei/board/approvals", query="status=pending")
+        status, approvals = self.call("/v1/admin/siutindei/board/approvals", query="status=pending")
         self.assertEqual(approvals["approvals"], [])
 
     def test_minutes_assign_reuses_overlapping_open_task(self) -> None:
@@ -4060,7 +4060,7 @@ class StaffHelpTests(ToolsTestCase):
         action["staffTaskId"] = parent["taskId"]
         board_store.put_action(self.table, action)
         status, body = self.call(
-            "/siu-tin-dei/board/tasks",
+            "/v1/admin/siutindei/board/tasks",
             "POST",
             {
                 "assignee": "support",

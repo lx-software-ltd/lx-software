@@ -99,7 +99,7 @@ let whatsapp = {
 
 export function handleMessages(ctx: MockCtx): Response | null {
   const path = ctx.path;
-  const prefix = "/siu-tin-dei/board/messages";
+  const prefix = "/v1/admin/siutindei/board/messages";
   if (!path.startsWith(prefix)) return null;
   if (path === prefix && ctx.method === "GET") {
     const channel = ctx.url.searchParams.get("channel") || "all";
@@ -140,18 +140,18 @@ export function handleMessages(ctx: MockCtx): Response | null {
   if (path === `${prefix}/connect/page` && ctx.method === "POST") {
     return json({ ok: true, fields: ["messages", "message_echoes", "messaging_postbacks", "message_reactions", "feed"] });
   }
-  const mediaMatch = path.match(/^\/siu-tin-dei\/board\/messages\/([^/]+)\/media\/([^/]+)$/);
+  const mediaMatch = path.match(/^\/v1\/admin\/siutindei\/board\/messages\/([^/]+)\/media\/([^/]+)$/);
   if (mediaMatch && ctx.method === "GET") {
     if (mediaMatch[2].endsWith("-0")) return json({ url: mockPhotoUrl(), kind: "image", mime: "image/svg+xml", name: "" });
     return json({ message: "This file is no longer available from Meta." }, 404);
   }
-  const threadMatch = path.match(/^\/siu-tin-dei\/board\/messages\/([^/]+)$/);
+  const threadMatch = path.match(/^\/v1\/admin\/siutindei\/board\/messages\/([^/]+)$/);
   if (threadMatch && ctx.method === "GET") {
     const thread = threads.find((item) => item.threadId === decodeURIComponent(threadMatch[1]));
     if (!thread) return json({ message: "not found" }, 404);
     return json({ thread, messages: messagesByThread[thread.threadId] ?? messages });
   }
-  const readMatch = path.match(/^\/siu-tin-dei\/board\/messages\/([^/]+)\/read$/);
+  const readMatch = path.match(/^\/v1\/admin\/siutindei\/board\/messages\/([^/]+)\/read$/);
   if (readMatch && ctx.method === "POST") {
     const thread = threads.find((item) => item.threadId === decodeURIComponent(readMatch[1]));
     if (!thread) return json({ message: "not found" }, 404);

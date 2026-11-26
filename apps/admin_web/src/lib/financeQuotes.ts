@@ -1,6 +1,6 @@
 /**
  * Live spot prices for Investment tickers / crypto codes via the admin
- * `/finance/quotes` proxy (Yahoo Finance upstream).
+ * `/v1/admin/finance/quotes` proxy (Yahoo Finance upstream).
  *
  * The user enters symbols in TradingView style (`US:TQQQ`, `LON:VWRA`,
  * `HK:0700`) for ETF rows and the bare coin code (`BTC`, `ETH`) for
@@ -36,7 +36,7 @@ export async function fetchFinanceQuotes(
   const param = cleaned.map((s) => encodeURIComponent(s)).join(",");
   let res: Response;
   try {
-    res = await adminFetch(`/finance/quotes?symbols=${param}`);
+    res = await adminFetch(`/v1/admin/finance/quotes?symbols=${param}`);
   } catch (err) {
     if (err instanceof AdminApiError) {
       throw new Error(

@@ -6,14 +6,14 @@ describe("mockAdminFetch", () => {
     resetAdminMockState();
   });
   it("serves finance accounts used by the Accounts tab", async () => {
-    const res = await mockAdminFetch("/finance");
+    const res = await mockAdminFetch("/v1/admin/finance");
     expect(res.ok).toBe(true);
     const body = (await res.json()) as { accountRecords: readonly { id: string }[] };
     expect(body.accountRecords.map((r) => r.id)).toContain("ac-1");
   });
 
   it("serves listing and partnership progress", async () => {
-    const res = await mockAdminFetch("/siu-tin-dei/board/progress");
+    const res = await mockAdminFetch("/v1/admin/siutindei/board/progress");
     expect(res.ok).toBe(true);
     const body = (await res.json()) as {
       listings: { activities: number; hasPhotoAvg?: number; byDistrict: { hasPhotoAvg?: number }[] };
@@ -26,7 +26,7 @@ describe("mockAdminFetch", () => {
   });
 
   it("serves the OpenRouter usage split for the LX Software dashboard", async () => {
-    const res = await mockAdminFetch("/openrouter/usage?from=2026-07-01&to=2026-07-31");
+    const res = await mockAdminFetch("/v1/admin/openrouter/usage?from=2026-07-01&to=2026-07-31");
     expect(res.ok).toBe(true);
     const body = (await res.json()) as {
       from: string;
@@ -53,7 +53,7 @@ describe("mockAdminFetch", () => {
   });
 
   it("serves the AWS cost split for the LX Software dashboard", async () => {
-    const res = await mockAdminFetch("/aws/usage?from=2026-07-01&to=2026-07-31");
+    const res = await mockAdminFetch("/v1/admin/aws/usage?from=2026-07-01&to=2026-07-31");
     expect(res.ok).toBe(true);
     const body = (await res.json()) as {
       from: string;
@@ -67,13 +67,13 @@ describe("mockAdminFetch", () => {
     expect(body.companies.map((row) => row.id)).toEqual(
       expect.arrayContaining(["siuTinDei", "evolveSprouts", "lxSoftware"]),
     );
-    const pdf = await mockAdminFetch("/aws/usage.pdf");
+    const pdf = await mockAdminFetch("/v1/admin/aws/usage/pdf");
     expect(pdf.ok).toBe(true);
     expect(pdf.headers.get("Content-Type")).toBe("application/pdf");
   });
 
   it("starts staging behind main and Sync from main makes it promotable", async () => {
-    const beforeRes = await mockAdminFetch("/siu-tin-dei/board/code/staging");
+    const beforeRes = await mockAdminFetch("/v1/admin/siutindei/board/code/staging");
     expect(beforeRes.ok).toBe(true);
     const before = (await beforeRes.json()) as {
       staging: { behindBy?: number; canPromote?: boolean; commits?: readonly { message?: string }[] };
@@ -83,7 +83,7 @@ describe("mockAdminFetch", () => {
       expect(before.staging.canPromote).toBe(false);
     }
 
-    const syncRes = await mockAdminFetch("/siu-tin-dei/board/code/sync-staging", { method: "POST" });
+    const syncRes = await mockAdminFetch("/v1/admin/siutindei/board/code/sync-staging", { method: "POST" });
     expect(syncRes.ok).toBe(true);
     const synced = (await syncRes.json()) as {
       ok?: boolean;
@@ -94,7 +94,7 @@ describe("mockAdminFetch", () => {
     expect(synced.preview?.behindBy).toBe(0);
     expect(synced.preview?.canPromote).toBe(true);
 
-    const afterRes = await mockAdminFetch("/siu-tin-dei/board/code/staging");
+    const afterRes = await mockAdminFetch("/v1/admin/siutindei/board/code/staging");
     const after = (await afterRes.json()) as {
       staging: { behindBy?: number; canPromote?: boolean; commits?: readonly { message?: string }[] };
     };
@@ -102,7 +102,7 @@ describe("mockAdminFetch", () => {
     expect(after.staging.canPromote).toBe(true);
     expect(after.staging.commits?.[0]?.message).toMatch(/board: #42 add booking/);
 
-    const againRes = await mockAdminFetch("/siu-tin-dei/board/code/sync-staging", { method: "POST" });
+    const againRes = await mockAdminFetch("/v1/admin/siutindei/board/code/sync-staging", { method: "POST" });
     const again = (await againRes.json()) as { alreadyCurrent?: boolean };
     expect(again.alreadyCurrent).toBe(true);
   });
@@ -116,7 +116,7 @@ describe("mockAdminFetch", () => {
       syncOnly: true,
       commits: [{ sha: "abc12345", message: "board: sync staging with main" }],
     });
-    const syncRes = await mockAdminFetch("/siu-tin-dei/board/code/sync-staging", { method: "POST" });
+    const syncRes = await mockAdminFetch("/v1/admin/siutindei/board/code/sync-staging", { method: "POST" });
     const synced = (await syncRes.json()) as {
       reset?: boolean;
       preview?: { aheadBy?: number; canPromote?: boolean; syncOnly?: boolean };
@@ -128,7 +128,7 @@ describe("mockAdminFetch", () => {
   });
 
   it("previews a catalog sheet and refuses import while the kill switch is off", async () => {
-    const previewRes = await mockAdminFetch("/siu-tin-dei/board/catalog/preview", {
+    const previewRes = await mockAdminFetch("/v1/admin/siutindei/board/catalog/preview", {
       method: "POST",
       body: JSON.stringify({ taskId: "task-catalog", remote: true }),
     });
@@ -141,13 +141,13 @@ describe("mockAdminFetch", () => {
     expect(preview.preview.district).toBe("Eastern");
     expect(preview.preview.dryRun?.mode).toBe("remote");
 
-    const importRes = await mockAdminFetch("/siu-tin-dei/board/catalog/import", {
+    const importRes = await mockAdminFetch("/v1/admin/siutindei/board/catalog/import", {
       method: "POST",
       body: JSON.stringify({ taskId: "task-catalog" }),
     });
     expect(importRes.status).toBe(409);
 
-    const skipRes = await mockAdminFetch("/siu-tin-dei/board/catalog/skip", {
+    const skipRes = await mockAdminFetch("/v1/admin/siutindei/board/catalog/skip", {
       method: "POST",
       body: JSON.stringify({ taskId: "task-catalog" }),
     });
@@ -156,7 +156,7 @@ describe("mockAdminFetch", () => {
     expect(skipped.skipped).toBe(true);
     expect(skipped.task?.status).toBe("delivered");
 
-    const sourcesRes = await mockAdminFetch("/siu-tin-dei/board/catalog/sources");
+    const sourcesRes = await mockAdminFetch("/v1/admin/siutindei/board/catalog/sources");
     expect(sourcesRes.ok).toBe(true);
     const sources = (await sourcesRes.json()) as { launchTarget?: number; sources?: { id: string }[] };
     expect(sources.launchTarget).toBe(1000);
@@ -166,9 +166,9 @@ describe("mockAdminFetch", () => {
       | undefined;
     expect(swd?.job).toEqual({ phase: "running", action: "ingest", offset: 500, remaining: 200 });
 
-    const previewBulk = await mockAdminFetch("/siu-tin-dei/board/catalog/bulk/lcsd/preview", { method: "POST", body: "{}" });
+    const previewBulk = await mockAdminFetch("/v1/admin/siutindei/board/catalog/bulk/lcsd/preview", { method: "POST", body: "{}" });
     expect(previewBulk.ok).toBe(true);
-    const sourcesAfter = await mockAdminFetch("/siu-tin-dei/board/catalog/sources");
+    const sourcesAfter = await mockAdminFetch("/v1/admin/siutindei/board/catalog/sources");
     const sourcesAfterBody = (await sourcesAfter.json()) as {
       sources?: { id: string; job?: { phase?: string; action?: string } | null }[];
     };
@@ -177,7 +177,7 @@ describe("mockAdminFetch", () => {
       action: "preview",
     });
 
-    const reimportRes = await mockAdminFetch("/siu-tin-dei/board/catalog/reimport", {
+    const reimportRes = await mockAdminFetch("/v1/admin/siutindei/board/catalog/reimport", {
       method: "POST",
       body: JSON.stringify({ taskId: "task-catalog-imported" }),
     });
@@ -185,7 +185,7 @@ describe("mockAdminFetch", () => {
   });
 
   it("hides archived DMARC reports from the inbox and unread count", async () => {
-    const inbox = await mockAdminFetch("/siu-tin-dei/board/mail");
+    const inbox = await mockAdminFetch("/v1/admin/siutindei/board/mail");
     expect(inbox.ok).toBe(true);
     const inboxBody = (await inbox.json()) as {
       threads: readonly { subject: string; disposition?: string }[];
@@ -195,7 +195,7 @@ describe("mockAdminFetch", () => {
     expect(inboxBody.threads.some((t) => t.disposition === "archived")).toBe(false);
     expect(inboxBody.mailboxes[0]?.unreadCount).toBe(1);
 
-    const archived = await mockAdminFetch("/siu-tin-dei/board/mail?archived=1");
+    const archived = await mockAdminFetch("/v1/admin/siutindei/board/mail?archived=1");
     const archivedBody = (await archived.json()) as { threads: readonly { subject: string }[] };
     expect(archivedBody.threads.map((t) => t.subject)).toEqual(["Report Domain: siutindei.com"]);
   });
@@ -205,21 +205,21 @@ describe("mockAdminFetch", () => {
     expect(res.status).toBe(404);
   });
 
-  it("persists staff.maxRunningTasks on PUT /siu-tin-dei/board/settings", async () => {
-    const put = await mockAdminFetch("/siu-tin-dei/board/settings", {
+  it("persists staff.maxRunningTasks on PUT /v1/admin/siutindei/board/settings", async () => {
+    const put = await mockAdminFetch("/v1/admin/siutindei/board/settings", {
       method: "PUT",
       body: JSON.stringify({ staff: { enabled: true, maxRunningTasks: 8, dailyBudgetUsd: 20 } }),
     });
     expect(put.ok).toBe(true);
     const saved = (await put.json()) as { settings: { staff: { maxRunningTasks: number } } };
     expect(saved.settings.staff.maxRunningTasks).toBe(8);
-    const get = await mockAdminFetch("/siu-tin-dei/board");
+    const get = await mockAdminFetch("/v1/admin/siutindei/board");
     const overview = (await get.json()) as { settings: { staff: { maxRunningTasks: number } } };
     expect(overview.settings.staff.maxRunningTasks).toBe(8);
   });
 
-  it("persists staff.modelBySeat on PUT /siu-tin-dei/board/settings", async () => {
-    const put = await mockAdminFetch("/siu-tin-dei/board/settings", {
+  it("persists staff.modelBySeat on PUT /v1/admin/siutindei/board/settings", async () => {
+    const put = await mockAdminFetch("/v1/admin/siutindei/board/settings", {
       method: "PUT",
       body: JSON.stringify({
         staff: { enabled: true, maxRunningTasks: 6, dailyBudgetUsd: 20, modelBySeat: { "engineer-1": "qwen/qwen-2.5-72b-instruct" } },
@@ -230,7 +230,7 @@ describe("mockAdminFetch", () => {
   });
 
   it("posts New task prNumber as a revision eventRef and omits it when empty", async () => {
-    const withPr = await mockAdminFetch("/siu-tin-dei/board/tasks", {
+    const withPr = await mockAdminFetch("/v1/admin/siutindei/board/tasks", {
       method: "POST",
       body: JSON.stringify({
         assignee: "engineer-1",
@@ -249,7 +249,7 @@ describe("mockAdminFetch", () => {
       expect.objectContaining({ kind: "code-implement", prNumber: 501, issueNumber: 489 }),
     );
 
-    const withoutPr = await mockAdminFetch("/siu-tin-dei/board/tasks", {
+    const withoutPr = await mockAdminFetch("/v1/admin/siutindei/board/tasks", {
       method: "POST",
       body: JSON.stringify({
         assignee: "support",
@@ -264,7 +264,7 @@ describe("mockAdminFetch", () => {
   });
 
   it("persists an optional district on a listingsIndex watch", async () => {
-    const created = await mockAdminFetch("/siu-tin-dei/board/watchlist", {
+    const created = await mockAdminFetch("/v1/admin/siutindei/board/watchlist", {
       method: "POST",
       body: JSON.stringify({
         name: "Classbee Tung Chung",
@@ -276,7 +276,7 @@ describe("mockAdminFetch", () => {
     expect(created.status).toBe(201);
     const body = (await created.json()) as { watch: { watchId: string; district?: string } };
     expect(body.watch.district).toBe("Islands");
-    const updated = await mockAdminFetch(`/siu-tin-dei/board/watchlist/${body.watch.watchId}`, {
+    const updated = await mockAdminFetch(`/v1/admin/siutindei/board/watchlist/${body.watch.watchId}`, {
       method: "PUT",
       body: JSON.stringify({ district: "" }),
     });
@@ -286,33 +286,33 @@ describe("mockAdminFetch", () => {
   });
 
   it("serves the Evolve Sprouts book and refuses edits", async () => {
-    const book = await mockAdminFetch("/evolve-sprouts");
+    const book = await mockAdminFetch("/v1/admin/evolvesprouts");
     expect(book.ok).toBe(true);
     const bookBody = (await book.json()) as { data: { lines: { id: string }[] } };
     expect(bookBody.data.lines.map((line) => line.id)).toEqual(["es-inv-1", "es-exp-1", "es-ref-1"]);
 
-    const summary = await mockAdminFetch("/evolve-sprouts/summary");
+    const summary = await mockAdminFetch("/v1/admin/evolvesprouts/summary");
     expect(summary.ok).toBe(true);
     const summaryBody = (await summary.json()) as { openInvoices: number; submittedExpenses: number; paidExpenses: number };
     expect(summaryBody.openInvoices).toBe(3);
     expect(summaryBody.submittedExpenses).toBe(2);
     expect(summaryBody.paidExpenses).toBe(4);
 
-    const synced = await mockAdminFetch("/evolve-sprouts/sync", { method: "POST" });
+    const synced = await mockAdminFetch("/v1/admin/evolvesprouts/sync", { method: "POST" });
     expect(synced.ok).toBe(true);
     const syncedBody = (await synced.json()) as { syncedAt: string | null };
     expect(syncedBody.syncedAt).toBeTruthy();
 
-    const denied = await mockAdminFetch("/evolve-sprouts", {
+    const denied = await mockAdminFetch("/v1/admin/evolvesprouts", {
       method: "PUT",
       body: JSON.stringify({ lines: [] }),
     });
     expect(denied.status).toBe(403);
-    const still = await mockAdminFetch("/evolve-sprouts");
+    const still = await mockAdminFetch("/v1/admin/evolvesprouts");
     const stillBody = (await still.json()) as { data: { lines: { id: string }[] } };
     expect(stillBody.data.lines).toHaveLength(3);
 
-    const lx = await mockAdminFetch("/lx-software", {
+    const lx = await mockAdminFetch("/v1/admin/lx-software", {
       method: "PUT",
       body: JSON.stringify({
         defaultCurrency: "HKD",
@@ -324,7 +324,7 @@ describe("mockAdminFetch", () => {
   });
 
   it("serves Frankfurter-shaped FX rows (1 base = rate quote)", async () => {
-    const res = await mockAdminFetch("/fx/v2/rates?base=HKD&quotes=USD");
+    const res = await mockAdminFetch("/v1/admin/fx/rates?base=HKD&quotes=USD");
     expect(res.ok).toBe(true);
     const rows = (await res.json()) as readonly {
       base: string;
@@ -338,7 +338,7 @@ describe("mockAdminFetch", () => {
   });
 
   it("serves the LinkedIn dashboard plan without the overview", async () => {
-    const res = await mockAdminFetch("/lx-software/linkedin?view=plan");
+    const res = await mockAdminFetch("/v1/admin/lx-software/linkedin?view=plan");
     expect(res.ok).toBe(true);
     const body = (await res.json()) as {
       planned: number;
@@ -353,13 +353,13 @@ describe("mockAdminFetch", () => {
   });
 
   it("persists the LinkedIn draft OpenRouter model", async () => {
-    const overview = (await (await mockAdminFetch("/lx-software/linkedin")).json()) as {
+    const overview = (await (await mockAdminFetch("/v1/admin/lx-software/linkedin")).json()) as {
       settings: { model: string; notifyEmail: string };
       defaultModel: string;
     };
     expect(overview.settings.model).toBe("");
     expect(overview.defaultModel).toBe("mistralai/mistral-large-4-0");
-    const put = await mockAdminFetch("/lx-software/linkedin/settings", {
+    const put = await mockAdminFetch("/v1/admin/lx-software/linkedin/settings", {
       method: "PUT",
       body: JSON.stringify({
         ...overview.settings,
@@ -374,12 +374,12 @@ describe("mockAdminFetch", () => {
   });
 
   it("persists a starred LinkedIn draft", async () => {
-    const listed = (await (await mockAdminFetch("/lx-software/linkedin/posts")).json()) as {
+    const listed = (await (await mockAdminFetch("/v1/admin/lx-software/linkedin/posts")).json()) as {
       items: { postId: string; starred?: boolean }[];
     };
     const draft = listed.items.find((row) => row.postId === "li_hook");
     expect(draft?.starred).toBeFalsy();
-    const put = await mockAdminFetch("/lx-software/linkedin/posts/li_hook", {
+    const put = await mockAdminFetch("/v1/admin/lx-software/linkedin/posts/li_hook", {
       method: "PUT",
       body: JSON.stringify({ starred: true }),
     });
@@ -387,32 +387,32 @@ describe("mockAdminFetch", () => {
     const saved = (await put.json()) as { item: { starred: boolean; status: string } };
     expect(saved.item.starred).toBe(true);
     expect(saved.item.status).toBe("drafted");
-    const again = (await (await mockAdminFetch("/lx-software/linkedin/posts")).json()) as {
+    const again = (await (await mockAdminFetch("/v1/admin/lx-software/linkedin/posts")).json()) as {
       items: { postId: string; starred?: boolean }[];
     };
     expect(again.items.find((row) => row.postId === "li_hook")?.starred).toBe(true);
   });
 
   it("serves Resume and finishes a tailor job without replacing the template", async () => {
-    const overview = (await (await mockAdminFetch("/lx-software/resume/overview")).json()) as {
+    const overview = (await (await mockAdminFetch("/v1/admin/lx-software/resume/overview")).json()) as {
       enabled: boolean;
       templateResumeId: string;
     };
     expect(overview.enabled).toBe(true);
     expect(overview.templateResumeId).toBe("res_alex");
-    const listed = (await (await mockAdminFetch("/lx-software/resume/resumes")).json()) as {
+    const listed = (await (await mockAdminFetch("/v1/admin/lx-software/resume/resumes")).json()) as {
       items: { title: string; paragraphs?: unknown }[];
     };
     expect(listed.items[0]?.title).toBe("Alex Example");
     expect(listed.items[0]?.paragraphs).toBeUndefined();
-    const detail = (await (await mockAdminFetch("/lx-software/resume/resumes/res_alex")).json()) as {
+    const detail = (await (await mockAdminFetch("/v1/admin/lx-software/resume/resumes/res_alex")).json()) as {
       item: { paragraphs: { text: string }[] };
     };
     expect(detail.item.paragraphs[0]?.text).toBe("Alex Example");
 
     vi.useFakeTimers();
     try {
-      const queued = await mockAdminFetch("/lx-software/resume/tailor", {
+      const queued = await mockAdminFetch("/v1/admin/lx-software/resume/tailor", {
         method: "POST",
         body: JSON.stringify({
           templateId: "res_alex",
@@ -424,13 +424,13 @@ describe("mockAdminFetch", () => {
       const queuedBody = (await queued.json()) as { job: { jobId: string; status: string } };
       expect(queuedBody.job.status).toBe("queued");
       await vi.advanceTimersByTimeAsync(2000);
-      const done = (await (await mockAdminFetch(`/lx-software/resume/jobs/${queuedBody.job.jobId}`)).json()) as {
+      const done = (await (await mockAdminFetch(`/v1/admin/lx-software/resume/jobs/${queuedBody.job.jobId}`)).json()) as {
         job: { status: string; findings: string[]; resumeIds: string[] };
       };
       expect(done.job.status).toBe("done");
       expect(done.job.resumeIds).toHaveLength(1);
       expect(done.job.findings[0]).toContain("summary");
-      const after = (await (await mockAdminFetch("/lx-software/resume/overview")).json()) as {
+      const after = (await (await mockAdminFetch("/v1/admin/lx-software/resume/overview")).json()) as {
         templateResumeId: string;
       };
       expect(after.templateResumeId).toBe("res_alex");

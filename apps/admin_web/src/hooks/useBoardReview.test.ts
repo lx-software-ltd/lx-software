@@ -27,7 +27,7 @@ describe("review mutations", () => {
     const { mutationFn } = reviewWrongMutationOptions(qc);
     await mutationFn({ callId: "call-1", note: "too casual" });
     const [path, init] = fetchMock.mock.calls[0];
-    expect(path).toBe("/siu-tin-dei/board/review/sample/call-1/wrong");
+    expect(path).toBe("/v1/admin/siutindei/board/review/sample/call-1/wrong");
     expect(init?.method).toBe("POST");
     expect(JSON.parse(init?.body as string)).toEqual({ note: "too casual" });
   });
@@ -37,7 +37,7 @@ describe("review mutations", () => {
     const { mutationFn } = rampPromoteMutationOptions(qc);
     await mutationFn("publish:facebook");
     const [path, init] = fetchMock.mock.calls[0];
-    expect(path).toBe("/siu-tin-dei/board/ramp/publish%3Afacebook/promote");
+    expect(path).toBe("/v1/admin/siutindei/board/ramp/publish%3Afacebook/promote");
     expect(init?.method).toBe("POST");
   });
 
@@ -46,7 +46,7 @@ describe("review mutations", () => {
     const { mutationFn } = stagingPromoteMutationOptions(qc);
     await mutationFn();
     const [path, init] = fetchMock.mock.calls[0];
-    expect(path).toBe("/siu-tin-dei/board/code/promote");
+    expect(path).toBe("/v1/admin/siutindei/board/code/promote");
     expect(init?.method).toBe("POST");
   });
 
@@ -55,7 +55,7 @@ describe("review mutations", () => {
     const { mutationFn } = stagingSyncMutationOptions(qc);
     await mutationFn();
     const [path, init] = fetchMock.mock.calls[0];
-    expect(path).toBe("/siu-tin-dei/board/code/sync-staging");
+    expect(path).toBe("/v1/admin/siutindei/board/code/sync-staging");
     expect(init?.method).toBe("POST");
   });
 });

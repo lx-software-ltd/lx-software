@@ -36,7 +36,7 @@ import type {
 
 export function handleB0(ctx: MockCtx): Response | null {
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === board)) return null;
 
       return json({
@@ -50,7 +50,7 @@ export function handleB1(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
   const init = ctx.init;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/settings` && method === "PUT")) return null;
 
       const body = parseBody(init) as Partial<BoardSettings>;
@@ -80,7 +80,7 @@ export function handleB1(ctx: MockCtx): Response | null {
 
 export function handleB2(ctx: MockCtx): Response | null {
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/actions`)) return null;
   return json({ actions: state.actions });
 }
@@ -89,7 +89,7 @@ export function handleB3(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
   const init = ctx.init;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p.startsWith(`${board}/actions/`) && method === "PUT")) return null;
 
       const actionId = p.slice(`${board}/actions/`.length);
@@ -108,40 +108,40 @@ export function handleB3(ctx: MockCtx): Response | null {
 
 export function handleB4(ctx: MockCtx): Response | null {
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/approvals`)) return null;
   return json({ approvals: state.approvals });
 }
 
 export function handleB5(ctx: MockCtx): Response | null {
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/meetings`)) return null;
   return json({ meetings: boardMeetingsFixture });
 }
 
 export function handleB6(ctx: MockCtx): Response | null {
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/tools`)) return null;
   return json(boardToolsFixture);
 }
 
 export function handleB7(ctx: MockCtx): Response | null {
-  if (ctx.path !== "/siu-tin-dei/board/tools/calls") return null;
+  if (ctx.path !== "/v1/admin/siutindei/board/tools/calls") return null;
   return json({ calls: boardToolCallsFixture });
 }
 
 export function handleB8(ctx: MockCtx): Response | null {
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/updates`)) return null;
   return json({ updates: [] });
 }
 
 export function handleB9(ctx: MockCtx): Response | null {
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/receivables`)) return null;
   return json(boardReceivablesFixture);
 }
@@ -149,7 +149,7 @@ export function handleB9(ctx: MockCtx): Response | null {
 export function handleB10(ctx: MockCtx): Response | null {
   const url = ctx.url;
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/mail`)) return null;
 
       const archived = url.searchParams.get("archived");
@@ -179,7 +179,7 @@ export function handleB10(ctx: MockCtx): Response | null {
 export function handleB11(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p.startsWith(`${board}/mail/`) && p !== `${board}/mail/selftest`)) return null;
 
       const rest = p.slice(`${board}/mail/`.length);
@@ -215,7 +215,7 @@ export function handleB11(ctx: MockCtx): Response | null {
 export function handleB12(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/mail/selftest` && method === "POST")) return null;
 
       return json({
@@ -230,7 +230,7 @@ export function handleB12(ctx: MockCtx): Response | null {
 
 export function handleB13(ctx: MockCtx): Response | null {
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/staff`)) return null;
 
       return json({
@@ -244,7 +244,7 @@ export function handleB13(ctx: MockCtx): Response | null {
 export function handleB14(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/staff/tick`)) return null;
 
       if (method !== "POST") return json({ message: "Method not allowed" }, 405);
@@ -256,7 +256,7 @@ export function handleB15(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
   const init = ctx.init;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p.startsWith(`${board}/staff/`))) return null;
 
       const seatId = p.slice(`${board}/staff/`.length);
@@ -294,7 +294,7 @@ export function handleB16(ctx: MockCtx): Response | null {
   const url = ctx.url;
   const p = ctx.path;
   const init = ctx.init;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/tasks`)) return null;
 
       if (method === "POST") {
@@ -340,7 +340,7 @@ export function handleB17(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
   const init = ctx.init;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p.startsWith(`${board}/tasks/`))) return null;
 
       const rest = p.slice(`${board}/tasks/`.length).split("/");
@@ -394,7 +394,7 @@ export function handleB17(ctx: MockCtx): Response | null {
 
 export function handleB18(ctx: MockCtx): Response | null {
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/holds`)) return null;
 
       return json({ holds: state.holds.filter((h) => h.status === "scheduled") });
@@ -405,7 +405,7 @@ export function handleB19(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
   const init = ctx.init;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/holds/veto-class` && method === "POST")) return null;
 
       const body = parseBody(init);
@@ -420,7 +420,7 @@ export function handleB19(ctx: MockCtx): Response | null {
 export function handleB20(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p.startsWith(`${board}/holds/`) && p.endsWith("/veto") && method === "POST")) return null;
 
       const holdId = p.slice(`${board}/holds/`.length, -"/veto".length);
@@ -435,7 +435,7 @@ export function handleB21(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
   const init = ctx.init;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/boundaries` && method === "PUT")) return null;
 
       state.boundaries = parseBody(init) as BoardBoundaries;
@@ -445,7 +445,7 @@ export function handleB21(ctx: MockCtx): Response | null {
 
 export function handleB22(ctx: MockCtx): Response | null {
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/ramp`)) return null;
 
       return json({
@@ -457,7 +457,7 @@ export function handleB22(ctx: MockCtx): Response | null {
 export function handleB23(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p.startsWith(`${board}/ramp/`) && p.endsWith("/promote") && method === "POST")) return null;
 
       return json({ classKey: decodeURIComponent(p.slice(`${board}/ramp/`.length, -"/promote".length)), holdOverrides: { "publish:facebook": 0 } });
@@ -466,7 +466,7 @@ export function handleB23(ctx: MockCtx): Response | null {
 
 export function handleB24(ctx: MockCtx): Response | null {
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/code/staging`)) return null;
 
       return json({ staging: state.staging });
@@ -476,7 +476,7 @@ export function handleB24(ctx: MockCtx): Response | null {
 export function handleB25(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/code/sync-staging` && method === "POST")) return null;
 
       const before = state.staging;
@@ -515,7 +515,7 @@ export function handleB26(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
   const init = ctx.init;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/catalog/preview` && method === "POST")) return null;
 
       const body = parseBody(init);
@@ -548,7 +548,7 @@ export function handleB26(ctx: MockCtx): Response | null {
 export function handleB27(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/catalog/import` && method === "POST")) return null;
 
       return json({ message: "catalog import is switched off (SiutindeiBoardCatalogImportEnabled)" }, 409);
@@ -559,7 +559,7 @@ export function handleB28(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
   const init = ctx.init;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/catalog/skip` && method === "POST")) return null;
 
       const body = parseBody(init);
@@ -582,7 +582,7 @@ export function handleB29(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
   const init = ctx.init;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/catalog/requeue` && method === "POST")) return null;
 
       const body = parseBody(init);
@@ -604,7 +604,7 @@ export function handleB30(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
   const init = ctx.init;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/catalog/reimport` && method === "POST")) return null;
 
       const body = parseBody(init);
@@ -618,7 +618,7 @@ export function handleB30(ctx: MockCtx): Response | null {
 export function handleB31(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/catalog/sources` && method === "GET")) return null;
 
       return json({
@@ -663,10 +663,10 @@ export function handleB31(ctx: MockCtx): Response | null {
 export function handleB32(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p.startsWith(`${board}/catalog/bulk/`) && p.endsWith("/preview") && method === "POST")) return null;
 
-      const source = p.split("/")[5] || "lcsd";
+      const source = p.split("/").filter(Boolean).at(-2) || "lcsd";
       state.catalogJobs[source] = { phase: "queued", action: "preview" };
       return json({ ok: true, queued: true, invoked: true, source, action: "preview" });
     return null;
@@ -675,10 +675,10 @@ export function handleB32(ctx: MockCtx): Response | null {
 export function handleB33(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p.startsWith(`${board}/catalog/bulk/`) && p.endsWith("/import") && method === "POST")) return null;
 
-      const source = p.split("/")[5] || "lcsd";
+      const source = p.split("/").filter(Boolean).at(-2) || "lcsd";
       state.catalogJobs[source] = { phase: "queued", action: "import" };
       return json({ ok: true, queued: true, invoked: true, source, action: "import" });
     return null;
@@ -688,7 +688,7 @@ export function handleB34(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const url = ctx.url;
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/catalog/candidates` && method === "GET")) return null;
 
       const all = [
@@ -728,7 +728,7 @@ export function handleB35(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
   const init = ctx.init;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/catalog/candidates/bulk` && method === "POST")) return null;
 
       const body = parseBody(init);
@@ -741,7 +741,7 @@ export function handleB35(ctx: MockCtx): Response | null {
 export function handleB36(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/catalog/discovery/run` && method === "POST")) return null;
 
       return json({ ok: true, queued: true, invoked: true });
@@ -751,7 +751,7 @@ export function handleB36(ctx: MockCtx): Response | null {
 export function handleB37(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/code/promote` && method === "POST")) return null;
 
       const now = new Date().toISOString();
@@ -784,7 +784,7 @@ export function handleB37(ctx: MockCtx): Response | null {
 
 export function handleB38(ctx: MockCtx): Response | null {
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/review`)) return null;
 
       return json({ review: boardReviewFixture });
@@ -793,7 +793,7 @@ export function handleB38(ctx: MockCtx): Response | null {
 
 export function handleB39(ctx: MockCtx): Response | null {
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/progress`)) return null;
 
       return json(boardProgressFixture);
@@ -803,7 +803,7 @@ export function handleB39(ctx: MockCtx): Response | null {
 export function handleB40(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p.startsWith(`${board}/review/sample/`) && p.endsWith("/wrong") && method === "POST")) return null;
 
       const callId = decodeURIComponent(p.slice(`${board}/review/sample/`.length, -"/wrong".length));
@@ -824,7 +824,7 @@ export function handleB40(ctx: MockCtx): Response | null {
 
 export function handleB41(ctx: MockCtx): Response | null {
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/lessons`)) return null;
 
       return json({ lessons: state.lessons });
@@ -835,7 +835,7 @@ export function handleB42(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
   const init = ctx.init;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p.startsWith(`${board}/lessons/`) && p.endsWith("/confirm") && method === "POST")) return null;
 
       const lessonId = decodeURIComponent(p.slice(`${board}/lessons/`.length, -"/confirm".length));
@@ -850,7 +850,7 @@ export function handleB42(ctx: MockCtx): Response | null {
 export function handleB43(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p.startsWith(`${board}/lessons/`) && p.endsWith("/dismiss") && method === "POST")) return null;
 
       const lessonId = decodeURIComponent(p.slice(`${board}/lessons/`.length, -"/dismiss".length));
@@ -861,7 +861,7 @@ export function handleB43(ctx: MockCtx): Response | null {
 
 export function handleB44(ctx: MockCtx): Response | null {
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/breakers`)) return null;
 
       return json({ breakers: state.breakers });
@@ -871,7 +871,7 @@ export function handleB44(ctx: MockCtx): Response | null {
 export function handleB45(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p.startsWith(`${board}/breakers/`) && p.endsWith("/reset") && method === "POST")) return null;
 
       const name = decodeURIComponent(p.slice(`${board}/breakers/`.length, -"/reset".length));
@@ -884,7 +884,7 @@ export function handleB46(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
   const init = ctx.init;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/watchlist`)) return null;
 
       if (method === "POST") {
@@ -912,7 +912,7 @@ export function handleB47(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
   const init = ctx.init;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p.startsWith(`${board}/watchlist/`))) return null;
 
       const watchId = decodeURIComponent(p.slice(`${board}/watchlist/`.length));
@@ -942,7 +942,7 @@ export function handleB47(ctx: MockCtx): Response | null {
 
 export function handleB48(ctx: MockCtx): Response | null {
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/changes`)) return null;
 
       return json({ changes: boardChangesFixture });
@@ -951,7 +951,7 @@ export function handleB48(ctx: MockCtx): Response | null {
 
 export function handleB49(ctx: MockCtx): Response | null {
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/prospects`)) return null;
 
       return json({
@@ -966,7 +966,7 @@ export function handleB50(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
   const init = ctx.init;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/prospects/import` && method === "POST")) return null;
 
       const body = parseBody(init);
@@ -999,7 +999,7 @@ export function handleB51(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
   const init = ctx.init;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p.startsWith(`${board}/prospects/`) && p.endsWith("/merge") && method === "POST")) return null;
 
       const prospectId = decodeURIComponent(p.slice(`${board}/prospects/`.length, -"/merge".length));
@@ -1018,7 +1018,7 @@ export function handleB52(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
   const init = ctx.init;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p.startsWith(`${board}/prospects/`))) return null;
 
       const prospectId = decodeURIComponent(p.slice(`${board}/prospects/`.length));
@@ -1040,7 +1040,7 @@ export function handleB52(ctx: MockCtx): Response | null {
 
 export function handleB53(ctx: MockCtx): Response | null {
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/outreach/stats`)) return null;
 
       return json(boardOutreachStatsFixture);
@@ -1051,7 +1051,7 @@ export function handleB54(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
   const init = ctx.init;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p.startsWith(`${board}/sequences/`))) return null;
 
       const type = decodeURIComponent(p.slice(`${board}/sequences/`.length));
@@ -1068,7 +1068,7 @@ export function handleB55(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
   const init = ctx.init;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p === `${board}/content`)) return null;
 
       if (method === "POST") {
@@ -1094,7 +1094,7 @@ export function handleB55(ctx: MockCtx): Response | null {
 
 export function handleB56(ctx: MockCtx): Response | null {
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p.includes("/creative/") && p.startsWith(`${board}/content/`))) return null;
 
       return json({ url: "https://assets.example/board/content/preview.png", key: "preview.png" });
@@ -1104,7 +1104,7 @@ export function handleB56(ctx: MockCtx): Response | null {
 export function handleB57(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p.startsWith(`${board}/content/`) && p.endsWith("/render") && method === "POST")) return null;
 
       const contentId = decodeURIComponent(p.slice(`${board}/content/`.length, -"/render".length));
@@ -1118,7 +1118,7 @@ export function handleB58(ctx: MockCtx): Response | null {
   const method = ctx.method;
   const p = ctx.path;
   const init = ctx.init;
-  const board = "/siu-tin-dei/board";
+  const board = "/v1/admin/siutindei/board";
   if (!(p.startsWith(`${board}/content/`))) return null;
 
       const contentId = decodeURIComponent(p.slice(`${board}/content/`.length));

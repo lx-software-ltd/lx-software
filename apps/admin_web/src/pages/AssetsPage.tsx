@@ -174,7 +174,7 @@ export function AssetsPage() {
     setOpeningKey(objectKey);
     try {
       const qs = `?key=${encodeURIComponent(objectKey)}`;
-      const { url } = await adminFetchJson<{ url: string }>(`/assets/download-url${qs}`);
+      const { url } = await adminFetchJson<{ url: string }>(`/v1/admin/assets/download-url${qs}`);
       window.open(url, "_blank", "noopener,noreferrer");
     } catch (err) {
       setPageError(

@@ -67,11 +67,11 @@ def parse_token(token: str) -> tuple[str, str, str] | None:
 
 
 def confirm_url(list_name: str, digest: str) -> str:
-    return f"{board_outreach.public_api_base()}/public/newsletter/confirm/{make_token('c', list_name, digest)}"
+    return f"{board_outreach.public_api_base()}/v1/public/newsletter/confirm/{make_token('c', list_name, digest)}"
 
 
 def unsubscribe_url(list_name: str, digest: str) -> str:
-    return f"{board_outreach.public_api_base()}/public/newsletter/unsubscribe/{make_token('u', list_name, digest)}"
+    return f"{board_outreach.public_api_base()}/v1/public/newsletter/unsubscribe/{make_token('u', list_name, digest)}"
 
 
 def _sub_row(raw: dict[str, Any] | None) -> dict[str, Any]:

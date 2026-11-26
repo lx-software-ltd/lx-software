@@ -38,10 +38,16 @@ export function statementOwnerQueryKey(
   return isHouseKey(owner) ? ["finance"] : [owner];
 }
 
+const BOOK_API_SLUG: Record<StatementBookKey, string> = {
+  siuTinDei: "siutindei",
+  lxSoftware: "lx-software",
+  evolveSprouts: "evolvesprouts",
+};
+
 export function parseStatementStartPath(owner: StatementOwnerKey): string {
   return isHouseKey(owner)
-    ? `/finance/${owner}/parse-statement`
-    : `/${kebabBookKey(owner)}/parse-statement`;
+    ? `/v1/admin/finance/${owner}/parse-statement`
+    : `${statementBookApiPath(owner)}/parse-statement`;
 }
 
 export function parseStatementJobPath(
@@ -49,16 +55,12 @@ export function parseStatementJobPath(
   jobId: string,
 ): string {
   return isHouseKey(owner)
-    ? `/finance/${owner}/parse-statement/jobs/${encodeURIComponent(jobId)}`
-    : `/${kebabBookKey(owner)}/parse-statement/jobs/${encodeURIComponent(jobId)}`;
-}
-
-export function kebabBookKey(owner: StatementBookKey): string {
-  return owner.replace(/[A-Z]/g, (ch) => `-${ch.toLowerCase()}`);
+    ? `/v1/admin/finance/${owner}/parse-statement/jobs/${encodeURIComponent(jobId)}`
+    : `${statementBookApiPath(owner)}/parse-statement/jobs/${encodeURIComponent(jobId)}`;
 }
 
 export function statementBookApiPath(owner: StatementBookKey): string {
-  return `/${kebabBookKey(owner)}`;
+  return `/v1/admin/${BOOK_API_SLUG[owner]}`;
 }
 
 export function financeOwnerDisplayLabel(owner?: string): string {

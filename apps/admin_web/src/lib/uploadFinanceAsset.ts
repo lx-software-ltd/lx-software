@@ -115,7 +115,7 @@ export async function uploadFinanceAsset(
   }
 
   const upload = await adminFetchJson<UploadUrlResponse>(
-    "/assets/upload-url",
+    "/v1/admin/assets/upload-url",
     {
       method: "POST",
       body: JSON.stringify({
@@ -128,7 +128,7 @@ export async function uploadFinanceAsset(
   await uploadToS3(upload.upload, file);
 
   const sha256 = await sha256Hex(file);
-  await adminFetchJson<ConfirmAssetResponse>("/assets/confirm", {
+  await adminFetchJson<ConfirmAssetResponse>("/v1/admin/assets/confirm", {
     method: "POST",
     body: JSON.stringify({
       key: upload.key,

@@ -37,8 +37,8 @@ describe("LX Software dashboard", () => {
   beforeEach(() => {
     vi.mocked(adminFetchJson).mockReset();
     vi.mocked(adminFetchJson).mockImplementation(async (path: string) => {
-      if (path === "/lx-software") return { data: lxSoftwareBookFixture };
-      if (path === "/lx-software/linkedin?view=plan") return PLAN;
+      if (path === "/v1/admin/lx-software") return { data: lxSoftwareBookFixture };
+      if (path === "/v1/admin/lx-software/linkedin?view=plan") return PLAN;
       throw new AdminApiError(404, "{}");
     });
   });
@@ -59,7 +59,7 @@ describe("LX Software dashboard", () => {
 
   it("keeps the LinkedIn plan visible when the statement book fails", async () => {
     vi.mocked(adminFetchJson).mockImplementation(async (path: string) => {
-      if (path === "/lx-software/linkedin?view=plan") return PLAN;
+      if (path === "/v1/admin/lx-software/linkedin?view=plan") return PLAN;
       throw new AdminApiError(500, "{}");
     });
     renderPage();

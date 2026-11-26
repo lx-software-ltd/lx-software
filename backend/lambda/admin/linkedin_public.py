@@ -1,6 +1,6 @@
 """LinkedIn posts for a public API key.
 
-Scope ``lxsoftware-linkedin`` on ``/public/lx-software/linkedin/posts``.
+Scope ``lxsoftware-linkedin`` on ``/v1/partner/lx-software/linkedin/posts``.
 ``GET`` with no query is published posts. ``?status=`` selects ``drafted``,
 ``approved``, ``published``, ``archived``, ``failed``, a comma-separated
 list of those, or ``all``. ``POST`` creates a draft, ``PUT`` updates one,

@@ -13,7 +13,7 @@ const fetchMock = vi.mocked(adminFetchJson);
 
 function lastPutBody(): unknown {
   const [path, init] = fetchMock.mock.calls[fetchMock.mock.calls.length - 1];
-  expect(path).toBe("/siu-tin-dei/board/tools");
+  expect(path).toBe("/v1/admin/siutindei/board/tools");
   expect(init?.method).toBe("PUT");
   return JSON.parse(init?.body as string);
 }

@@ -23,7 +23,7 @@ describe("watchAddMutationOptions", () => {
     await mutationFn({ name: "Kiztopia", kind: "competitor", urls: ["https://kiztopia.example/"] });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [path, init] = fetchMock.mock.calls[0];
-    expect(path).toBe("/siu-tin-dei/board/watchlist");
+    expect(path).toBe("/v1/admin/siutindei/board/watchlist");
     expect(init?.method).toBe("POST");
     expect(JSON.parse(init?.body as string)).toEqual({
       name: "Kiztopia",
@@ -43,7 +43,7 @@ describe("watchAddMutationOptions", () => {
     fetchMock.mockResolvedValueOnce({ ok: true });
     const { mutationFn } = watchRemoveMutationOptions(qc);
     await mutationFn("w1");
-    expect(fetchMock.mock.calls[0][0]).toBe("/siu-tin-dei/board/watchlist/w1");
+    expect(fetchMock.mock.calls[0][0]).toBe("/v1/admin/siutindei/board/watchlist/w1");
     expect(fetchMock.mock.calls[0][1]?.method).toBe("DELETE");
   });
 });

@@ -393,8 +393,8 @@ describe("task dashboard helpers", () => {
   });
 
   it("builds catalog candidate filter and bulk paths", () => {
-    expect(boardCatalogCandidatesPath()).toBe("/siu-tin-dei/board/catalog/candidates");
-    expect(boardCatalogCandidatesPath("new")).toBe("/siu-tin-dei/board/catalog/candidates?status=new");
+    expect(boardCatalogCandidatesPath()).toBe("/v1/admin/siutindei/board/catalog/candidates");
+    expect(boardCatalogCandidatesPath("new")).toBe("/v1/admin/siutindei/board/catalog/candidates?status=new");
     expect(
       boardCatalogCandidatesPath({
         status: "new",
@@ -405,8 +405,8 @@ describe("task dashboard helpers", () => {
         cursor: 20,
       }),
     ).toBe(
-      "/siu-tin-dei/board/catalog/candidates?status=new&source=competitor&district=Sha+Tin&q=play&missingPlaceId=true&cursor=20",
+      "/v1/admin/siutindei/board/catalog/candidates?status=new&source=competitor&district=Sha+Tin&q=play&missingPlaceId=true&cursor=20",
     );
-    expect(boardCatalogCandidatesBulkPath()).toBe("/siu-tin-dei/board/catalog/candidates/bulk");
+    expect(boardCatalogCandidatesBulkPath()).toBe("/v1/admin/siutindei/board/catalog/candidates/bulk");
   });
 });

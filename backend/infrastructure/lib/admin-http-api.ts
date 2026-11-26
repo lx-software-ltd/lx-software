@@ -43,7 +43,11 @@ export function defineAdminHttpApi(
     readonly apiCustomDomainCertificateArn: cdk.CfnParameter;
     readonly sharedEncryptionKey: kms.IKey;
   },
-): apigwv2.HttpApi {
+): {
+  readonly httpApi: apigwv2.HttpApi;
+  readonly adminApiBaseUrl: string;
+  readonly cspApiConnectOrigin: string;
+} {
   const {
     adminFn,
     jwtAuthorizer,
@@ -179,6 +183,12 @@ export function defineAdminHttpApi(
     apiDomain.url,
     httpApi.apiEndpoint,
   ).toString();
+  const adminApiBaseUrl = defaultPublicBaseUrl;
+  const cspApiConnectOrigin = cdk.Fn.conditionIf(
+    apiDomain.useApiCustomDomain.logicalId,
+    cdk.Fn.join(" ", [apiDomain.url, httpApi.apiEndpoint]),
+    httpApi.apiEndpoint,
+  ).toString();
   adminFn.addEnvironment(
     "PUBLIC_API_BASE_URL",
     cdk.Fn.conditionIf(
@@ -218,5 +228,5 @@ export function defineAdminHttpApi(
   }
   defaultStage.routeSettings = routeSettings;
 
-  return httpApi;
+  return { httpApi, adminApiBaseUrl, cspApiConnectOrigin };
 }

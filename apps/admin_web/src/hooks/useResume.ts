@@ -15,7 +15,7 @@ import type {
 export const RESUME_KEY = ["resume"] as const;
 
 async function loadJob(jobId: string): Promise<ResumeJob> {
-  const next = await adminFetchJson<{ job: ResumeJob }>(`/lx-software/resume/jobs/${jobId}`);
+  const next = await adminFetchJson<{ job: ResumeJob }>(`/v1/admin/lx-software/resume/jobs/${jobId}`);
   return next.job;
 }
 
@@ -26,23 +26,23 @@ export function useResume() {
   };
   const overview = useQuery({
     queryKey: [...RESUME_KEY, "overview"] as const,
-    queryFn: () => adminFetchJson<ResumeOverview>("/lx-software/resume/overview"),
+    queryFn: () => adminFetchJson<ResumeOverview>("/v1/admin/lx-software/resume/overview"),
   });
   const resumes = useQuery({
     queryKey: [...RESUME_KEY, "resumes"] as const,
-    queryFn: () => adminFetchJson<{ items: ResumeSummary[] }>("/lx-software/resume/resumes"),
+    queryFn: () => adminFetchJson<{ items: ResumeSummary[] }>("/v1/admin/lx-software/resume/resumes"),
   });
   const postings = useQuery({
     queryKey: [...RESUME_KEY, "postings"] as const,
-    queryFn: () => adminFetchJson<{ items: JobPosting[] }>("/lx-software/resume/postings"),
+    queryFn: () => adminFetchJson<{ items: JobPosting[] }>("/v1/admin/lx-software/resume/postings"),
   });
   const applications = useQuery({
     queryKey: [...RESUME_KEY, "applications"] as const,
-    queryFn: () => adminFetchJson<{ items: JobApplication[] }>("/lx-software/resume/applications"),
+    queryFn: () => adminFetchJson<{ items: JobApplication[] }>("/v1/admin/lx-software/resume/applications"),
   });
   const saveSettings = useMutation({
     mutationFn: (body: ResumeSettings) =>
-      adminFetchJson<{ settings: ResumeSettings }>("/lx-software/resume/settings", {
+      adminFetchJson<{ settings: ResumeSettings }>("/v1/admin/lx-software/resume/settings", {
         method: "PUT",
         body: JSON.stringify(body),
       }),
@@ -57,7 +57,7 @@ export function useResume() {
       onStatus?: (status: string) => void;
     }) => {
       const { onStatus, ...payload } = body;
-      const queued = await adminFetchJson<{ resume: ResumeSummary; job: ResumeJob }>("/lx-software/resume/resumes", {
+      const queued = await adminFetchJson<{ resume: ResumeSummary; job: ResumeJob }>("/v1/admin/lx-software/resume/resumes", {
         method: "POST",
         body: JSON.stringify(payload),
       });
@@ -68,7 +68,7 @@ export function useResume() {
   });
   const setTemplate = useMutation({
     mutationFn: (resumeId: string) =>
-      adminFetchJson("/lx-software/resume/template", {
+      adminFetchJson("/v1/admin/lx-software/resume/template", {
         method: "PUT",
         body: JSON.stringify({ resumeId }),
       }),
@@ -76,14 +76,14 @@ export function useResume() {
   });
   const patchResume = useMutation({
     mutationFn: (body: { id: string; title?: string; overrides?: Record<string, string> }) =>
-      adminFetchJson<{ item: ResumeDetail }>(`/lx-software/resume/resumes/${body.id}`, {
+      adminFetchJson<{ item: ResumeDetail }>(`/v1/admin/lx-software/resume/resumes/${body.id}`, {
         method: "PATCH",
         body: JSON.stringify({ title: body.title, overrides: body.overrides }),
       }),
     onSuccess: refresh,
   });
   const deleteResume = useMutation({
-    mutationFn: (id: string) => adminFetchJson(`/lx-software/resume/resumes/${id}`, { method: "DELETE" }),
+    mutationFn: (id: string) => adminFetchJson(`/v1/admin/lx-software/resume/resumes/${id}`, { method: "DELETE" }),
     onSuccess: refresh,
   });
   const tailor = useMutation({
@@ -95,7 +95,7 @@ export function useResume() {
       onStatus?: (status: string) => void;
     }) => {
       const { onStatus, ...payload } = body;
-      const queued = await adminFetchJson<{ job: ResumeJob }>("/lx-software/resume/tailor", {
+      const queued = await adminFetchJson<{ job: ResumeJob }>("/v1/admin/lx-software/resume/tailor", {
         method: "POST",
         body: JSON.stringify(payload),
       });
@@ -106,12 +106,12 @@ export function useResume() {
   const saveApplication = useMutation({
     mutationFn: (body: Partial<JobApplication> & { id?: string }) => {
       if (body.id) {
-        return adminFetchJson<{ item: JobApplication }>(`/lx-software/resume/applications/${body.id}`, {
+        return adminFetchJson<{ item: JobApplication }>(`/v1/admin/lx-software/resume/applications/${body.id}`, {
           method: "PATCH",
           body: JSON.stringify(body),
         });
       }
-      return adminFetchJson<{ item: JobApplication }>("/lx-software/resume/applications", {
+      return adminFetchJson<{ item: JobApplication }>("/v1/admin/lx-software/resume/applications", {
         method: "POST",
         body: JSON.stringify(body),
       });
@@ -119,7 +119,7 @@ export function useResume() {
     onSuccess: refresh,
   });
   const deleteApplication = useMutation({
-    mutationFn: (id: string) => adminFetchJson(`/lx-software/resume/applications/${id}`, { method: "DELETE" }),
+    mutationFn: (id: string) => adminFetchJson(`/v1/admin/lx-software/resume/applications/${id}`, { method: "DELETE" }),
     onSuccess: refresh,
   });
   return {
@@ -142,10 +142,10 @@ export function useResumeDetail(id: string | null) {
   return useQuery({
     queryKey: [...RESUME_KEY, "resume", id] as const,
     enabled: Boolean(id && id !== "new"),
-    queryFn: () => adminFetchJson<{ item: ResumeDetail }>(`/lx-software/resume/resumes/${id}`),
+    queryFn: () => adminFetchJson<{ item: ResumeDetail }>(`/v1/admin/lx-software/resume/resumes/${id}`),
   });
 }
 
 export async function fetchResumeFile(id: string, kind: "file" | "pdf"): Promise<ResumeFileBody> {
-  return adminFetchJson<ResumeFileBody>(`/lx-software/resume/resumes/${id}/${kind}`);
+  return adminFetchJson<ResumeFileBody>(`/v1/admin/lx-software/resume/resumes/${id}/${kind}`);
 }

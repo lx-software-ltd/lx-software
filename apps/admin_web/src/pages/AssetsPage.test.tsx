@@ -51,8 +51,8 @@ describe("AssetsPage", () => {
 
   it("loads one page and fetches the next only after Load more", async () => {
     fetchJson.mockImplementation(async (path: string) => {
-      if (path === "/assets") return { items: [firstPageRow], nextCursor: "cursor-2" };
-      if (path.startsWith("/assets?cursor=")) {
+      if (path === "/v1/admin/assets") return { items: [firstPageRow], nextCursor: "cursor-2" };
+      if (path.startsWith("/v1/admin/assets?cursor=")) {
         return {
           items: [
             {
@@ -89,8 +89,8 @@ describe("AssetsPage", () => {
     const objectKey = "uploads/admin-sub/linked.pdf";
     window.history.replaceState(null, "", `/assets?asset=${encodeURIComponent(objectKey)}`);
     fetchJson.mockImplementation(async (path: string) => {
-      if (path === "/assets") return { items: [firstPageRow], nextCursor: null };
-      if (path.startsWith("/assets?key=")) {
+      if (path === "/v1/admin/assets") return { items: [firstPageRow], nextCursor: null };
+      if (path.startsWith("/v1/admin/assets?key=")) {
         return {
           item: {
             ...firstPageRow,
@@ -110,8 +110,8 @@ describe("AssetsPage", () => {
     const pk = "ASSET#uploads/admin-sub/missing.pdf";
     window.history.replaceState(null, "", `/assets?asset=${encodeURIComponent(pk)}`);
     fetchJson.mockImplementation(async (path: string) => {
-      if (path === "/assets") return { items: [], nextCursor: null };
-      if (path.startsWith("/assets?key=")) {
+      if (path === "/v1/admin/assets") return { items: [], nextCursor: null };
+      if (path.startsWith("/v1/admin/assets?key=")) {
         throw new AdminApiError(404, JSON.stringify({ message: "Asset not found" }));
       }
       throw new Error(path);
@@ -125,8 +125,8 @@ describe("AssetsPage", () => {
 
   it("searches the server instead of only the loaded page", async () => {
     fetchJson.mockImplementation(async (path: string) => {
-      if (path === "/assets") return { items: [firstPageRow], nextCursor: "cursor-2" };
-      if (path.startsWith("/assets?q=")) {
+      if (path === "/v1/admin/assets") return { items: [firstPageRow], nextCursor: "cursor-2" };
+      if (path.startsWith("/v1/admin/assets?q=")) {
         return {
           items: [
             {
@@ -151,8 +151,8 @@ describe("AssetsPage", () => {
     const objectKey = "uploads/admin-sub/linked.pdf";
     window.history.replaceState(null, "", `/assets?asset=${encodeURIComponent(objectKey)}`);
     fetchJson.mockImplementation(async (path: string) => {
-      if (path === "/assets") return { items: [firstPageRow], nextCursor: null };
-      if (path.startsWith("/assets?key=")) {
+      if (path === "/v1/admin/assets") return { items: [firstPageRow], nextCursor: null };
+      if (path.startsWith("/v1/admin/assets?key=")) {
         return {
           item: { ...firstPageRow, pk: `ASSET#${objectKey}`, fileName: "linked.pdf" },
         };
@@ -188,8 +188,8 @@ describe("AssetsPage", () => {
     const objectKey = "uploads/admin-sub/linked.pdf";
     window.history.replaceState(null, "", `/assets?asset=${encodeURIComponent(objectKey)}`);
     fetchJson.mockImplementation(async (path: string) => {
-      if (path === "/assets") return { items: [firstPageRow], nextCursor: null };
-      if (path.startsWith("/assets?key=")) {
+      if (path === "/v1/admin/assets") return { items: [firstPageRow], nextCursor: null };
+      if (path.startsWith("/v1/admin/assets?key=")) {
         throw new AdminApiError(500, JSON.stringify({ message: "unavailable" }));
       }
       throw new Error(path);
@@ -206,7 +206,7 @@ describe("AssetsPage", () => {
       if (path.includes("cursor=")) {
         throw new AdminApiError(400, JSON.stringify({ message: "cursor expired" }));
       }
-      if (path === "/assets") {
+      if (path === "/v1/admin/assets") {
         return {
           items: [firstPageRow],
           nextCursor: calls > 2 ? null : "old-cursor",
@@ -219,6 +219,6 @@ describe("AssetsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
     expect(await screen.findByText("The asset list was refreshed. Load more again for older files.")).toBeTruthy();
     expect(screen.getByText("one.pdf")).toBeTruthy();
-    expect(fetchJson.mock.calls.filter((call) => String(call[0]) === "/assets").length).toBeGreaterThan(1);
+    expect(fetchJson.mock.calls.filter((call) => String(call[0]) === "/v1/admin/assets").length).toBeGreaterThan(1);
   });
 });

@@ -1,0 +1,329 @@
+openapi: 3.0.3
+info:
+  title: LX Software partner API
+  version: 0.1.0
+  description: |
+    Field names on the wire are snake_case. lx-software keeps message
+    and reason beside the problem members. The address is
+    https://api.lx-software.com and callers add /v1/ themselves.
+    Bearer API-key routes under /v1/partner.
+servers:
+  - url: https://api.lx-software.com
+paths:
+  /v1/partner/finance:
+    get:
+      summary: finance
+      security:
+        - PartnerBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/partner/finance/quotes:
+    get:
+      summary: quotes
+      security:
+        - PartnerBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/partner/records:
+    get:
+      summary: records
+      security:
+        - PartnerBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/partner/fx/rates:
+    get:
+      summary: rates
+      security:
+        - PartnerBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/partner/lx-software/linkedin/posts:
+    get:
+      summary: posts
+      security:
+        - PartnerBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      summary: posts
+      security:
+        - PartnerBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/partner/lx-software/linkedin/posts/{id}":
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: id
+      security:
+        - PartnerBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    put:
+      summary: id
+      security:
+        - PartnerBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      summary: id
+      security:
+        - PartnerBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/partner/siutindei/board:
+    get:
+      summary: board
+      security:
+        - PartnerBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/v1/partner/siutindei/board/{proxy+}":
+    parameters:
+      - name: proxy
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: proxy
+      security:
+        - PartnerBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    put:
+      summary: proxy
+      security:
+        - PartnerBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      summary: proxy
+      security:
+        - PartnerBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      summary: proxy
+      security:
+        - PartnerBearerAuth: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /public/siu-tin-dei/board:
+    get:
+      summary: board alias
+      deprecated: true
+      security:
+        - PartnerBearerAuth: []
+      responses:
+        "200":
+          description: Same handler. The body stays camelCase.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  "/public/siu-tin-dei/board/{proxy+}":
+    parameters:
+      - name: proxy
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: board alias
+      deprecated: true
+      security:
+        - PartnerBearerAuth: []
+      responses:
+        "200":
+          description: Same handler. The body stays camelCase.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    put:
+      summary: board alias
+      deprecated: true
+      security:
+        - PartnerBearerAuth: []
+      responses:
+        "200":
+          description: Same handler. The body stays camelCase.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      summary: board alias
+      deprecated: true
+      security:
+        - PartnerBearerAuth: []
+      responses:
+        "200":
+          description: Same handler. The body stays camelCase.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      summary: board alias
+      deprecated: true
+      security:
+        - PartnerBearerAuth: []
+      responses:
+        "200":
+          description: Same handler. The body stays camelCase.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+components:
+
+  securitySchemes:
+    PartnerBearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    Object:
+      type: object
+      additionalProperties: true
+    Problem:
+      type: object
+      additionalProperties: true
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+        message:
+          type: string
+        reason:
+          type: string
+  responses:
+    Problem:
+      description: Problem details. lx-software keeps message and reason.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"

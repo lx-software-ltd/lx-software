@@ -307,18 +307,18 @@ class FocusCandidateTests(BoardTestCase):
         os.environ["BOARD_STAFF_ENABLED"] = "true"
         self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
         body = {"nameEn": "Stanley Sailing Juniors", "addressEn": STANLEY_ADDRESS, "officialUrl": "https://stanleysailing.example"}
-        event = self.event("/siu-tin-dei/board/catalog/candidates", "POST", body)
-        resp = board_routes.handle_board_route(event, "POST", "/siu-tin-dei/board/catalog/candidates", "owner")
+        event = self.event("/v1/admin/siutindei/board/catalog/candidates", "POST", body)
+        resp = board_routes.handle_board_route(event, "POST", "/siutindei/board/catalog/candidates", "owner")
         assert resp is not None
         self.assertEqual(resp["statusCode"], 201)
         payload = json.loads(resp["body"])
         self.assertEqual(payload["candidate"]["area"], "stanley")
-        bad = self.event("/siu-tin-dei/board/catalog/candidates", "POST", {"district": "Southern"})
-        resp = board_routes.handle_board_route(bad, "POST", "/siu-tin-dei/board/catalog/candidates", "owner")
+        bad = self.event("/v1/admin/siutindei/board/catalog/candidates", "POST", {"district": "Southern"})
+        resp = board_routes.handle_board_route(bad, "POST", "/siutindei/board/catalog/candidates", "owner")
         assert resp is not None
         self.assertEqual(resp["statusCode"], 400)
-        self.assertFalse(board_public_api.write_blocked("POST", "/public/siu-tin-dei/board/catalog/candidates"))
-        self.assertTrue(board_public_api.write_blocked("POST", "/public/siu-tin-dei/board/catalog/candidates/bulk"))
+        self.assertFalse(board_public_api.write_blocked("POST", "/v1/partner/siutindei/board/catalog/candidates"))
+        self.assertTrue(board_public_api.write_blocked("POST", "/v1/partner/siutindei/board/catalog/candidates/bulk"))
 
 
 class FocusDiscoveryTests(BoardTestCase):

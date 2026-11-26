@@ -753,7 +753,7 @@ function PostPicture({ postId, alt, version }: { readonly postId: string; readon
   const query = useQuery({
     queryKey: [...LINKEDIN_BYTES_KEY, "post", postId, version] as const,
     queryFn: () =>
-      adminFetchJson<{ contentType: string; dataBase64: string }>(`/lx-software/linkedin/posts/${postId}/image`),
+      adminFetchJson<{ contentType: string; dataBase64: string }>(`/v1/admin/lx-software/linkedin/posts/${postId}/image`),
     retry: false,
     staleTime: Infinity,
   });

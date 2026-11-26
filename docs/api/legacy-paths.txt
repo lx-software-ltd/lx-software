@@ -1,0 +1,9 @@
+# Email links that were already sent. They stay.
+/public/outreach/unsubscribe/{token}
+/public/newsletter/confirm/{token}
+/public/newsletter/unsubscribe/{token}
+# Board aliases and Meta lines are removed in L3.
+/public/siu-tin-dei/board
+/public/siu-tin-dei/board/{proxy+}
+/webhooks/meta
+/webhooks/meta/siutindei

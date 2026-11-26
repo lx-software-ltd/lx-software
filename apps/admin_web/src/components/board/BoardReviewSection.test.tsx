@@ -5,7 +5,7 @@ import type { BoardReviewSample } from "../../lib/boardModel";
 import { BoardReviewSection } from "./BoardReviewSection";
 
 function render(ui: React.ReactElement): RenderResult {
-  return rtlRender(<MemoryRouter initialEntries={["/siu-tin-dei?tab=board&section=review"]}>{ui}</MemoryRouter>);
+  return rtlRender(<MemoryRouter initialEntries={["/siutindei?tab=board&section=review"]}>{ui}</MemoryRouter>);
 }
 
 const TASK_ID = "9af74e86da614799864912a3c77d523f";

@@ -40,8 +40,8 @@ export function App() {
                 <Route path="finance" element={<FinancePage />} />
                 <Route path="banking" element={<LazyPage><BankingPage /></LazyPage>} />
                 <Route path="banking/callback" element={<BankingCallbackPage />} />
-                <Route path="siu-tin-dei" element={<LazyPage><SiuTinDeiPage /></LazyPage>} />
-                <Route path="evolve-sprouts" element={<EvolveSproutsPage />} />
+                <Route path="siutindei" element={<LazyPage><SiuTinDeiPage /></LazyPage>} />
+                <Route path="evolvesprouts" element={<EvolveSproutsPage />} />
                 <Route path="lx-software" element={<LxSoftwarePage />} />
                 <Route path="lx-software/linkedin/callback" element={<LinkedInCallbackPage />} />
               </Route>

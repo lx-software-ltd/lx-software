@@ -288,7 +288,7 @@ export function defineProductParameters(scope: cdk.Stack) {
     default: "false",
     allowedValues: ["true", "false"],
     description:
-      "Kill switch for public API-key PUT/POST/DELETE under /public/siu-tin-dei/board. Default false (fail-closed). Keys also need allowWrite on the APIKEY# row. Finance /public/* stays GET-only.",
+      "Kill switch for public API-key PUT/POST/DELETE under /v1/partner/siutindei/board. Default false (fail-closed). Keys also need allowWrite on the APIKEY# row. Finance /v1/partner/* stays GET-only.",
   });
   const boardGitHubRepo = new cdk.CfnParameter(scope, "SiutindeiBoardGitHubRepo", {
     type: "String",

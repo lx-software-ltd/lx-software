@@ -46,7 +46,7 @@ describe("approvalDecisionMutationOptions", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [path, init] = fetchMock.mock.calls[0];
-    expect(path).toBe("/siu-tin-dei/board/approvals/apr-1/approve");
+    expect(path).toBe("/v1/admin/siutindei/board/approvals/apr-1/approve");
     expect(init?.method).toBe("POST");
     expect(JSON.parse(init?.body as string)).toEqual({ note: "ok", arguments: edited });
   });
@@ -58,7 +58,7 @@ describe("approvalDecisionMutationOptions", () => {
     await mutationFn({ approvalId: "apr-1", decision: "reject", arguments: { subject: "Edited" } });
 
     const [path, init] = fetchMock.mock.calls[0];
-    expect(path).toBe("/siu-tin-dei/board/approvals/apr-1/reject");
+    expect(path).toBe("/v1/admin/siutindei/board/approvals/apr-1/reject");
     expect(JSON.parse(init?.body as string)).toEqual({ note: "" });
   });
 

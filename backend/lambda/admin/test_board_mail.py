@@ -15,7 +15,7 @@ import board_pii
 import board_store
 import board_tools
 import inbound_email_handler
-from dispatch import lambda_handler
+from http_call import http_call
 from test_board import BoardTestCase
 from test_board_tools import ToolsTestCase
 
@@ -327,7 +327,7 @@ class TestMailRoutes(MailTestCase):
 
     def test_list_filters_and_mailbox_counts(self) -> None:
         a, b = self.seed()
-        status, body = self.call("/siu-tin-dei/board/mail")
+        status, body = self.call("/v1/admin/siutindei/board/mail")
         self.assertEqual(status, 200)
         self.assertEqual(body["total"], 2)
         self.assertEqual({t["threadId"] for t in body["threads"]}, {a, b})
@@ -353,11 +353,11 @@ class TestMailRoutes(MailTestCase):
         # The owner sees real addresses.
         self.assertIn("wendy.chan@gmail.com", [t["lastFrom"] for t in body["threads"]])
 
-        status, body = self.call("/siu-tin-dei/board/mail", query="mailbox=providers%40siutindei.com")
+        status, body = self.call("/v1/admin/siutindei/board/mail", query="mailbox=providers%40siutindei.com")
         self.assertEqual([t["threadId"] for t in body["threads"]], [b])
-        status, body = self.call("/siu-tin-dei/board/mail", query="q=swimming+daughter")
+        status, body = self.call("/v1/admin/siutindei/board/mail", query="q=swimming+daughter")
         self.assertEqual([t["threadId"] for t in body["threads"]], [a])
-        status, body = self.call("/siu-tin-dei/board/mail", query="q=lam")
+        status, body = self.call("/v1/admin/siutindei/board/mail", query="q=lam")
         self.assertEqual([t["threadId"] for t in body["threads"]], [b])
 
     def test_send_health_reports_unverified_identity_and_read_denials(self) -> None:
@@ -387,9 +387,9 @@ class TestMailRoutes(MailTestCase):
         self.assertIn("switched off", off["errors"][0])
 
     def test_selftest_sends_to_the_signed_in_owner_without_indexing(self) -> None:
-        ev = self.event("/siu-tin-dei/board/mail/selftest", "POST", {})
+        ev = self.event("/v1/admin/siutindei/board/mail/selftest", "POST", {})
         ev["requestContext"]["authorizer"]["jwt"]["claims"]["email"] = "Owner@Example.com"
-        out = lambda_handler(ev, None)
+        out = http_call(ev, None)
         body = json.loads(out["body"])
         self.assertEqual(out["statusCode"], 200, body)
         self.assertTrue(body["ok"])
@@ -416,9 +416,9 @@ class TestMailRoutes(MailTestCase):
             "allows the ses:SendRawEmail action"
         )
         self.ses.fail_with = ClientError({"Error": {"Code": "AccessDeniedException", "Message": deny}}, "SendEmail")
-        ev = self.event("/siu-tin-dei/board/mail/selftest", "POST", {})
+        ev = self.event("/v1/admin/siutindei/board/mail/selftest", "POST", {})
         ev["requestContext"]["authorizer"]["jwt"]["claims"]["email"] = "owner@example.com"
-        out = lambda_handler(ev, None)
+        out = http_call(ev, None)
         body = json.loads(out["body"])
         self.assertEqual(out["statusCode"], 502)
         self.assertIn("AccessDeniedException", body["message"])
@@ -432,43 +432,43 @@ class TestMailRoutes(MailTestCase):
 
         # No email claim: refused before SES is called.
         self.ses.fail_with = None
-        status, body = self.call("/siu-tin-dei/board/mail/selftest", "POST", {})
+        status, body = self.call("/v1/admin/siutindei/board/mail/selftest", "POST", {})
         self.assertEqual(status, 502)
         self.assertIn("no usable email", body["message"])
         self.assertEqual(self.ses.sent, [])
 
     def test_thread_detail_owner_and_board_views(self) -> None:
         a, _ = self.seed()
-        status, body = self.call(f"/siu-tin-dei/board/mail/{a}")
+        status, body = self.call(f"/v1/admin/siutindei/board/mail/{a}")
         self.assertEqual(status, 200)
         self.assertEqual(body["thread"]["threadId"], a)
         self.assertEqual(len(body["messages"]), 1)
         self.assertIn("9123 4567", body["messages"][0]["text"])
         self.assertEqual(body["messages"][0]["from"]["address"], "wendy.chan@gmail.com")
 
-        status, masked = self.call(f"/siu-tin-dei/board/mail/{a}", query="view=board")
+        status, masked = self.call(f"/v1/admin/siutindei/board/mail/{a}", query="view=board")
         self.assertEqual(status, 200)
         self.assertEqual(masked["messages"][0]["from"], "contact#1")
         self.assertNotIn("9123 4567", masked["messages"][0]["text"])
         self.assertIn("phone#2", masked["messages"][0]["text"])
         self.assertEqual(masked["messages"][0]["to"], ["hello@siutindei.com"])
 
-        self.assertEqual(self.call("/siu-tin-dei/board/mail/deadbeefdeadbeef")[0], 404)
-        self.assertEqual(self.call("/siu-tin-dei/board/mail/not-a-thread!")[0], 404)
+        self.assertEqual(self.call("/v1/admin/siutindei/board/mail/deadbeefdeadbeef")[0], 404)
+        self.assertEqual(self.call("/v1/admin/siutindei/board/mail/not-a-thread!")[0], 404)
 
     def test_mark_read_and_overview_counts(self) -> None:
         a, _ = self.seed()
-        status, overview = self.call("/siu-tin-dei/board")
+        status, overview = self.call("/v1/admin/siutindei/board")
         self.assertEqual(overview["unreadMailCount"], 2)
         self.assertEqual(overview["mail"]["threadCount"], 2)
-        status, body = self.call(f"/siu-tin-dei/board/mail/{a}/read", "POST", {})
+        status, body = self.call(f"/v1/admin/siutindei/board/mail/{a}/read", "POST", {})
         self.assertEqual(status, 200)
         self.assertFalse(body["thread"]["unread"])
-        self.assertEqual(self.call("/siu-tin-dei/board")[1]["unreadMailCount"], 1)
-        status, body = self.call(f"/siu-tin-dei/board/mail/{a}/read", "POST", {"read": False})
+        self.assertEqual(self.call("/v1/admin/siutindei/board")[1]["unreadMailCount"], 1)
+        status, body = self.call(f"/v1/admin/siutindei/board/mail/{a}/read", "POST", {"read": False})
         self.assertTrue(body["thread"]["unread"])
-        self.assertEqual(self.call(f"/siu-tin-dei/board/mail/{a}/read", "POST", {"read": "yes"})[0], 400)
-        self.assertEqual(self.call("/siu-tin-dei/board/mail/deadbeefdeadbeef/read", "POST", {})[0], 404)
+        self.assertEqual(self.call(f"/v1/admin/siutindei/board/mail/{a}/read", "POST", {"read": "yes"})[0], 400)
+        self.assertEqual(self.call("/v1/admin/siutindei/board/mail/deadbeefdeadbeef/read", "POST", {})[0], 404)
 
     def test_dmarc_reports_are_archived_and_not_unread(self) -> None:
         human = self.ingest()["threadId"]
@@ -506,12 +506,12 @@ class TestMailRoutes(MailTestCase):
         self.assertEqual(google_thread["disposition"], "archived")
         self.assertFalse(google_thread["unread"])
 
-        status, body = self.call("/siu-tin-dei/board/mail")
+        status, body = self.call("/v1/admin/siutindei/board/mail")
         self.assertEqual(status, 200)
         ids = {t["threadId"] for t in body["threads"]}
         self.assertEqual(ids, {human})
         self.assertEqual(body["status"]["unreadCount"], 1)
-        self.assertEqual(self.call("/siu-tin-dei/board")[1]["unreadMailCount"], 1)
+        self.assertEqual(self.call("/v1/admin/siutindei/board")[1]["unreadMailCount"], 1)
         boxes = {m["address"]: m["unreadCount"] for m in body["mailboxes"]}
         self.assertEqual(boxes.get("hello@siutindei.com"), 1)
         self.assertEqual(boxes.get("dmarc@siutindei.com"), 0)
@@ -519,7 +519,7 @@ class TestMailRoutes(MailTestCase):
         hello_box = next(m for m in body["mailboxes"] if m["address"] == "hello@siutindei.com")
         self.assertEqual(hello_box["threadCount"], 1)
 
-        status, archived = self.call("/siu-tin-dei/board/mail", query="archived=1")
+        status, archived = self.call("/v1/admin/siutindei/board/mail", query="archived=1")
         self.assertEqual(status, 200)
         archived_ids = {t["threadId"] for t in archived["threads"]}
         self.assertIn(rua, archived_ids)
@@ -552,7 +552,7 @@ class TestMailRoutes(MailTestCase):
         assert thread is not None
         self.assertNotEqual(thread.get("disposition"), "archived")
         self.assertTrue(thread["unread"])
-        status, body = self.call("/siu-tin-dei/board/mail")
+        status, body = self.call("/v1/admin/siutindei/board/mail")
         self.assertEqual(status, 200)
         self.assertIn(first["threadId"], {t["threadId"] for t in body["threads"]})
         self.assertEqual(body["status"]["unreadCount"], 1)
@@ -573,14 +573,14 @@ class TestMailRoutes(MailTestCase):
         thread = board_store.get_mail_thread(self.table, first["threadId"])
         assert thread is not None
         self.assertNotEqual(thread.get("disposition"), "archived")
-        status, body = self.call("/siu-tin-dei/board/mail")
+        status, body = self.call("/v1/admin/siutindei/board/mail")
         self.assertEqual(status, 200)
         self.assertIn(first["threadId"], {t["threadId"] for t in body["threads"]})
         self.assertEqual(body["status"]["threadCount"], 1)
 
     def test_allow_list_validation_and_normalisation(self) -> None:
         status, body = self.call(
-            "/siu-tin-dei/board/tools",
+            "/v1/admin/siutindei/board/tools",
             "PUT",
             {"allowList": [" Coach@SwimHK.example ", "@Vendor.example", "coach@swimhk.example", ""]},
         )
@@ -589,19 +589,19 @@ class TestMailRoutes(MailTestCase):
         self.assertEqual(body["mailDomain"], "siutindei.com")
         self.assertTrue(body["mailSendEnabled"])
         status, body = self.call(
-            "/siu-tin-dei/board/tools",
+            "/v1/admin/siutindei/board/tools",
             "PUT",
             {"allowList": ["coach@swimhk.example", "@vendor.example", "+852 9123 4567"]},
         )
         self.assertEqual(status, 200)
         self.assertEqual(body["config"]["allowList"], ["coach@swimhk.example", "@vendor.example", "+85291234567"])
-        status, body = self.call("/siu-tin-dei/board/tools", "PUT", {"allowList": ["not-an-address"]})
+        status, body = self.call("/v1/admin/siutindei/board/tools", "PUT", {"allowList": ["not-an-address"]})
         self.assertEqual(status, 400)
         self.assertIn("not-an-address", body["message"])
-        status, body = self.call("/siu-tin-dei/board/tools", "PUT", {"allowList": "coach@swimhk.example"})
+        status, body = self.call("/v1/admin/siutindei/board/tools", "PUT", {"allowList": "coach@swimhk.example"})
         self.assertEqual(status, 400)
         # Untouched by a matrix-only update.
-        status, body = self.call("/siu-tin-dei/board/tools", "PUT", {"matrix": {"mail": {"cpo": "propose"}}})
+        status, body = self.call("/v1/admin/siutindei/board/tools", "PUT", {"matrix": {"mail": {"cpo": "propose"}}})
         self.assertEqual(body["config"]["allowList"], ["coach@swimhk.example", "@vendor.example", "+85291234567"])
         self.assertEqual(body["config"]["matrix"]["mail"]["cpo"], "propose")
 
@@ -636,7 +636,7 @@ class TestMailTools(MailTestCase):
         self.assertNotIn("mail_reply", self.offered("cpo"))
         self.assertIn("mail_reply", self.offered("ceo"))  # propose
         self.assertIn("mail_send", self.offered("cmo"))
-        self.call("/siu-tin-dei/board/tools", "PUT", {"matrix": {"mail": {"cto": "off"}}})
+        self.call("/v1/admin/siutindei/board/tools", "PUT", {"matrix": {"mail": {"cto": "off"}}})
         self.assertFalse({n for n in self.offered("cto") if n.startswith("mail_")})
 
     def test_read_tools_return_masked_data(self) -> None:
@@ -665,7 +665,7 @@ class TestMailTools(MailTestCase):
 
     def test_reply_at_act_to_unlisted_recipient_becomes_approval_with_preview(self) -> None:
         thread_id = self.seed_thread()
-        self.call("/siu-tin-dei/board/tools", "PUT", {"globalMode": "act"})
+        self.call("/v1/admin/siutindei/board/tools", "PUT", {"globalMode": "act"})
         self.use_script(
             [[("mail_reply", {"threadId": thread_id, "body": "Dear contact#1,\n\nYes, two places are left on Saturday.\n\nThe siutindei team", "reason": "Enquiry waiting 1 day"})]],
             "I have proposed a reply for your approval.",
@@ -674,7 +674,7 @@ class TestMailTools(MailTestCase):
         call = job["message"]["toolCalls"][0]
         self.assertEqual(call["status"], "pending_approval")
         self.assertEqual(self.ses.sent, [])
-        status, body = self.call("/siu-tin-dei/board/approvals")
+        status, body = self.call("/v1/admin/siutindei/board/approvals")
         approval = body["approvals"][0]
         self.assertEqual(approval["op"], "mail_reply")
         self.assertIn("contact#1", approval["downgradeReason"])
@@ -685,7 +685,7 @@ class TestMailTools(MailTestCase):
         self.assertIn("Dear wendy.chan@gmail.com", preview["text"])
         self.assertTrue(preview["sendEnabled"])
 
-        status, body = self.call(f"/siu-tin-dei/board/approvals/{approval['approvalId']}/approve", "POST", {})
+        status, body = self.call(f"/v1/admin/siutindei/board/approvals/{approval['approvalId']}/approve", "POST", {})
         self.assertEqual(status, 200)
         self.assertEqual(body["approval"]["status"], "executed")
         self.assertEqual(len(self.ses.sent), 1)
@@ -712,13 +712,13 @@ class TestMailTools(MailTestCase):
 
     def test_reply_at_act_to_allow_listed_recipient_sends_immediately(self) -> None:
         thread_id = self.seed_thread()
-        self.call("/siu-tin-dei/board/tools", "PUT", {"globalMode": "act", "allowList": ["@gmail.com"]})
+        self.call("/v1/admin/siutindei/board/tools", "PUT", {"globalMode": "act", "allowList": ["@gmail.com"]})
         self.use_script([[("mail_reply", {"threadId": thread_id, "body": "Two places left.", "reason": "r"})]], "Sent.")
         job = self.chat("coo")
         call = job["message"]["toolCalls"][0]
         self.assertEqual(call["status"], "ok")
         self.assertEqual(len(self.ses.sent), 1)
-        status, body = self.call("/siu-tin-dei/board/approvals")
+        status, body = self.call("/v1/admin/siutindei/board/approvals")
         self.assertEqual(body["approvals"], [])
 
     def test_propose_level_records_approval_without_guard(self) -> None:
@@ -727,7 +727,7 @@ class TestMailTools(MailTestCase):
         job = self.chat("ceo")
         call = job["message"]["toolCalls"][0]
         self.assertEqual(call["status"], "pending_approval")
-        approval = self.call("/siu-tin-dei/board/approvals")[1]["approvals"][0]
+        approval = self.call("/v1/admin/siutindei/board/approvals")[1]["approvals"][0]
         self.assertNotIn("downgradeReason", approval)
         self.assertEqual(approval["preview"]["to"], ["wendy.chan@gmail.com"])
 
@@ -798,11 +798,11 @@ class TestMailTools(MailTestCase):
         )
         job = self.chat("cfo")
         self.assertEqual(job["message"]["toolCalls"][0]["status"], "pending_approval")
-        approval = self.call("/siu-tin-dei/board/approvals")[1]["approvals"][0]
+        approval = self.call("/v1/admin/siutindei/board/approvals")[1]["approvals"][0]
         self.assertEqual(approval["preview"]["from"], "billing@siutindei.com")
         self.assertEqual(approval["preview"]["to"], ["wendy.chan@gmail.com"])
         status, body = self.call(
-            f"/siu-tin-dei/board/approvals/{approval['approvalId']}/approve",
+            f"/v1/admin/siutindei/board/approvals/{approval['approvalId']}/approve",
             "POST",
             {"arguments": {"body": "Please find invoice 0042 attached to the portal."}},
         )
@@ -818,7 +818,7 @@ class TestMailTools(MailTestCase):
 
     def test_forward_quotes_last_message(self) -> None:
         thread_id = self.seed_thread()
-        self.call("/siu-tin-dei/board/tools", "PUT", {"globalMode": "act", "allowList": ["coach@swimhk.example"]})
+        self.call("/v1/admin/siutindei/board/tools", "PUT", {"globalMode": "act", "allowList": ["coach@swimhk.example"]})
         self.use_script(
             [[("mail_forward", {"threadId": thread_id, "to": ["coach@swimhk.example"], "note": "Can you take two more on Saturday?", "reason": "r"})]],
             "Forwarded.",
@@ -834,7 +834,7 @@ class TestMailTools(MailTestCase):
 
     def test_errors_are_reported_to_the_model(self) -> None:
         thread_id = self.seed_thread()
-        self.call("/siu-tin-dei/board/tools", "PUT", {"globalMode": "act", "allowList": ["@gmail.com"]})
+        self.call("/v1/admin/siutindei/board/tools", "PUT", {"globalMode": "act", "allowList": ["@gmail.com"]})
         scripted = self.use_script(
             [
                 [
@@ -864,7 +864,7 @@ class TestMailTools(MailTestCase):
         from botocore.exceptions import ClientError
 
         thread_id = self.seed_thread()
-        self.call("/siu-tin-dei/board/tools", "PUT", {"globalMode": "act", "allowList": ["@gmail.com"]})
+        self.call("/v1/admin/siutindei/board/tools", "PUT", {"globalMode": "act", "allowList": ["@gmail.com"]})
         self.ses.fail_with = ClientError(
             {
                 "Error": {

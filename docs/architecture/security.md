@@ -84,8 +84,8 @@ parameters use `noEcho: true`; S3 remains private behind CloudFront.
   `requestContext.authorizer.jwt.claims["cognito:groups"]` and returns
   **403** without `admin` (`_require_admin`). The group check stays in the
   handlers; there is no separate Lambda authorizer for it.
-- `/public/*` GET mirrors and the Executive Board `/public/siu-tin-dei/board`
-  routes use the `PublicApiKeyAuthorizerFn` Lambda authorizer (`x-api-key`,
+- `/v1/partner/*` GET mirrors and the Executive Board `/v1/partner/siutindei/board`
+  routes use the `PublicApiKeyAuthorizerFn` Lambda authorizer (`Authorization: Bearer`,
   scrypt digest lookup `pk=APIKEY#<digest>`, scopes, optional CIDR
   allow-list, 90-day default expiry, 60 s cache keyed on key + source IP).
   The HTTP method is not part of that cache key, so handlers enforce
@@ -93,15 +93,13 @@ parameters use `noEcho: true`; S3 remains private behind CloudFront.
   `PublicApiWritesEnabled` stack parameter; owner-only routes stay JWT-only.
   Key management: [`../deployment/admin-website.md`](../deployment/admin-website.md)
   → "Public API keys".
-- Routes with **no authorizer**: `GET/POST /webhooks/meta/siutindei` (and
-  legacy `/webhooks/meta`) verified by the Meta verify token and
+- Routes with **no authorizer**: `GET/POST https://api.lx-software.com/v1/webhooks/meta/siutindei` and `GET/POST https://api.lx-software.com/v1/webhooks/meta` (the old `/webhooks/meta/siutindei` and `/webhooks/meta` paths still answer) verified by the Meta verify token and
   `X-Hub-Signature-256`. The webhook stores the message text and returns
   before any model call. Persona tools and public-API keys without
   `siutindei-pii` read a sender alias, no display name or handle, and text
   with phone numbers and email addresses masked. A name typed inside the
   text is not masked, the same as in mail. Media, and the WhatsApp account
-  ids and number, are refused to a key without that scope. `/public/outreach/unsubscribe/{token}` and
-  `/public/newsletter/{subscribe,confirm,unsubscribe}` verified by HMAC
+  ids and number, are refused to a key without that scope. `/v1/public/outreach/unsubscribe/{token}` and the old `/public/outreach/unsubscribe/{token}`, plus `/v1/public/newsletter/subscribe` and the old confirm and unsubscribe paths, are verified by HMAC
   tokens and rate-limited.
 - Every admin action writes an audit row (`USER#<sub>` in
   `lxsoftware-admin-audit-log`); API-key writes use `USER#apikey:<keyId>`.
@@ -137,7 +135,7 @@ the console.
 ## Executive Board safeguards
 
 - Board rows (`BOARD#` prefix) are filtered out of `/records` and
-  `/public/records`.
+  `/v1/partner/records`.
 - Tool access is `off` / `read` / `propose` / `act` per tool per member,
   capped by a global mode (shipped default `propose`). `act` on outbound
   mail / WhatsApp is limited to the owner allow-list; Meta ads `act` to the

@@ -1,5 +1,9 @@
 import { ensureFreshTokens } from "./auth";
 import { getAdminConfig } from "./config";
+import { wireFormat } from "./contracts/generated";
+import { excluded, fromWire, toWire, type WireContract } from "./wireFormat";
+
+const CONTRACT = wireFormat as unknown as WireContract;
 
 export class AdminApiError extends Error {
   readonly status: number;
@@ -70,16 +74,62 @@ export async function adminFetch(
     const idToken = await ensureFreshTokens();
     headers.set("Authorization", `Bearer ${idToken}`);
   }
-  const url = joinUrl(cfg.apiBaseUrl, path);
-  if (!headers.has("Content-Type") && rest.body) {
+  const skip = excluded(path, CONTRACT);
+  const wirePath = skip ? path : convertQuery(path);
+  let body = rest.body;
+  if (!skip && typeof body === "string" && body) {
+    try {
+      body = JSON.stringify(toWire(JSON.parse(body), CONTRACT));
+    } catch {
+      // A body that is not JSON is sent unchanged.
+    }
+  }
+  const url = joinUrl(cfg.apiBaseUrl, wirePath);
+  if (!headers.has("Content-Type") && body) {
     headers.set("Content-Type", "application/json");
   }
-  const res = await fetch(url, { ...rest, headers });
+  const res = await fetch(url, { ...rest, body, headers });
+  const type = res.headers.get("content-type") ?? "";
+  if (!skip && type.toLowerCase().includes("json")) {
+    const text = await res.text();
+    const converted = responseTextFromWire(path, text);
+    if (!res.ok) {
+      throw new AdminApiError(res.status, converted);
+    }
+    return new Response(converted, { status: res.status, statusText: res.statusText, headers: res.headers });
+  }
   if (!res.ok) {
     const text = await res.text();
     throw new AdminApiError(res.status, text);
   }
   return res;
+}
+
+/** Decode a JSON body. ``path`` is what makes ``excludedRoutes`` apply. */
+export function responseTextFromWire(path: string, text: string): string {
+  const route = path.split("?")[0] ?? path;
+  if (excluded(route, CONTRACT)) {
+    return text;
+  }
+  try {
+    return JSON.stringify(fromWire(JSON.parse(text), CONTRACT, route));
+  } catch {
+    return text;
+  }
+}
+
+function convertQuery(path: string): string {
+  const mark = path.indexOf("?");
+  if (mark < 0) {
+    return path;
+  }
+  const params = new URLSearchParams(path.slice(mark + 1));
+  const next = new URLSearchParams();
+  for (const [key, value] of params) {
+    const renamed = Object.keys(toWire({ [key]: null }, CONTRACT) as Record<string, unknown>)[0] ?? key;
+    next.append(renamed, value);
+  }
+  return `${path.slice(0, mark + 1)}${next.toString()}`;
 }
 
 export async function adminFetchJson<T>(
@@ -92,7 +142,7 @@ export async function adminFetchJson<T>(
 
 /** Presigned GET URL for a confirmed uploads/* asset (e.g. statement PDF). */
 export async function fetchAssetDownloadUrl(key: string): Promise<string> {
-  const data = await adminFetchJson<{ url: string }>("/assets/download-url", {
+  const data = await adminFetchJson<{ url: string }>("/v1/admin/assets/download-url", {
     method: "POST",
     body: JSON.stringify({ key }),
   });
@@ -101,7 +151,7 @@ export async function fetchAssetDownloadUrl(key: string): Promise<string> {
 
 /** Deletes a confirmed asset from S3 and removes its DynamoDB META row. */
 export async function deleteAdminAsset(key: string): Promise<void> {
-  await adminFetchJson<{ ok: boolean }>("/assets/delete", {
+  await adminFetchJson<{ ok: boolean }>("/v1/admin/assets/delete", {
     method: "POST",
     body: JSON.stringify({ key }),
   });

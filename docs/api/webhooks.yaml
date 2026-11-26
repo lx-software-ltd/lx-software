@@ -1,0 +1,148 @@
+openapi: 3.0.3
+info:
+  title: LX Software webhook API
+  version: 0.1.0
+  description: |
+    Field names on the wire are snake_case. lx-software keeps message
+    and reason beside the problem members. The address is
+    https://api.lx-software.com and callers add /v1/ themselves.
+    Provider callbacks. The old /webhooks paths stay until they are removed.
+servers:
+  - url: https://api.lx-software.com
+paths:
+  /v1/webhooks/meta:
+    get:
+      summary: meta
+      security: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      summary: meta
+      security: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /webhooks/meta:
+    get:
+      summary: meta
+      deprecated: true
+      security: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      summary: meta
+      deprecated: true
+      security: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/webhooks/meta/siutindei:
+    get:
+      summary: siutindei
+      security: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      summary: siutindei
+      security: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+  /webhooks/meta/siutindei:
+    get:
+      summary: siutindei
+      deprecated: true
+      security: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      summary: siutindei
+      deprecated: true
+      security: []
+      responses:
+        "200":
+          description: JSON object. Field names are snake_case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        default:
+          $ref: "#/components/responses/Problem"
+components:
+  schemas:
+    Object:
+      type: object
+      additionalProperties: true
+    Problem:
+      type: object
+      additionalProperties: true
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+        message:
+          type: string
+        reason:
+          type: string
+  responses:
+    Problem:
+      description: Problem details. lx-software keeps message and reason.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"

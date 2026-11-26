@@ -33,7 +33,7 @@ describe("postStaffTick", () => {
   it("POSTs with no body", async () => {
     fetchMock.mockResolvedValueOnce({ ok: true, queued: true, invoked: true });
     await postStaffTick();
-    expect(fetchMock).toHaveBeenCalledWith("/siu-tin-dei/board/staff/tick", { method: "POST" });
+    expect(fetchMock).toHaveBeenCalledWith("/v1/admin/siutindei/board/staff/tick", { method: "POST" });
   });
 
   it("retries a dropped fetch once", async () => {

@@ -1,6 +1,6 @@
 import type { BoardCatalogCandidateQuery } from "./types";
 
-export const BOARD_API_BASE = "/siu-tin-dei/board";
+export const BOARD_API_BASE = "/v1/admin/siutindei/board";
 
 
 

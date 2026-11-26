@@ -15,6 +15,7 @@ export function defineAdminOutputs(
     readonly auditLogTable: dynamodb.Table;
     readonly assetsBucket: s3.Bucket;
     readonly httpApi: apigwv2.HttpApi;
+    readonly adminApiBaseUrl: string;
     readonly inboundMailDomain: cdk.CfnParameter;
     readonly evolvesproutsInvoiceRecipient: cdk.CfnParameter;
     readonly enableBankingSigningKey: kms.Key;
@@ -26,7 +27,7 @@ export function defineAdminOutputs(
     recordsTable,
     auditLogTable,
     assetsBucket,
-    httpApi,
+    adminApiBaseUrl,
     inboundMailDomain,
     inboundStatementMailboxes,
     inboundReceiptRuleSet,
@@ -186,8 +187,8 @@ export function defineAdminOutputs(
   });
 
   new cdk.CfnOutput(scope, "AdminApiBaseUrl", {
-    value: httpApi.apiEndpoint,
-    description: "Invoke URL for the admin HTTP API.",
+    value: adminApiBaseUrl,
+    description: "Invoke URL for the admin HTTP API. The custom domain when it is on.",
     exportName: "lxsoftware-AdminApiBaseUrl",
   });
 }

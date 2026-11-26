@@ -54,7 +54,7 @@ Typical committed values include:
 - **`lxsoftware:EvolvesproutsClusterArn`** — `<FROM_GITHUB_SECRET: CDK_PARAM_EVOLVESPROUTS_CLUSTER_ARN>`.
 - **`lxsoftware:PublicApiWritesEnabled`** — production is `true` so Cloud Agent
   keys with `allowWrite` can POST/PUT/DELETE board routes. The CDK parameter
-  default stays `false` (fail-closed) for new stacks. Finance `/public/*`
+  default stays `false` (fail-closed) for new stacks. Finance `/v1/partner/*`
   stays GET-only. Keys still need `set-write --allow-write`. Authenticated
   write denials return `403 {"reason": …}` (`writes_disabled`,
   `key_read_only`, `owner_only`, `scope`).

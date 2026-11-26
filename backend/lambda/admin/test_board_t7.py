@@ -14,7 +14,7 @@ from test_board_t5 import MetaTestCase
 class TestT7AllowListAndCaps(MetaTestCase):
     def test_phone_allow_list_put_persists_and_whatsapp_acts(self) -> None:
         status, body = self.call(
-            "/siu-tin-dei/board/tools",
+            "/v1/admin/siutindei/board/tools",
             "PUT",
             {"globalMode": "act", "allowList": ["+852 9123 4567"]},
         )
@@ -52,7 +52,7 @@ class TestT7AllowListAndCaps(MetaTestCase):
 
     def test_spend_caps_put_clamps_and_overrides_guard(self) -> None:
         status, body = self.call(
-            "/siu-tin-dei/board/tools",
+            "/v1/admin/siutindei/board/tools",
             "PUT",
             {"spendCaps": {"metaAdsDailyUsd": -3, "metaAdsMonthlyUsd": 9999}},
         )
@@ -60,7 +60,7 @@ class TestT7AllowListAndCaps(MetaTestCase):
         self.assertEqual(body["config"]["spendCaps"]["metaAdsDailyUsd"], 0.0)
         self.assertEqual(body["config"]["spendCaps"]["metaAdsMonthlyUsd"], 2000.0)
         status, body = self.call(
-            "/siu-tin-dei/board/tools",
+            "/v1/admin/siutindei/board/tools",
             "PUT",
             {"globalMode": "act", "spendCaps": {"metaAdsDailyUsd": 20, "metaAdsMonthlyUsd": 400}},
         )
@@ -77,7 +77,7 @@ class TestT7AllowListAndCaps(MetaTestCase):
         spend = board_store.load_ads_spend(self.table)
         self.assertEqual(spend["dailyUsd"], 10.0)
         self.assertEqual(spend["monthlyUsd"], 300.0)
-        status, body = self.call("/siu-tin-dei/board/tools")
+        status, body = self.call("/v1/admin/siutindei/board/tools")
         self.assertEqual(status, 200)
         self.assertEqual(body["adsSpend"]["recordedDailyUsd"], 10.0)
         self.assertEqual(body["adsSpend"]["recordedMonthlyUsd"], 300.0)

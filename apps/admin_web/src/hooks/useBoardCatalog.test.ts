@@ -21,7 +21,7 @@ describe("catalog candidate mutations", () => {
     fetchMock.mockResolvedValueOnce({ candidate: { candidateId: "c1", status: "approved" } });
     const { mutationFn } = catalogDecideMutationOptions(qc);
     await mutationFn({ candidateId: "c1", decision: "approve" });
-    expect(fetchMock).toHaveBeenCalledWith("/siu-tin-dei/board/catalog/candidates/c1/approve", {
+    expect(fetchMock).toHaveBeenCalledWith("/v1/admin/siutindei/board/catalog/candidates/c1/approve", {
       method: "POST",
       body: JSON.stringify({}),
     });
@@ -37,7 +37,7 @@ describe("catalog candidate mutations", () => {
       before: "2026-09-14T00:00:00Z",
       missingPlaceId: true,
     });
-    expect(fetchMock).toHaveBeenCalledWith("/siu-tin-dei/board/catalog/candidates/bulk", {
+    expect(fetchMock).toHaveBeenCalledWith("/v1/admin/siutindei/board/catalog/candidates/bulk", {
       method: "POST",
       body: JSON.stringify({
         decision: "close",

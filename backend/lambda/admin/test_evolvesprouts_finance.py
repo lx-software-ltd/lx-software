@@ -36,8 +36,8 @@ _install_stubs()
 
 import board_data_api  # noqa: E402
 import evolvesprouts_finance as es  # noqa: E402
-from dispatch import lambda_handler  # noqa: E402
 from finance_store import MirroredBookError, upsert_mirrored_lines  # noqa: E402
+from http_call import http_call  # noqa: E402
 
 
 class _MemTable:
@@ -429,21 +429,21 @@ class TestEvolveSproutsRoutes(unittest.TestCase):
         return event
 
     def test_summary_and_sync_when_unconfigured(self) -> None:
-        summary = lambda_handler(self._event("/evolve-sprouts/summary"), None)
+        summary = http_call(self._event("/v1/admin/evolvesprouts/summary"), None)
         self.assertEqual(summary["statusCode"], 200)
         body = json.loads(summary["body"])
         self.assertFalse(body["configured"])
         self.assertEqual(body["openInvoices"], 0)
         self.assertEqual(body["submittedExpenses"], 0)
 
-        synced = lambda_handler(self._event("/evolve-sprouts/sync", method="POST"), None)
+        synced = http_call(self._event("/v1/admin/evolvesprouts/sync", method="POST"), None)
         self.assertEqual(synced["statusCode"], 200)
         self.assertEqual(json.loads(synced["body"])["skipped"], "not_configured")
 
     def test_put_and_import_are_rejected(self) -> None:
-        denied = lambda_handler(
+        denied = http_call(
             self._event(
-                "/evolve-sprouts",
+                "/v1/admin/evolvesprouts",
                 method="PUT",
                 body={"defaultCurrency": "HKD", "float": {"amount": 0, "currency": "HKD"}, "lines": []},
             ),
@@ -453,9 +453,9 @@ class TestEvolveSproutsRoutes(unittest.TestCase):
         self.assertIn("Evolve Sprouts", json.loads(denied["body"])["message"])
         self.table.put_item.assert_not_called()
 
-        imported = lambda_handler(
+        imported = http_call(
             self._event(
-                "/evolve-sprouts/parse-statement",
+                "/v1/admin/evolvesprouts/parse-statement",
                 method="POST",
                 body={"key": "uploads/admin-sub/x/inv.pdf", "lineTypeOnly": "expenditure"},
             ),
@@ -464,7 +464,7 @@ class TestEvolveSproutsRoutes(unittest.TestCase):
         self.assertEqual(imported["statusCode"], 403)
 
     def test_get_book_still_returns_lines(self) -> None:
-        out = lambda_handler(self._event("/evolve-sprouts"), None)
+        out = http_call(self._event("/v1/admin/evolvesprouts"), None)
         self.assertEqual(out["statusCode"], 200)
         self.assertEqual(json.loads(out["body"])["data"]["lines"], [])
 
@@ -479,7 +479,7 @@ class TestEvolveSproutsRoutes(unittest.TestCase):
             ),
             patch("board_async.try_invoke_event", return_value=True) as invoke,
         ):
-            out = lambda_handler(self._event("/evolve-sprouts/sync", method="POST"), None)
+            out = http_call(self._event("/v1/admin/evolvesprouts/sync", method="POST"), None)
         self.assertEqual(out["statusCode"], 200)
         body = json.loads(out["body"])
         self.assertTrue(body["queued"])
@@ -498,12 +498,12 @@ class TestEvolveSproutsRoutes(unittest.TestCase):
             },
         ):
             with self.assertRaises(es.EvolveSproutsFinanceError):
-                lambda_handler({"internal": "evolvesprouts_finance_mirror"}, None)
+                http_call({"internal": "evolvesprouts_finance_mirror"}, None)
         saved = self.table.put_item.call_args.kwargs["Item"]
         self.assertIn("refused", str(saved.get("syncError")))
 
     def test_nightly_trigger_skips_when_unconfigured(self) -> None:
-        out = lambda_handler({"internal": "evolvesprouts_finance_mirror"}, None)
+        out = http_call({"internal": "evolvesprouts_finance_mirror"}, None)
         self.assertEqual(out["skipped"], "not_configured")
 
 

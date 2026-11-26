@@ -154,7 +154,7 @@ export const siuTinDeiBookFixture: HouseFinanceData = {
   float: { amount: 0, currency: "HKD" },
   lines: [
     { id: "std-1", dateUtc: isoDaysAgo(2), type: "income", description: "Listing plan — Little Explorers", netAmount: 1200, vat: 0, currency: "HKD", grossAmount: 1200 },
-    { id: "std-2", dateUtc: isoDaysAgo(6), type: "expenditure", description: "AWS — August", netAmount: 312.4, vat: 0, currency: "USD", grossAmount: 312.4, sourceAssetKeys: ["uploads/siu-tin-dei/aws-2026-08.pdf"] },
+    { id: "std-2", dateUtc: isoDaysAgo(6), type: "expenditure", description: "AWS — August", netAmount: 312.4, vat: 0, currency: "USD", grossAmount: 312.4, sourceAssetKeys: ["uploads/siutindei/aws-2026-08.pdf"] },
     { id: "std-3", dateUtc: isoDaysAgo(12), type: "expenditure", description: "Apple Developer Program", netAmount: 99, vat: 0, currency: "USD", grossAmount: 99 },
   ],
 };
@@ -194,7 +194,7 @@ export const evolveSproutsSummaryFixture: MirroredBookSummary = {
 
 export const assetsFixture: readonly AdminAssetMeta[] = [
   { pk: "ASSET#uploads/hillmarton/2026-08-boiler-service.pdf", sk: "META", size: 182_331, uploadedAt: isoDaysAgo(9), fileName: "2026-08-boiler-service.pdf", house: "hillmarton" },
-  { pk: "ASSET#uploads/siu-tin-dei/aws-2026-08.pdf", sk: "META", size: 96_004, uploadedAt: isoDaysAgo(6), fileName: "aws-2026-08.pdf", house: "siu-tin-dei" },
+  { pk: "ASSET#uploads/siutindei/aws-2026-08.pdf", sk: "META", size: 96_004, uploadedAt: isoDaysAgo(6), fileName: "aws-2026-08.pdf", house: "siutindei" },
   { pk: "ASSET#uploads/morrison/management-fee-notice.jpg", sk: "META", size: 1_204_112, uploadedAt: isoDaysAgo(40), fileName: "management-fee-notice.jpg", house: "morrison" },
   {
     pk: "ASSET#inbound/hillmarton/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/00_KDQ170167_-_Landlord_Statement.pdf",
@@ -208,7 +208,7 @@ export const assetsFixture: readonly AdminAssetMeta[] = [
 
 export const bankingFixture: BankSyncState = {
   enabled: true,
-  callbackPath: "/banking/callback",
+  callbackPath: "/v1/admin/banking/callback",
   sessions: [
     {
       sessionId: "sess-monzo",
@@ -1141,7 +1141,7 @@ export const openrouterUsageFixture: OpenRouterUsagePayload = {
       id: "executive-board",
       label: "Executive Board",
       title: "LX Admin - Executive Board",
-      referer: "https://admin.lx-software.com/siu-tin-dei/board",
+      referer: "https://admin.lx-software.com/siutindei/board",
       repo: "lx-software-ltd/lx-software",
       keyName: "lxsoftware:executive-board",
       meteredHere: true,

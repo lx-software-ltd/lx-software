@@ -40,12 +40,12 @@ class DelegateTests(BoardTestCase):
         board_store.put_task(self.table, {"taskId": "t1", "status": "needs_owner", "assignee": "prospector", "brief": "parked"})
 
     def test_apikey_reject_needs_a_note_and_is_recorded(self) -> None:
-        status, body = _call("/siu-tin-dei/board/approvals/a1/reject", "POST", {}, "apikey:k1")
+        status, body = _call("/siutindei/board/approvals/a1/reject", "POST", {}, "apikey:k1")
         self.assertEqual(status, 400)
         self.assertEqual(body["message"], "note is required")
         self.assertEqual(_nn(board_store.get_approval(self.table, "a1"))["status"], "pending")
         status, body = _call(
-            "/siu-tin-dei/board/approvals/a1/reject", "POST", {"note": "Listing id is not real."}, "apikey:k1"
+            "/siutindei/board/approvals/a1/reject", "POST", {"note": "Listing id is not real."}, "apikey:k1"
         )
         self.assertEqual(status, 200)
         self.assertEqual(body["approval"]["status"], "rejected")
@@ -55,31 +55,31 @@ class DelegateTests(BoardTestCase):
         self.assertTrue(any("apikey:k1" in u["text"] and "a1" in u["text"] for u in updates))
 
     def test_apikey_cannot_approve_and_owner_can_reject_without_a_note(self) -> None:
-        status, body = _call("/siu-tin-dei/board/approvals/a1/approve", "POST", {"note": "send it"}, "apikey:k1")
+        status, body = _call("/siutindei/board/approvals/a1/approve", "POST", {"note": "send it"}, "apikey:k1")
         self.assertEqual(status, 403)
         self.assertEqual(_nn(board_store.get_approval(self.table, "a1"))["status"], "pending")
-        status, _ = _call("/siu-tin-dei/board/approvals/a1/reject", "POST", {}, "admin-sub")
+        status, _ = _call("/siutindei/board/approvals/a1/reject", "POST", {}, "admin-sub")
         self.assertEqual(status, 200)
         self.assertEqual(_nn(board_store.get_approval(self.table, "a1"))["status"], "rejected")
 
     def test_apikey_dismiss_needs_a_note(self) -> None:
-        status, body = _call("/siu-tin-dei/board/tasks/t1/cancel", "POST", {}, "apikey:k1")
+        status, body = _call("/siutindei/board/tasks/t1/cancel", "POST", {}, "apikey:k1")
         self.assertEqual(status, 400)
         self.assertEqual(_nn(board_store.get_task(self.table, "t1"))["status"], "needs_owner")
         status, body = _call(
-            "/siu-tin-dei/board/tasks/t1/cancel", "POST", {"note": "Re-proposes a fake listing id."}, "apikey:k1"
+            "/siutindei/board/tasks/t1/cancel", "POST", {"note": "Re-proposes a fake listing id."}, "apikey:k1"
         )
         self.assertEqual(status, 200)
         self.assertEqual(body["task"]["status"], "cancelled")
         self.assertIn("fake listing", body["task"]["failureReason"])
-        status, _ = _call("/siu-tin-dei/board/tasks/t1/cancel", "POST", {}, "admin-sub")
+        status, _ = _call("/siutindei/board/tasks/t1/cancel", "POST", {}, "admin-sub")
         self.assertEqual(status, 200)
 
     def test_focus_changes_only_the_five_fields(self) -> None:
         before = board_store.load_settings(self.table)
         cap = before["boundaries"]["outreach"]["dailyCap"]
         status, body = _call(
-            "/siu-tin-dei/board/settings/focus",
+            "/siutindei/board/settings/focus",
             "POST",
             {"districtsFirst": ["Southern"], "dailyCap": 100},
             "apikey:k1",
@@ -88,14 +88,14 @@ class DelegateTests(BoardTestCase):
         self.assertIn("dailyCap", body["message"])
         self.assertEqual(board_store.load_settings(self.table)["boundaries"]["outreach"]["dailyCap"], cap)
         status, body = _call(
-            "/siu-tin-dei/board/settings/focus",
+            "/siutindei/board/settings/focus",
             "POST",
             {"districtsFirst": ["narnia"]},
             "apikey:k1",
         )
         self.assertEqual(status, 400)
         status, body = _call(
-            "/siu-tin-dei/board/settings/focus",
+            "/siutindei/board/settings/focus",
             "POST",
             {
                 "districtsFirst": ["southern"],
@@ -112,7 +112,7 @@ class DelegateTests(BoardTestCase):
         self.assertEqual(body["focus"]["qualifiedPerWeek"], 15)
         self.assertFalse(body["focus"]["microBatchEnabled"])
         self.assertFalse(body["focus"]["autoImport"])
-        status, body = _call("/siu-tin-dei/board/settings/focus", "POST", {"autoImport": True}, "apikey:k1")
+        status, body = _call("/siutindei/board/settings/focus", "POST", {"autoImport": True}, "apikey:k1")
         self.assertEqual(status, 400)
         self.assertFalse(board_store.load_settings(self.table)["catalog"]["autoImport"])
         self.assertEqual(board_store.load_settings(self.table)["boundaries"]["outreach"]["dailyCap"], cap)
@@ -139,7 +139,7 @@ class DelegateTests(BoardTestCase):
 
     def test_owner_can_set_focus_too(self) -> None:
         status, body = _call(
-            "/siu-tin-dei/board/settings/focus", "POST", {"microBatchEnabled": False}, "admin-sub"
+            "/siutindei/board/settings/focus", "POST", {"microBatchEnabled": False}, "admin-sub"
         )
         self.assertEqual(status, 200)
         self.assertFalse(body["focus"]["microBatchEnabled"])
@@ -169,7 +169,7 @@ class InstagramReadTests(BoardTestCase):
         os.environ["META_IG_USER_ID"] = "1784"
         self.addCleanup(lambda: os.environ.pop("META_IG_USER_ID", None))
         with patch("board_meta.graph", side_effect=self._graph):
-            status, body = _call("/siu-tin-dei/board/meta/instagram", "GET", None, "apikey:k1")
+            status, body = _call("/siutindei/board/meta/instagram", "GET", None, "apikey:k1")
             tool = board_tools.REGISTRY["meta_list_ig_media"]
             listed = tool.run(
                 board_tools.ToolContext(self.table, board_store.default_settings(), "cmo"),

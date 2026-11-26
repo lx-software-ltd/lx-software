@@ -19,8 +19,8 @@ from contract_constants import (
 )
 from http_common import _log_event, _request_id
 
-PUBLIC_BOARD_PREFIX = "/public/siu-tin-dei/board"
-LINKEDIN_POSTS_PATH = "/public/lx-software/linkedin/posts"
+PUBLIC_BOARD_PREFIX = "/v1/partner/siutindei/board"
+LINKEDIN_POSTS_PATH = "/v1/partner/lx-software/linkedin/posts"
 
 
 def linkedin_post_id(path: str) -> str:
@@ -38,10 +38,10 @@ def linkedin_post_id(path: str) -> str:
 
 FINANCE_PATHS = frozenset(
     {
-        "/public/finance",
-        "/public/finance/quotes",
-        "/public/records",
-        "/public/fx/v2/rates",
+        "/v1/partner/finance",
+        "/v1/partner/finance/quotes",
+        "/v1/partner/records",
+        "/v1/partner/fx/rates",
     }
 )
 BOARD_OPS_HEADS = frozenset(

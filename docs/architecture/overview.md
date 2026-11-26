@@ -52,8 +52,8 @@ flowchart LR
 
 Operators reach CloudFront through Cloudflare DNS (gray cloud). The HTTP
 API uses a Cognito JWT authorizer; every handler additionally checks the
-`admin` group claim. `/public/*` routes use the API-key Lambda authorizer
-instead, and `/webhooks/meta*` plus the newsletter / outreach public routes
+`admin` group claim. `/v1/partner/*` routes use the API-key Lambda authorizer
+instead, and `/v1/webhooks/meta*` (the old `/webhooks/meta*` paths still answer) plus the newsletter / outreach public routes
 have no authorizer (HMAC or signed tokens). Details in
 [`security.md`](./security.md).
 

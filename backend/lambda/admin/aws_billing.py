@@ -3,7 +3,7 @@
 LX Software pays one AWS invoice for this account. Cost Explorer UnblendedCost
 grouped by the active cost-allocation tags ``Organization`` and ``Project`` is
 the source of the company split (Siu Tin Dei, Evolve Sprouts, LX Software).
-AWS's own invoice PDF is still one account total; ``GET /aws/usage.pdf`` is
+AWS's own invoice PDF is still one account total; ``GET /v1/admin/aws/usage/pdf`` is
 the internal allocation PDF.
 
 Tag map (first matching company in ``contracts/aws-billing.json`` wins):
@@ -348,7 +348,7 @@ def handle_usage_get(event: dict[str, Any]) -> dict[str, Any]:
 
 
 def handle_usage_pdf(event: dict[str, Any]) -> dict[str, Any]:
-    """GET /aws/usage.pdf?from=YYYY-MM-DD&to=YYYY-MM-DD."""
+    """GET /v1/admin/aws/usage/pdf?from=YYYY-MM-DD&to=YYYY-MM-DD."""
     from http_common import _json_response
 
     from_day, to_day = _query_range(event)

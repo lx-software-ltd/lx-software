@@ -694,12 +694,12 @@ class BulkTransformTests(BoardTestCase):
         self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_IMPORT_ENABLED", None))
         self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
         with patch("board_async.try_invoke_event", return_value=True):
-            status, body = self.call("/siu-tin-dei/board/catalog/bulk/lcsd/preview", "POST", {"remote": True})
+            status, body = self.call("/v1/admin/siutindei/board/catalog/bulk/lcsd/preview", "POST", {"remote": True})
         self.assertEqual(status, 200)
         self.assertTrue(body.get("queued"))
 
     def test_discovery_run_409_when_staff_off(self) -> None:
-        status, body = self.call("/siu-tin-dei/board/catalog/discovery/run", "POST", {})
+        status, body = self.call("/v1/admin/siutindei/board/catalog/discovery/run", "POST", {})
         self.assertEqual(status, 409)
         self.assertIn("disabled", body["message"].lower())
 
@@ -708,7 +708,7 @@ class BulkTransformTests(BoardTestCase):
         self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
         _enable_staff(self.table)
         with patch("board_async.try_invoke_event", return_value=True) as invoke:
-            status, body = self.call("/siu-tin-dei/board/catalog/discovery/run", "POST", {})
+            status, body = self.call("/v1/admin/siutindei/board/catalog/discovery/run", "POST", {})
         self.assertEqual(status, 200)
         self.assertTrue(body.get("queued"))
         self.assertEqual(invoke.call_args[0][0]["internal"], "board_catalog_discovery")

@@ -21,7 +21,7 @@ describe("prospect pipeline mutations", () => {
     fetchMock.mockResolvedValueOnce({ prospect: { prospectId: "pros-1", name: "Hall", stage: "parked" } });
     const { mutationFn } = prospectPutMutationOptions(qc);
     await mutationFn({ prospectId: "pros-1", body: { stage: "parked" } });
-    expect(fetchMock.mock.calls[0][0]).toBe("/siu-tin-dei/board/prospects/pros-1");
+    expect(fetchMock.mock.calls[0][0]).toBe("/v1/admin/siutindei/board/prospects/pros-1");
     expect(fetchMock.mock.calls[0][1]?.method).toBe("PUT");
   });
 
@@ -31,7 +31,7 @@ describe("prospect pipeline mutations", () => {
     const { mutationFn, onSuccess } = prospectImportMutationOptions(qc);
     await mutationFn("name,type,district,website,email\nHall,venue,Sha Tin,,info@h.example");
     onSuccess();
-    expect(fetchMock.mock.calls[0][0]).toBe("/siu-tin-dei/board/prospects/import");
+    expect(fetchMock.mock.calls[0][0]).toBe("/v1/admin/siutindei/board/prospects/import");
     expect(spy).toHaveBeenCalledWith({ queryKey: BOARD_PROSPECTS_KEY });
   });
 });

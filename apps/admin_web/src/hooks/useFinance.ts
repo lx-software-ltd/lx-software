@@ -41,12 +41,12 @@ const LEDGER_CONFIG: Record<
   FinanceLedgerSheetKey,
   { readonly path: string; readonly bodyKey: keyof FinancePersistedState }
 > = {
-  income: { path: "/finance/income", bodyKey: "incomeRecords" },
-  expenses: { path: "/finance/expenses", bodyKey: "expenseRecords" },
+  income: { path: "/v1/admin/finance/income", bodyKey: "incomeRecords" },
+  expenses: { path: "/v1/admin/finance/expenses", bodyKey: "expenseRecords" },
 };
 
 async function fetchFinance(): Promise<FinancePersistedState> {
-  const raw = await adminFetchJson<FinancePersistedState>("/finance");
+  const raw = await adminFetchJson<FinancePersistedState>("/v1/admin/finance");
   const rawObj = raw as Record<string, unknown>;
   return {
     hillmarton: normalizeHouseFinanceData(raw.hillmarton),
@@ -120,7 +120,7 @@ export function saveHouseMutationOptions(qc: QueryClient) {
       house: HouseKey;
       data: HouseFinanceData;
     }) => {
-      const res = await adminFetchJson<PutFinanceResponse>(`/finance/${house}`, {
+      const res = await adminFetchJson<PutFinanceResponse>(`/v1/admin/finance/${house}`, {
         method: "PUT",
         body: JSON.stringify(data),
       });
@@ -138,7 +138,7 @@ export function saveHouseMutationOptions(qc: QueryClient) {
 export function saveAllocationRecordsMutationOptions(qc: QueryClient) {
   return {
     mutationFn: async (records: readonly FinanceAllocationRecord[]) => {
-      const res = await adminFetchJson<Record<string, unknown>>("/finance/allocations", {
+      const res = await adminFetchJson<Record<string, unknown>>("/v1/admin/finance/allocations", {
         method: "PUT",
         body: JSON.stringify({
           allocationRecords: allocationRecordsToApiPayload(records),
@@ -231,35 +231,35 @@ export function useFinance() {
   const saveHouse = useMutation(saveHouseMutationOptions(qc));
   const saveInvestmentRecords = useMutation(
     financeRecordsPutMutationOptions(qc, {
-      path: "/finance/investments",
+      path: "/v1/admin/finance/investments",
       listKey: "investmentRecords",
       normalize: normalizeInvestmentRecords,
     }),
   );
   const saveSavingsRecords = useMutation(
     financeRecordsPutMutationOptions(qc, {
-      path: "/finance/savings",
+      path: "/v1/admin/finance/savings",
       listKey: "savingsRecords",
       normalize: normalizeSavingsRecords,
     }),
   );
   const savePensionRecords = useMutation(
     financeRecordsPutMutationOptions(qc, {
-      path: "/finance/pension",
+      path: "/v1/admin/finance/pension",
       listKey: "pensionRecords",
       normalize: normalizePensionRecords,
     }),
   );
   const saveAccountRecords = useMutation(
     financeRecordsPutMutationOptions(qc, {
-      path: "/finance/accounts",
+      path: "/v1/admin/finance/accounts",
       listKey: "accountRecords",
       normalize: normalizeAccountRecords,
     }),
   );
   const saveLiabilityRecords = useMutation(
     financeRecordsPutMutationOptions(qc, {
-      path: "/finance/liabilities",
+      path: "/v1/admin/finance/liabilities",
       listKey: "liabilityRecords",
       normalize: normalizeLiabilityRecords,
     }),

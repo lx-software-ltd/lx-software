@@ -19,7 +19,7 @@ import {
   type StatementBookKey,
 } from "../../financeTypes";
 import {
-  kebabBookKey,
+  statementBookApiPath,
 } from "../../statementOwners";
 import {
   boardActionsFixture,
@@ -189,9 +189,9 @@ function initialMockState(): MockState {
   return {
     finance: structuredClone(financeFixture) as FinancePersistedState,
     books: {
-      "siu-tin-dei": structuredClone(siuTinDeiBookFixture) as HouseFinanceData,
+      siutindei: structuredClone(siuTinDeiBookFixture) as HouseFinanceData,
       "lx-software": structuredClone(lxSoftwareBookFixture) as HouseFinanceData,
-      "evolve-sprouts": structuredClone(evolveSproutsBookFixture) as HouseFinanceData,
+      evolvesprouts: structuredClone(evolveSproutsBookFixture) as HouseFinanceData,
     },
     mirrorSummaries: {
       evolveSprouts: structuredClone(evolveSproutsSummaryFixture),
@@ -303,9 +303,11 @@ export function setMockStaging(preview: BoardStagingPreview): void {
 export function mirroredBookFromPath(
   pathname: string,
 ): { key: StatementBookKey; rest: string } | null {
-  const [slug, ...tail] = pathname.split("/").filter(Boolean);
+  const prefix = "/v1/admin/";
+  const restPath = pathname.startsWith(prefix) ? pathname.slice(prefix.length) : pathname.replace(/^\//, "");
+  const [slug, ...tail] = restPath.split("/").filter(Boolean);
   if (!slug) return null;
-  const key = MIRRORED_STATEMENT_BOOK_KEYS.find((book) => kebabBookKey(book) === slug);
+  const key = MIRRORED_STATEMENT_BOOK_KEYS.find((book) => statementBookApiPath(book).endsWith(`/${slug}`));
   if (!key) return null;
   return { key, rest: tail.join("/") };
 }

@@ -141,7 +141,7 @@ class FinishPreviewTests(BoardTestCase):
         board_store.put_review_snapshot(
             self.table, today, {"date": today, "sample": stored_sample, "digestHtml": "stored"}
         )
-        status, body = self.call("/siu-tin-dei/board/review")
+        status, body = self.call("/v1/admin/siutindei/board/review")
         self.assertEqual(status, 200)
         rows = body["review"]["sample"]
         self.assertEqual([row["callId"] for row in rows], ["call-json", "call-kept"])
