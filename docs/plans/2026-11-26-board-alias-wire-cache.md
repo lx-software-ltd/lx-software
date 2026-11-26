@@ -26,7 +26,7 @@ Do not edit `wire_format.py` or `wireFormat.ts`. Do not remove the Meta webhook 
 - `dispatch.py` stays at 1344 lines. The old board path is rewritten in `legacy_http_path`.
 - New `/v1/partner/siutindei/board` responses stay snake_case.
 - This branch lists `Authorization` and source IP, and the authorizer cache stays 60 seconds. A cache keyed only by source IP used a TTL of 0, because that key would reuse one caller's approval for every request from the address.
-- The identity source lists both credential headers or neither.
+- The identity source is `Authorization` and source IP, and the authorizer cache is 60 seconds.
 
 ## Done when
 
@@ -38,4 +38,4 @@ Revert this commit. Old board callers start receiving 404, and the authorizer ac
 
 ## Open questions
 
-None. The cache key omits both headers because HTTP API requires every listed identity source to be present, and callers send one header.
+None. The authorizer lists `Authorization` and source IP, and the cache is 60 seconds.

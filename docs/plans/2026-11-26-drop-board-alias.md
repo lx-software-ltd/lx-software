@@ -1,11 +1,11 @@
 # Plan: drop the board alias
 
 **Status**: Done
-**Zone**: red for the authorizer and the HTTP API routes. The task names those files. Green for the read-only SPA check.
+**Zone**: red for the authorizer and the HTTP API routes. The task names those files.
 
 ## Goal
 
-Remove the one-deploy board aliases and `x-api-key` acceptance. Keep the three sent email paths. Add a read-only check that a deployed admin SPA config points at `https://api.lx-software.com`.
+Remove the one-deploy board aliases and `x-api-key` acceptance. Keep the three sent email paths. The deploy script rejects an `AdminApiBaseUrl` that contains `execute-api`. It does not fetch a config.json.
 
 ## Non-goals
 
@@ -17,7 +17,7 @@ Do not remove `DisableExecuteApiEndpoint` or its preconditions. Do not edit `wir
 - `backend/lambda/public_api_authorizer/handler.py` and `test_handler.py`
 - `backend/infrastructure/lib/admin-api-routes.ts`, `admin-api-authorizers.ts`, `admin-http-api.ts`, and the stack test
 - `docs/api/partner.yaml`, `docs/api/legacy-paths.txt`
-- `scripts/check_admin_spa_config.py` and `scripts/test_check_admin_spa_config.py`
+- `scripts/deploy/check-admin-spa-settings.sh`
 
 ## Invariants this change preserves
 
