@@ -48,7 +48,6 @@ HTTP_TIMEOUT_SLOW_SECONDS = 25
 WINDOW_HOURS = 24
 GRAPH_PAGES_MAX = 3
 
-
 class MetaError(RuntimeError):
     """User-facing Meta / webhook failure. ``status`` is the Graph HTTP code, if any."""
 
@@ -250,11 +249,8 @@ def status_summary(table: Any) -> dict[str, Any]:
 # Graph API
 # ---------------------------------------------------------------------------
 
-
 def _urlopen(req: urlrequest.Request, timeout: float | None = None) -> Any:
-    return urlrequest.urlopen(
-        req, timeout=board_deadline.remaining(timeout or HTTP_TIMEOUT_SECONDS)
-    )  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected # nosec B310
+    return urlrequest.urlopen(req, timeout=board_deadline.remaining(timeout or HTTP_TIMEOUT_SECONDS))  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected # nosec B310
 
 
 def graph(
@@ -337,7 +333,6 @@ def graph_pages(
 # Webhook
 # ---------------------------------------------------------------------------
 
-
 def _raw_body(event: dict[str, Any]) -> bytes:
     raw = event.get("body") or ""
     if event.get("isBase64Encoded"):
@@ -386,25 +381,13 @@ def handle_http(event: dict[str, Any], method: str) -> dict[str, Any]:
     body = _raw_body(event)
     if not verify_signature(event, body):
         _log_event("warning", tag="board_meta_webhook_bad_sig")
-        return {
-            "statusCode": 403,
-            "headers": {"Content-Type": "application/json"},
-            "body": json.dumps({"message": "invalid signature"}),
-        }
+        return {"statusCode": 403, "headers": {"Content-Type": "application/json"}, "body": json.dumps({"message": "invalid signature"})}
     try:
         payload = json.loads(body.decode("utf-8") or "{}")
     except json.JSONDecodeError:
-        return {
-            "statusCode": 400,
-            "headers": {"Content-Type": "application/json"},
-            "body": json.dumps({"message": "invalid json"}),
-        }
+        return {"statusCode": 400, "headers": {"Content-Type": "application/json"}, "body": json.dumps({"message": "invalid json"})}
     ingested = ingest_webhook(board_store.records_table(), _g if isinstance(_g := payload, dict) else {})
-    return {
-        "statusCode": 200,
-        "headers": {"Content-Type": "application/json"},
-        "body": json.dumps({"ok": True, **ingested}),
-    }
+    return {"statusCode": 200, "headers": {"Content-Type": "application/json"}, "body": json.dumps({"ok": True, **ingested})}
 
 
 def ingest_webhook(table: Any, payload: dict[str, Any]) -> dict[str, Any]:
@@ -413,11 +396,9 @@ def ingest_webhook(table: Any, payload: dict[str, Any]) -> dict[str, Any]:
 
     return board_meta_ingest.ingest_webhook(table, payload)
 
-
 # ---------------------------------------------------------------------------
 # Reads
 # ---------------------------------------------------------------------------
-
 
 def op_page_insights(_ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     pid = str(args.get("pageId") or page_id())
@@ -445,13 +426,8 @@ def op_ig_insights(_ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
             raise
     rows = graph_pages("GET", f"{linked}/insights", params, timeout=HTTP_TIMEOUT_SLOW_SECONDS)
     return {
-        "igUserId": linked,
-        "configuredIgUserId": configured,
-        "resolvedFrom": "page",
-        "insights": rows,
-        "count": len(rows),
-        "ignoredMetrics": ignored,
-    }
+        "igUserId": linked, "configuredIgUserId": configured, "resolvedFrom": "page",
+        "insights": rows, "count": len(rows), "ignoredMetrics": ignored}
 
 
 def op_list_comments(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
@@ -470,7 +446,7 @@ def op_list_comments(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     pseud = board_pii.Pseudonymizer(table, own_domains=board_mail.own_domains()) if table is not None else None
     posts = []
     for post in rows:
-        comments = (post.get("comments") or {}).get("data") or []
+        comments = ((post.get("comments") or {}).get("data") or [])
         posts.append(
             {
                 "id": post.get("id"),
@@ -540,6 +516,7 @@ def _mask_sender(raw: Any, pseud: board_pii.Pseudonymizer | None) -> str:
     if ident:
         return pseud.alias_for_external("fb", ident, display=display)
     return pseud.alias_for_external("fbname", display, display=display)
+
 
 
 _waba_resolved: dict[str, str] = {}
@@ -623,7 +600,6 @@ def _in_window(thread: dict[str, Any]) -> bool:
 # Writes (execute after approval)
 # ---------------------------------------------------------------------------
 
-
 def op_propose_post(_ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     pid = str(args.get("pageId") or page_id())
     message = str(args.get("message") or "").strip()
@@ -701,12 +677,7 @@ def op_reply_dm(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     if not recipient or not message or not pid:
         raise MetaError("threadId (or recipientId), message and pageId are required")
     data = graph("POST", f"{pid}/messages", body={"recipient": {"id": recipient}, "message": {"text": message}})
-    return {
-        "ok": True,
-        "messageId": data.get("message_id"),
-        "recipientId": recipient,
-        "threadId": str(args.get("threadId") or ""),
-    }
+    return {"ok": True, "messageId": data.get("message_id"), "recipientId": recipient, "threadId": str(args.get("threadId") or "")}
 
 
 def _send_whatsapp(to: str, *, message: str = "", template: str = "", language: str = "en") -> dict[str, Any]:
@@ -1093,7 +1064,10 @@ def owner_preview_message(ctx: Any, args: dict[str, Any], *, op: str) -> dict[st
         elif op == "meta_reply_dm":
             recipients = [resolve_dm_recipient(table, args)]
         elif op == "meta_relay_lead":
-            recipients = [str(args.get(k) or "").strip() for k in ("providerEmail", "providerPhone", "parentEmail")]
+            recipients = [
+                str(args.get(k) or "").strip()
+                for k in ("providerEmail", "providerPhone", "parentEmail")
+            ]
         else:
             recipients = [str(args.get("to") or args.get("recipientId") or "").strip()]
     except MetaError as exc:

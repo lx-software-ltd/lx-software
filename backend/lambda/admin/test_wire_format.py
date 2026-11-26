@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import unittest
 from pathlib import Path
+from typing import Any
 
 import wire_format
 
@@ -28,7 +29,13 @@ class WireFormatCasesTest(unittest.TestCase):
             self.assertEqual(wire_format.from_wire(wire, contract, route), case["value"], case["name"])
 
     def test_camel_and_snake_are_inverses(self) -> None:
-        contract = {"renames": {}, "verbatimKeys": [], "mapFields": {}, "opaqueFields": [], "rootMaps": {}}
+        contract: dict[str, Any] = {
+            "renames": {},
+            "verbatimKeys": [],
+            "mapFields": {},
+            "opaqueFields": [],
+            "rootMaps": {},
+        }
         for key in ("s3Key", "top10Items", "portfolioSize", "shareFlows"):
             wire = next(iter(wire_format.to_wire({key: 1}, contract)))
             back = next(iter(wire_format.from_wire({wire: 1}, contract)))
