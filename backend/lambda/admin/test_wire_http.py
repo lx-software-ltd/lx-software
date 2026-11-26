@@ -6,6 +6,7 @@ import json
 import sys
 import types
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 
@@ -169,7 +170,7 @@ class WireHttpTest(unittest.TestCase):
         calls = {"n": 0}
         real = wire_format.load_contract
 
-        def wrapped(path: object = None) -> dict:
+        def wrapped(path: Path | None = None) -> dict:
             calls["n"] += 1
             return real(path)
 
