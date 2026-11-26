@@ -98,8 +98,9 @@ export function defineAdminAuthorizers(
       // variable; a missing identity source makes API Gateway return 401
       // without invoking the authorizer.
       identitySource: ["$context.identity.sourceIp"],
-      // Revocation / CIDR changes take up to this TTL to propagate.
-      resultsCacheTtl: cdk.Duration.seconds(60),
+      // The cache key is the source IP alone, so a stored approval would
+      // apply to every caller from that address. Zero skips the cache.
+      resultsCacheTtl: cdk.Duration.seconds(0),
     }
   );
   return { jwtAuthorizer, publicApiKeyAuthorizer, publicApiKeyAuthorizerFn };

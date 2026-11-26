@@ -628,11 +628,11 @@ describe("HTTP API stage throttling", () => {
     });
   });
 
-  test("public API-key authorizer caches source IP for 60 seconds and both headers or neither", () => {
+  test("public API-key authorizer does not cache a source-IP result", () => {
     template.hasResourceProperties("AWS::ApiGatewayV2::Authorizer", {
       AuthorizerType: "REQUEST",
       EnableSimpleResponses: true,
-      AuthorizerResultTtlInSeconds: 60,
+      AuthorizerResultTtlInSeconds: 0,
       IdentitySource: ["$context.identity.sourceIp"],
     });
     const sources = Object.values(resourcesOfType("AWS::ApiGatewayV2::Authorizer"))
