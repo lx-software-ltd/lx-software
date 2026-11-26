@@ -511,6 +511,14 @@ class ImportClientTests(BoardTestCase):
             [c[0] for c in self.calls],
             ["POST", "PUT", "POST"],
         )
+        self.assertEqual(
+            [url for _method, url, _body in self.calls],
+            [
+                "https://admin.example.test/v1/admin/imports/presign",
+                "https://s3.example.test/put?X-Amz-Signature=secret",
+                "https://admin.example.test/v1/admin/imports",
+            ],
+        )
         self.assertEqual(self.calls[-1][2], {"object_key": "imports/board.json"})
         self.assertEqual(out["import"]["sent"], 1)
         self.assertEqual(out["import"]["accepted"], 1)
@@ -529,6 +537,13 @@ class ImportClientTests(BoardTestCase):
         again = board_catalog_import.run_import(self.table, saved, force=True)
         self.assertTrue(again["ok"])
         self.assertEqual([c[0] for c in self.calls], ["POST", "PUT", "POST"])
+
+    def test_presign_and_import_use_the_production_origin(self) -> None:
+        os.environ["SIUTINDEI_ADMIN_API_BASE_URL"] = "https://api.siutindei.com"
+        board_catalog_import._presign_and_put([{"name_en": "A"}], "tok", filename="board.json")
+        board_catalog_import._imports_post("tok", {"object_key": "imports/board.json"})
+        self.assertEqual(self.calls[0][1], "https://api.siutindei.com/v1/admin/imports/presign")
+        self.assertEqual(self.calls[2][1], "https://api.siutindei.com/v1/admin/imports")
 
     def test_remote_dry_run_uses_presign(self) -> None:
         settings = _enable_staff(self.table)
