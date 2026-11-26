@@ -402,7 +402,7 @@ Keys expire in **90 days** unless `--expires-at` is set; optional
 `--allowed-cidrs` fail closed when the client IP is missing. The
 `PublicApiKeyAuthorizerFn` authorizer looks up the scrypt digest
 (`pk = APIKEY#<digest>`, `sk = META`; only the digest is stored or
-logged) and API Gateway caches verdicts **60 seconds** per key + source
+logged) and API Gateway does not cache verdicts during the header overlap (0 seconds) per key + source
 IP, so revocation takes up to that long. Throttles: GET 2 req/s burst 10;
 board writes 1 req/s burst 5.
 

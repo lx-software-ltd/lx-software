@@ -31,7 +31,7 @@ ARTIFACTS = [
 
 # Codec bytes compared with `git show` of this findingalpha commit.
 # A missing local checkout skips. No absolute checkout path is hardcoded.
-_FINDINGALPHA_CODEC = "d61ab99df00e99df1b649f36a08fab6b9e48ad4d"
+_FINDINGALPHA_CODEC = "6408c95002e3c485e243d9331f8b557da19e6b19"
 _WIRE_PAIRS = (
     (
         ROOT / "backend" / "lambda" / "admin" / "wire_format.py",
