@@ -38,6 +38,10 @@ class CheckAdminSpaConfigTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("https://api.lx-software.com", out.getvalue())
 
+    def test_refuses_a_non_https_url(self) -> None:
+        with self.assertRaises(ValueError):
+            check._fetch("file:///etc/passwd")
+
     def test_execute_api_base_fails(self) -> None:
         def fetch(_url: str) -> dict:
             return {"apiBaseUrl": "https://abc123.execute-api.ap-southeast-1.amazonaws.com"}

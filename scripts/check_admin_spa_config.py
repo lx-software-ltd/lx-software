@@ -14,6 +14,7 @@ import sys
 import urllib.request
 from collections.abc import Callable, Mapping
 from typing import Any
+from urllib.parse import urlsplit
 
 CUSTOM_DOMAIN = "https://api.lx-software.com"
 _KEYS = ("apiBaseUrl", "api_base_url")
@@ -41,8 +42,18 @@ def check_config(payload: Any) -> str | None:
     return None
 
 
+def _https_url(url: str) -> str:
+    """Reject any scheme other than https, including file."""
+    parsed = urlsplit(url)
+    if parsed.scheme != "https" or not parsed.hostname:
+        raise ValueError(f"refusing a URL that is not https: {url}")
+    return url
+
+
 def _fetch(url: str) -> Any:
-    req = urllib.request.Request(url, method="GET")
+    req = urllib.request.Request(_https_url(url), method="GET")
+    # The URL is https-only. It comes from the operator's environment.
+    # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
     with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310
         return json.load(resp)
 
