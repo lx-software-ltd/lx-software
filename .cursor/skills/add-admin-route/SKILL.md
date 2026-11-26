@@ -13,3 +13,5 @@ description: Add an admin HTTP route across the Lambda, the CDK integration, the
 6. Cover the handler in the matching `test_*.py`.
 
 Writes that the public API must not expose stay off `/public/*`. A public route also needs an authorizer decision: JWT, API key scope, or the documented unauthenticated token routes.
+
+Add new data-keyed maps to `contracts/wire-format.json`.

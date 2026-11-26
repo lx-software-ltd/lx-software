@@ -88,7 +88,7 @@ export function defineAdminHttpApi(
   const httpApi = new apigwv2.HttpApi(scope, "HttpApi", {
     apiName: "lxsoftware-admin-api",
     corsPreflight: {
-      allowHeaders: ["authorization", "content-type"],
+      allowHeaders: ["authorization", "content-type", "x-api-key"],
       allowMethods: [
         apigwv2.CorsHttpMethod.GET,
         apigwv2.CorsHttpMethod.POST,

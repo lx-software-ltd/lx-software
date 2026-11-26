@@ -92,12 +92,7 @@ export async function adminFetch(
   const type = res.headers.get("content-type") ?? "";
   if (!skip && type.toLowerCase().includes("json")) {
     const text = await res.text();
-    let converted = text;
-    try {
-      converted = JSON.stringify(fromWire(JSON.parse(text), CONTRACT));
-    } catch {
-      converted = text;
-    }
+    const converted = responseTextFromWire(path, text);
     if (!res.ok) {
       throw new AdminApiError(res.status, converted);
     }
@@ -108,6 +103,19 @@ export async function adminFetch(
     throw new AdminApiError(res.status, text);
   }
   return res;
+}
+
+/** Decode a JSON body. ``path`` is what makes ``excludedRoutes`` apply. */
+export function responseTextFromWire(path: string, text: string): string {
+  const route = path.split("?")[0] ?? path;
+  if (excluded(route, CONTRACT)) {
+    return text;
+  }
+  try {
+    return JSON.stringify(fromWire(JSON.parse(text), CONTRACT, route));
+  } catch {
+    return text;
+  }
 }
 
 function convertQuery(path: string): string {

@@ -35,7 +35,7 @@ def _install_stubs() -> None:
 _install_stubs()
 
 from http_call import http_call  # noqa: E402
-from http_common import _json_response, apply_wire  # noqa: E402
+from http_common import _json_response, apply_wire, legacy_http_path  # noqa: E402
 
 
 def _http(method: str, path: str) -> dict:
@@ -139,3 +139,44 @@ class WireHttpTest(unittest.TestCase):
         body = json.loads(out["body"])
         self.assertEqual(body["next_cursor"], "n1")
         self.assertNotIn("nextCursor", body)
+
+    def test_the_legacy_board_path_keeps_camel_case_and_the_new_path_does_not(self) -> None:
+        def respond(_event: dict) -> dict:
+            return _json_response(200, {"nextCursor": "n1", "items": []})
+
+        old = apply_wire(_http("GET", "/public/siu-tin-dei/board/actions"), respond)
+        old_body = json.loads(old["body"])
+        self.assertEqual(old_body["nextCursor"], "n1")
+        self.assertNotIn("next_cursor", old_body)
+        new = apply_wire(_partner("/v1/partner/siutindei/board/actions"), respond)
+        new_body = json.loads(new["body"])
+        self.assertEqual(new_body["next_cursor"], "n1")
+        self.assertNotIn("nextCursor", new_body)
+
+    def test_the_legacy_board_path_uses_the_same_handler_path(self) -> None:
+        self.assertEqual(legacy_http_path("/public/siu-tin-dei/board"), "/v1/partner/siutindei/board")
+        self.assertEqual(
+            legacy_http_path("/public/siu-tin-dei/board/actions/a1"),
+            "/v1/partner/siutindei/board/actions/a1",
+        )
+        self.assertEqual(legacy_http_path("/public/siu-tin-dei/boardroom"), "/public/siu-tin-dei/boardroom")
+
+    def test_the_wire_contract_is_read_once(self) -> None:
+        import http_common
+        import wire_format
+
+        http_common._WIRE_CONTRACT = None
+        calls = {"n": 0}
+        real = wire_format.load_contract
+
+        def wrapped(path: object = None) -> dict:
+            calls["n"] += 1
+            return real(path)
+
+        def respond(_event: dict) -> dict:
+            return _json_response(200, {"status": "ok"})
+
+        with patch.object(wire_format, "load_contract", wrapped):
+            apply_wire(_http("GET", "/health"), respond)
+            apply_wire(_http("GET", "/health"), respond)
+        self.assertEqual(calls["n"], 1)

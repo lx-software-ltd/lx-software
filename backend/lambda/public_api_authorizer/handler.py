@@ -1,15 +1,16 @@
 """HTTP API Lambda authorizer for the public API key routes.
 
-Validates ``Authorization: Bearer`` against hashed key records stored in the
-records DynamoDB table (``pk = APIKEY#<scrypt-hex>``, ``sk = META``). Only
-the scrypt digest of a key is ever persisted or logged (see
-``api_key_hash.py`` for the digest rationale); the plaintext key is shown
-once at mint time (see ``scripts/manage-public-api-keys.py``).
+Validates ``Authorization: Bearer`` or the previous ``x-api-key`` header
+against hashed key records stored in the records DynamoDB table
+(``pk = APIKEY#<scrypt-hex>``, ``sk = META``). Only the scrypt digest of a
+key is ever persisted or logged (see ``api_key_hash.py`` for the digest
+rationale); the plaintext key is shown once at mint time (see
+``scripts/manage-public-api-keys.py``).
 
 Returns the API Gateway v2 "simple" authorizer response. The authorizer
-result is cached by API Gateway keyed on ``Authorization`` + source IP (not
-method), so this function never denies based on HTTP method — a POST deny
-would poison GETs for 60s. Write methods are enforced in
+result is cached by API Gateway on source IP (not method, and not one
+header alone), so this function never denies based on HTTP method — a POST
+deny would poison GETs for 60s. Write methods are enforced in
 ``board_public_api.write_allowed`` using the forwarded ``write`` flag.
 Revocation takes up to the configured TTL (60s).
 """
@@ -73,15 +74,30 @@ def _authorization_header(event: dict[str, Any]) -> str:
     return ""
 
 
-def _extract_api_key(event: dict[str, Any]) -> str | None:
-    # HTTP API payload 2.0 lower-cases header names. Bearer is accepted in any case.
+def _named_header(event: dict[str, Any], name: str) -> str:
+    headers = event.get("headers") or {}
+    for key, value in headers.items():
+        if str(key).lower() == name and isinstance(value, str):
+            return value.strip()
+    return ""
+
+
+def _extract_api_key(event: dict[str, Any]) -> tuple[str | None, str]:
+    """Return the token and ``bearer`` or ``legacy``.
+
+    ``x-api-key`` is the header holders already send. Bearer wins when both
+    are present. A non-Bearer ``Authorization`` value does not fall through.
+    """
     raw = _authorization_header(event)
-    if not raw:
-        return None
-    scheme, _, token = raw.partition(" ")
-    if scheme.lower() != "bearer" or not token or " " in token or len(token) > MAX_API_KEY_LEN:
-        return None
-    return token
+    if raw:
+        scheme, _, token = raw.partition(" ")
+        if scheme.lower() == "bearer" and token and " " not in token and len(token) <= MAX_API_KEY_LEN:
+            return token, "bearer"
+        return None, ""
+    legacy = _named_header(event, "x-api-key")
+    if not legacy or len(legacy) > MAX_API_KEY_LEN:
+        return None, ""
+    return legacy, "legacy"
 
 
 def _is_expired(expires_at: Any, now: datetime) -> bool:
@@ -155,11 +171,17 @@ def _enqueue_denied_notify(item: dict[str, Any], reason: str, source_ip: str, re
 
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
-    key = _extract_api_key(event)
+    key, auth_scheme = _extract_api_key(event)
     request_id = (event.get("requestContext") or {}).get("requestId")
     source_ip = source_ip_from_event(event)
+
+    def record(level: str, **fields: Any) -> None:
+        if auth_scheme:
+            fields["auth_scheme"] = auth_scheme
+        _log(level, **fields)
+
     if key is None:
-        _log("info", tag="public_api_key_denied", reason="missing_key", request_id=request_id, source_ip=source_ip)
+        record("info", tag="public_api_key_denied", reason="missing_key", request_id=request_id, source_ip=source_ip)
         return _deny()
 
     digest = hash_api_key(key)
@@ -169,7 +191,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     try:
         res = table.get_item(Key={"pk": f"{API_KEY_PK_PREFIX}{digest}", "sk": "META"})
     except ClientError as exc:
-        _log(
+        record(
             "warning",
             tag="public_api_key_denied",
             reason="ddb_error",
@@ -182,7 +204,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     item = res.get("Item")
     if not item:
-        _log(
+        record(
             "info",
             tag="public_api_key_denied",
             reason="unknown_key",
@@ -195,7 +217,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     key_id = item.get("keyId")
     now = datetime.now(timezone.utc)
     if item.get("revoked"):
-        _log(
+        record(
             "info",
             tag="public_api_key_denied",
             reason="revoked",
@@ -207,7 +229,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         return _deny()
 
     if _is_expired(item.get("expiresAt"), now):
-        _log(
+        record(
             "info",
             tag="public_api_key_denied",
             reason="expired",
@@ -220,7 +242,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     scopes = normalize_scopes(item)
     if not scopes:
-        _log(
+        record(
             "info",
             tag="public_api_key_denied",
             reason="bad_scope",
@@ -232,7 +254,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     cidrs = parse_cidrs(item.get("allowedCidrs"))
     if not ip_allowed(source_ip, cidrs):
-        _log(
+        record(
             "info",
             tag="public_api_key_denied",
             reason="cidr",
@@ -245,7 +267,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     _touch_last_used(table, item, source_ip, now)
     write_flag = "1" if key_allows_write(item) else "0"
-    _log(
+    record(
         "info",
         tag="public_api_key_allowed",
         key_id=key_id,
