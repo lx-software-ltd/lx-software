@@ -28,6 +28,14 @@ class WireFormatCasesTest(unittest.TestCase):
             self.assertEqual(wire, case["wire"], case["name"])
             self.assertEqual(wire_format.from_wire(wire, contract, route), case["value"], case["name"])
 
+    def test_map_field_data_keys_are_not_camelized(self) -> None:
+        contract = json.loads((_ADMIN / "contracts" / "wire-format.json").read_text(encoding="utf-8"))
+        got = wire_format.from_wire(
+            {"hold_overrides": {"2026-11-26": {"note_text": "a"}, "place_id_1": 1}},
+            contract,
+        )
+        self.assertEqual(set(got["holdOverrides"]), {"2026-11-26", "place_id_1"})
+
     def test_camel_and_snake_are_inverses(self) -> None:
         contract: dict[str, Any] = {
             "renames": {},

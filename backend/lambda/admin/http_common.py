@@ -8,6 +8,8 @@ import contextvars
 import json
 import os
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from typing import Any
 
@@ -30,10 +32,39 @@ _PROBLEMS = {
 }
 
 
-def bind_request_id(event: dict[str, Any]) -> None:
-    """Remember the HTTP request id for `_json_response`. Empty when there is none."""
+def bind_request_id(event: dict[str, Any]) -> contextvars.Token[str]:
+    """Remember the HTTP request id for `_json_response`. Empty when there is none.
+
+    The token is what ``request_id_scope`` resets. The public API authorizer
+    is another function and does not read this variable. Webhook routes in
+    this process enter through ``lambda_handler``.
+    """
     found = _request_id(event)
-    _REQUEST_ID.set("" if found == "unknown" else found)
+    return _REQUEST_ID.set("" if found == "unknown" else found)
+
+
+@contextmanager
+def request_id_scope(event: Any) -> Iterator[None]:
+    """Bind the id for one invocation and clear it before the process is reused."""
+    token = bind_request_id(event if isinstance(event, dict) else {})
+    try:
+        yield
+    finally:
+        _REQUEST_ID.reset(token)
+
+
+def _problem_field(out: dict[str, Any], key: str, value: Any) -> None:
+    """Keep ``key`` only when it is already the problem value.
+
+    ``setdefault`` would otherwise leave a handler field that means something
+    else, such as a provider error number in ``code`` or a record status.
+    No error body in this Lambda sets ``code`` or ``status`` today; ``reason``
+    still carries the deny reason. ``message`` and every other key stay.
+    """
+    if out.get(key) == value:
+        out.setdefault(key, value)
+        return
+    out[key] = value
 
 
 def _with_problem(status_code: int, payload: dict[str, Any]) -> dict[str, Any]:
@@ -43,9 +74,9 @@ def _with_problem(status_code: int, payload: dict[str, Any]) -> dict[str, Any]:
     out = dict(payload)
     out.setdefault("type", "about:blank")
     out.setdefault("title", title)
-    out.setdefault("status", status_code)
+    _problem_field(out, "status", status_code)
     out.setdefault("detail", detail)
-    out.setdefault("code", code)
+    _problem_field(out, "code", code)
     out.setdefault("request_id", _REQUEST_ID.get())
     return out
 
@@ -134,10 +165,20 @@ _LEGACY_PREFIX = (
     ("/public/newsletter/confirm/", "/v1/public/newsletter/confirm/"),
     ("/public/newsletter/unsubscribe/", "/v1/public/newsletter/unsubscribe/"),
 )
+# One deploy of the previous board URL. Callers still send camelCase.
+_LEGACY_BOARD = "/public/siu-tin-dei/board"
+_LEGACY_BOARD_TARGET = "/v1/partner/siutindei/board"
+_WIRE_CONTRACT: dict[str, Any] | None = None
+
+
+def _legacy_board(path: str) -> bool:
+    return path == _LEGACY_BOARD or path.startswith(_LEGACY_BOARD + "/")
 
 
 def legacy_http_path(path: str) -> str:
     """Map a route that stays forever onto the path the table matches."""
+    if _legacy_board(path):
+        return _LEGACY_BOARD_TARGET + path[len(_LEGACY_BOARD) :]
     for old, new in _LEGACY_PREFIX:
         if path.startswith(old):
             return new + path[len(old) :]
@@ -164,23 +205,34 @@ def http_audience(path: str) -> tuple[str, str]:
     return "unknown", path
 
 
+def _wire_contract() -> dict[str, Any]:
+    """The product contract, read once per process."""
+    global _WIRE_CONTRACT
+    if _WIRE_CONTRACT is None:
+        import wire_format
+
+        _WIRE_CONTRACT = wire_format.load_contract()
+    return _WIRE_CONTRACT
+
+
 def apply_wire(event: dict[str, Any], respond: Any) -> Any:
     """Convert JSON keys at the HTTP boundary, after the handler returns."""
     import wire_format
 
-    bind_request_id(event)
-    method, path = _route(event)
-    contract = wire_format.load_contract()
-    if not wire_format.excluded(path, contract):
-        event = wire_format.prepare_request(event, contract)
-    response = respond(event)
-    if wire_format.excluded(path, contract):
-        return response
-    prepared = wire_format.prepare_response(response, contract, f"{method} {path}")
-    if prepared is None:
-        _log_event("warning", tag="wire_format_pass_through", path=path)
-        return response
-    return prepared
+    with request_id_scope(event):
+        method, path = _route(event)
+        contract = _wire_contract()
+        if not wire_format.excluded(path, contract):
+            event = wire_format.prepare_request(event, contract)
+        response = respond(event)
+        # The old board path keeps camelCase. The new path is snake_case.
+        if _legacy_board(path) or wire_format.excluded(path, contract):
+            return response
+        prepared = wire_format.prepare_response(response, contract, f"{method} {path}")
+        if prepared is None:
+            _log_event("warning", tag="wire_format_pass_through", path=path)
+            return response
+        return prepared
 
 
 def _request_id(event: dict[str, Any]) -> str:
