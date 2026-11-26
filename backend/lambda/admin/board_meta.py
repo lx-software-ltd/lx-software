@@ -40,7 +40,7 @@ from contract_constants import (
     BOARD_META_ADS_MONTHLY_CAP_USD,
     BOARD_META_LIST_MAX,
 )
-from http_common import _log_event, _read_http_error, _utc_iso_z, method_not_allowed
+from http_common import _log_event, _read_http_error, _utc_iso_z, method_not_allowed, plain_headers
 
 GRAPH_ORIGIN = "https://graph.facebook.com/v21.0"
 HTTP_TIMEOUT_SECONDS = 12
@@ -372,8 +372,8 @@ def handle_http(event: dict[str, Any], method: str) -> dict[str, Any]:
         challenge = (qs.get("hub.challenge") or [params.get("hub.challenge") or ""])[0]
         expected = verify_token()
         if mode == "subscribe" and expected and hmac.compare_digest(str(token), expected):
-            return {"statusCode": 200, "headers": {"Content-Type": "text/plain"}, "body": str(challenge)}
-        return {"statusCode": 403, "headers": {"Content-Type": "text/plain"}, "body": "forbidden"}
+            return {"statusCode": 200, "headers": plain_headers(), "body": str(challenge)}
+        return {"statusCode": 403, "headers": plain_headers(), "body": "forbidden"}
 
     if method != "POST":
         return method_not_allowed()

@@ -121,6 +121,80 @@ class ErrorBodyTests(unittest.TestCase):
         bare = board_newsletter._html_response(200, "<p>ok</p>")
         self.assertNotIn("x-request-id", bare["headers"])
 
+    def test_plain_text_responses_carry_the_request_id(self) -> None:
+        import os
+        from unittest.mock import patch
+
+        import board_meta
+        import board_newsletter
+        import board_outreach
+
+        bind_request_id({"requestContext": {"requestId": "req-plain"}})
+        event = {"requestContext": {"http": {"sourceIp": "203.0.113.9"}}}
+        with (
+            patch.object(board_newsletter.board_store, "records_table", return_value=object()),
+            patch.object(board_newsletter, "_rate_limited", return_value=True),
+            patch.object(board_outreach.board_store, "records_table", return_value=object()),
+            patch.object(board_outreach, "_rate_limited", return_value=True),
+        ):
+            limited = (
+                board_newsletter.handle_unsubscribe(event, "POST", "bad-token"),
+                board_outreach.handle_unsubscribe(event, "POST", "bad-token"),
+            )
+        for response in limited:
+            self.assertEqual(response["statusCode"], 429)
+            self.assertEqual(response["headers"]["Content-Type"], "text/plain")
+            self.assertEqual(response["headers"]["x-request-id"], "req-plain")
+            self.assertEqual(response["body"], "")
+
+        with (
+            patch.object(board_newsletter.board_store, "records_table", return_value=object()),
+            patch.object(board_newsletter.board_store, "get_newsletter_sub", return_value=None),
+            patch.object(board_newsletter, "_rate_limited", return_value=False),
+            patch.object(board_outreach.board_store, "records_table", return_value=object()),
+            patch.object(board_outreach.board_store, "get_prospect", return_value=None),
+            patch.object(board_outreach, "_rate_limited", return_value=False),
+            patch.dict(os.environ, {"BOARD_LINK_SIGNING_SECRET": "link-secret-for-tests"}),
+        ):
+            newsletter_token = board_newsletter.make_token("u", "parents", "abc")
+            outreach_token = board_outreach.make_unsub_token("prospect-1")
+            accepted = (
+                board_newsletter.handle_unsubscribe(event, "POST", newsletter_token),
+                board_outreach.handle_unsubscribe(event, "POST", outreach_token),
+            )
+            rejected = (
+                board_newsletter.handle_unsubscribe(event, "POST", "bad-token"),
+                board_outreach.handle_unsubscribe(event, "POST", "bad-token"),
+            )
+        for response in accepted:
+            self.assertEqual(response["statusCode"], 200)
+            self.assertEqual(response["headers"]["x-request-id"], "req-plain")
+        for response in rejected:
+            self.assertEqual(response["statusCode"], 400)
+            self.assertEqual(response["headers"]["x-request-id"], "req-plain")
+
+        with patch.dict(os.environ, {"META_VERIFY_TOKEN": "verify-me"}):
+            challenge = board_meta.handle_http(
+                {"rawQueryString": "hub.mode=subscribe&hub.verify_token=verify-me&hub.challenge=abc123"},
+                "GET",
+            )
+            denied = board_meta.handle_http(
+                {"rawQueryString": "hub.mode=subscribe&hub.verify_token=nope&hub.challenge=x"},
+                "GET",
+            )
+        self.assertEqual(challenge["statusCode"], 200)
+        self.assertEqual(challenge["body"], "abc123")
+        self.assertEqual(challenge["headers"]["Content-Type"], "text/plain")
+        self.assertEqual(challenge["headers"]["x-request-id"], "req-plain")
+        self.assertEqual(denied["statusCode"], 403)
+        self.assertEqual(denied["headers"]["x-request-id"], "req-plain")
+        bind_request_id({})
+        bare_meta = board_meta.handle_http(
+            {"rawQueryString": "hub.mode=subscribe&hub.verify_token=nope&hub.challenge=x"},
+            "GET",
+        )
+        self.assertNotIn("x-request-id", bare_meta["headers"])
+
 
 class _UnreadableHTTPError(urllib.error.HTTPError):
     def read(self, n: int = -1) -> bytes:
