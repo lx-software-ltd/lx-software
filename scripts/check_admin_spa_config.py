@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping
 from typing import Any
@@ -18,6 +19,7 @@ from urllib.parse import urlsplit
 
 CUSTOM_DOMAIN = "https://api.lx-software.com"
 _KEYS = ("apiBaseUrl", "api_base_url")
+_MAX_CONFIG_BYTES = 65536
 
 
 def api_base(payload: Any) -> str:
@@ -50,12 +52,43 @@ def _https_url(url: str) -> str:
     return url
 
 
+class _HttpsOnlyRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse a redirect whose target is not https."""
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Any,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        if urlsplit(newurl).scheme != "https":
+            raise urllib.error.HTTPError(
+                req.full_url,
+                code,
+                f"refusing redirect to a non-https URL: {newurl}",
+                headers,
+                fp,
+            )
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _opener() -> urllib.request.OpenerDirector:
+    return urllib.request.build_opener(_HttpsOnlyRedirect)
+
+
 def _fetch(url: str) -> Any:
     req = urllib.request.Request(_https_url(url), method="GET")
-    # The URL is https-only. It comes from the operator's environment.
+    # The URL is https-only, and the opener refuses a non-https redirect.
+    # It comes from the operator's environment.
     # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
-    with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310
-        return json.load(resp)
+    with _opener().open(req, timeout=10) as resp:  # nosec B310
+        raw = resp.read(_MAX_CONFIG_BYTES + 1)
+    if len(raw) > _MAX_CONFIG_BYTES:
+        raise ValueError(f"config is larger than {_MAX_CONFIG_BYTES} bytes")
+    return json.loads(raw.decode("utf-8"))
 
 
 def main(
