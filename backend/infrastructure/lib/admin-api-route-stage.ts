@@ -10,7 +10,7 @@ import { LIVE_ROUTES } from "./admin-api-live-routes";
  * Later deploys change only this number, until the last one also narrows
  * the Lambda legacy rewrite back to the forever keepers.
  */
-export const ROUTE_STAGE = 1;
+export const ROUTE_STAGE = 2;
 
 const MAX_CREATED = 70;
 
