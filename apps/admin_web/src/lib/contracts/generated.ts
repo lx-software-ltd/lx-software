@@ -1039,7 +1039,9 @@ export const wireFormat = {
     "holdOverrides": 1,
     "matrix": 2,
     "modelBySeat": 1,
-    "overrides": 1
+    "overrides": 1,
+    "byOnboardingStep": 1,
+    "bySubscription": 1
   },
   "opaqueFields": [],
   "rootMaps": {},
