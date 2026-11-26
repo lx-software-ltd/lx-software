@@ -67,9 +67,8 @@ function keyToWire(key: string, contract: WireContract): string {
   if (contract.verbatimKeys.includes(key)) {
     return key;
   }
-  const renamed = contract.renames[key];
-  if (renamed !== undefined) {
-    return renamed;
+  if (Object.hasOwn(contract.renames, key)) {
+    return contract.renames[key];
   }
   if (isCamel(key)) {
     return [...key].map((char) => (char >= "A" && char <= "Z" ? `_${char.toLowerCase()}` : char)).join("");

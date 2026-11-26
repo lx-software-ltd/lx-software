@@ -28,7 +28,7 @@ Do not edit `wire_format.py` or `wireFormat.ts`. Do not change findingalpha. Do 
 - The identity source stays source IP. The result cache TTL becomes 0 because that key is the IP alone.
 - `SiutindeiAdminApiBaseUrl` stays the origin `https://api.siutindei.com`. The client appends `/v1/admin/...`.
 - The refund line marker stays `[evolve-sprouts]`.
-- Codec bytes stay identical to findingalpha commit `d61ab99df00e99df1b649f36a08fab6b9e48ad4d`. `bySubscription` and `byOnboardingStep` are product map fields in this repo's contract. findingalpha's `wire-format.json` is a different product file and is not byte-checked.
+- Codec bytes stay identical to findingalpha commit `6408c95002e3c485e243d9331f8b557da19e6b19`. `bySubscription` and `byOnboardingStep` are product map fields in this repo's contract. findingalpha's `wire-format.json` is a different product file and is not byte-checked.
 
 ## Done when
 
