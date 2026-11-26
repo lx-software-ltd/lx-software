@@ -898,7 +898,7 @@ def _presign_and_put(orgs: list[dict[str, Any]], token: str, *, filename: str, t
     blob = json.dumps({"organizations": orgs}).encode("utf-8")
     presign = _http(
         "POST",
-        urljoin(base + "/", "admin/imports/presign"),
+        urljoin(base + "/", "v1/admin/imports/presign"),
         headers=_auth_headers(token),
         body=json.dumps({"file_name": filename, "content_type": "application/json"}).encode("utf-8"),
         timeout=timeout,
@@ -921,7 +921,7 @@ def _imports_post(token: str, body: dict[str, Any], *, timeout: int = _IMPORT_HT
         raise CatalogImportError("SiutindeiAdminApiBaseUrl is not set")
     return _http(
         "POST",
-        urljoin(base + "/", "admin/imports"),
+        urljoin(base + "/", "v1/admin/imports"),
         headers=_auth_headers(token),
         body=json.dumps(body).encode("utf-8"),
         timeout=timeout,

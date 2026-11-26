@@ -269,7 +269,7 @@ def desired_book_lines() -> tuple[list[dict[str, Any]], int, int, int, int]:
             _line(
                 line_id=f"es-ref-{row_id}",
                 day=day,
-                description=f"[evolvesprouts] Refund {row_id}",
+                description=f"[evolve-sprouts] Refund {row_id}",
                 net=amount,
                 vat=0,
                 gross=amount,

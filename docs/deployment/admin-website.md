@@ -549,7 +549,7 @@ stack-wide knobs are unprefixed. Lambda env vars stay short
 | `SiutindeiBoardMailSendingEnabled` | `false` (default) / `true`. Flip only after DKIM / SPF / DMARC are in the zone; creates the SES identity and send policy. The Lambda reads `BOARD_MAIL_SENDING_ENABLED` with the shared flag parser (`1`, `true`, `yes`, `on`). |
 | `SiutindeiBoardChatModel` / `MeetingModel` / `DeepDiveModel` | Default OpenRouter slugs (`openai/gpt-4.1-mini`, `openai/gpt-4.1-mini`, `anthropic/claude-sonnet-4`); overridable in **Settings**. They are also sent as `models` fallbacks so a 429 on a cheap primary continues on the defaults. |
 | `SiutindeiBoardCatalogImportEnabled` | `false` (CDK default) / `true`. Kill switch for `catalog_import`; preview and local dry-run work while it is off. Production is `true`. |
-| `SiutindeiAdminApiBaseUrl` / `SiutindeiUserPoolId` / `SiutindeiBoardImporterClientId` / `SiutindeiBoardCatalogManagerId` | siutindei admin API base URL, Cognito user pool and importer app client for the catalog importer user, and the default manager id stamped on imported organisations. Blank until the product side exists. Production sets the base URL to `https://api.siutindei.com/v1`. |
+| `SiutindeiAdminApiBaseUrl` / `SiutindeiUserPoolId` / `SiutindeiBoardImporterClientId` / `SiutindeiBoardCatalogManagerId` | siutindei admin API base URL, Cognito user pool and importer app client for the catalog importer user, and the default manager id stamped on imported organisations. Blank until the product side exists. Production sets the base URL to `https://api.siutindei.com`. The importer appends `/v1/admin/imports`. |
 | `ApiCustomDomainName` / `ApiCustomDomainCertificateArn` | Optional `api.lx-software.com` and its certificate in **ap-southeast-1**. Both empty, or the disabled placeholders, leave the custom domain off. Production sets the hostname and `<FROM_GITHUB_SECRET: CDK_PARAM_API_CUSTOM_DOMAIN_CERTIFICATE_ARN>`. |
 
 ### API hostname
@@ -839,8 +839,8 @@ matching row wins:
 
 Untagged resources land in **Unallocated**. AWS's invoice PDF is one
 account total; the internal split is **LX Software → Dashboard → AWS**
-(`GET /aws/usage`, last complete UTC month by default) and **Download
-allocation PDF** (`GET /aws/usage.pdf`). Keep tagging new stacks with
+(`GET /v1/admin/aws/usage`, last complete UTC month by default) and **Download
+allocation PDF** (`GET /v1/admin/aws/usage/pdf`). Keep tagging new stacks with
 `cdk.Tags` and never rotate the tag keys (Cost Explorer only groups by
 activated tags; a key change orphans history).
 
@@ -1122,7 +1122,7 @@ organisations.
    on `main`. Create the service user in `importer` and put
    `{username, password}` in
    `lxsoftware-admin-siutindei-board-importer-credentials`.
-2. Set `SiutindeiAdminApiBaseUrl` to `https://api.siutindei.com/v1`,
+2. Set `SiutindeiAdminApiBaseUrl` to `https://api.siutindei.com`,
    plus `SiutindeiUserPoolId`, `SiutindeiBoardImporterClientId` and
    `SiutindeiBoardCatalogManagerId` (the `SiutindeiBoardImporterAuthPolicy`
    IAM statement is gated on a non-blank pool id). Production params

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import difflib
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -28,7 +29,9 @@ ARTIFACTS = [
 ]
 
 
-# Byte-identical with findingalpha. A missing sibling checkout is skipped.
+# Codec bytes compared with `git show` of this findingalpha commit.
+# A missing local checkout skips. No absolute checkout path is hardcoded.
+_FINDINGALPHA_CODEC = "d61ab99df00e99df1b649f36a08fab6b9e48ad4d"
 _WIRE_PAIRS = (
     (
         ROOT / "backend" / "lambda" / "admin" / "wire_format.py",
@@ -41,35 +44,69 @@ _WIRE_PAIRS = (
 )
 
 
-def _findingalpha_root() -> Path | None:
-    for candidate in (Path("/agent/repos/findingalpha"), ROOT.parent / "findingalpha"):
-        if (candidate / "backend" / "lambda" / "engine" / "wire_format.py").is_file():
-            return candidate
+def _findingalpha_checkout() -> Path | None:
+    """A local findingalpha git checkout, or None."""
+    raw = os.environ.get("FINDINGALPHA_CHECKOUT", "").strip()
+    candidates = [Path(raw)] if raw else []
+    candidates.append(ROOT.parent / "findingalpha")
+    seen: set[Path] = set()
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            continue
+        if resolved in seen or not resolved.is_dir():
+            continue
+        seen.add(resolved)
+        probe = subprocess.run(
+            ["git", "-C", str(resolved), "rev-parse", "--is-inside-work-tree"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if probe.returncode == 0 and probe.stdout.strip() == "true":
+            return resolved
     return None
+
+
+def _git_show(repo: Path, relative: str) -> bytes:
+    spec = f"{_FINDINGALPHA_CODEC}:{relative}"
+    result = subprocess.run(
+        ["git", "-C", str(repo), "show", spec],
+        check=False,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(detail or f"git show {spec} failed")
+    return result.stdout
 
 
 def wire_copy_findings() -> list[str]:
     """One finding per shared codec file that is not byte-identical."""
-    sibling = _findingalpha_root()
+    sibling = _findingalpha_checkout()
     if sibling is None:
-        print("wire format sibling check skipped: findingalpha checkout not found")
+        print("check skipped: findingalpha checkout not found")
         return []
     findings: list[str] = []
     for local, relative in _WIRE_PAIRS:
-        other = sibling / relative
+        try:
+            right = _git_show(sibling, relative)
+        except RuntimeError as exc:
+            findings.append(f"{local.relative_to(ROOT)}: {exc}")
+            continue
         left = local.read_bytes()
-        right = other.read_bytes()
         if left == right:
             continue
         diff = "".join(
             difflib.unified_diff(
                 right.decode("utf-8", errors="replace").splitlines(keepends=True),
                 left.decode("utf-8", errors="replace").splitlines(keepends=True),
-                fromfile=str(other),
+                fromfile=f"findingalpha@{_FINDINGALPHA_CODEC}:{relative}",
                 tofile=str(local.relative_to(ROOT)),
             )
         )
-        findings.append(f"{local.relative_to(ROOT)} differs from {other}\n{diff}")
+        findings.append(f"{local.relative_to(ROOT)} differs from findingalpha {_FINDINGALPHA_CODEC}\n{diff}")
     return findings
 
 

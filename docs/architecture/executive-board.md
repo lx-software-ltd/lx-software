@@ -622,7 +622,7 @@ dedicated Cognito **importer** user in the siutindei pool
 (`AdminInitiateAuth` / `ADMIN_USER_PASSWORD_AUTH`, secret
 `…-board-importer-credentials`, IAM statement gated on
 `SiutindeiUserPoolId`) and calls the product admin API
-(`SiutindeiAdminApiBaseUrl`): presign, PUT, `POST /admin/imports`. This
+(`SiutindeiAdminApiBaseUrl`): presign `POST /v1/admin/imports/presign`, PUT, `POST /v1/admin/imports`. This
 stack never writes Aurora in that path and no LLM runs. `catalog_import`
 is `always_propose` (action class `catalog_import`) and refuses while
 `SiutindeiBoardCatalogImportEnabled` is off; preview and local dry-run

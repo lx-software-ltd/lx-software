@@ -194,6 +194,19 @@ export function defineAdminHttpApi(
     apiDomain.url,
     httpApi.apiEndpoint,
   ).toString();
+  // Second CSP origin. The admin web imports this with AdminApiBaseUrl.
+  // Together they match cspApiConnectOrigin, and the Fn::If stays here.
+  const cspApiExecuteApiOrigin = cdk.Fn.conditionIf(
+    apiDomain.useApiCustomDomain.logicalId,
+    cdk.Fn.join("", [" ", httpApi.apiEndpoint]),
+    "",
+  ).toString();
+  new cdk.CfnOutput(scope, "CspApiExecuteApiOrigin", {
+    value: cspApiExecuteApiOrigin,
+    description:
+      "Extra admin CSP connect-src origin. A leading space and the execute-api URL while the custom domain is on; empty otherwise.",
+    exportName: "lxsoftware-CspApiExecuteApiOrigin",
+  });
   adminFn.addEnvironment(
     "PUBLIC_API_BASE_URL",
     cdk.Fn.conditionIf(

@@ -28,6 +28,17 @@ class WireFormatCasesTest(unittest.TestCase):
             self.assertEqual(wire, case["wire"], case["name"])
             self.assertEqual(wire_format.from_wire(wire, contract, route), case["value"], case["name"])
 
+    def test_subscription_status_keys_round_trip(self) -> None:
+        contract = json.loads((_ADMIN / "contracts" / "wire-format.json").read_text(encoding="utf-8"))
+        value = {
+            "bySubscription": {"past_due": 2, "active": 1},
+            "byOnboardingStep": {"photos": 1, "needs_review": 3},
+        }
+        wire = wire_format.to_wire(value, contract)
+        self.assertEqual(wire["by_subscription"], {"past_due": 2, "active": 1})
+        self.assertEqual(wire["by_onboarding_step"], {"photos": 1, "needs_review": 3})
+        self.assertEqual(wire_format.from_wire(wire, contract), value)
+
     def test_map_field_data_keys_are_not_camelized(self) -> None:
         contract = json.loads((_ADMIN / "contracts" / "wire-format.json").read_text(encoding="utf-8"))
         got = wire_format.from_wire(
