@@ -146,6 +146,7 @@ class TestWebhook(MetaTestCase):
         self.assertEqual(out["statusCode"], 200)
         self.assertEqual(out["body"], "abc123")
         self.assertEqual(out["headers"]["Content-Type"], "text/plain")
+        self.assertEqual(out["headers"]["x-request-id"], "w1")
 
     def test_tenant_webhook_path_uses_the_same_handler(self) -> None:
         ev = {
@@ -166,6 +167,7 @@ class TestWebhook(MetaTestCase):
         }
         out = http_call(ev, None)
         self.assertEqual(out["statusCode"], 403)
+        self.assertEqual(out["headers"]["x-request-id"], "w2")
 
     def test_post_requires_valid_hmac_and_masks_pii(self) -> None:
         payload = {

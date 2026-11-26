@@ -1041,6 +1041,8 @@ export const wireFormat = {
     "modelBySeat": 1,
     "overrides": 1,
     "byOnboardingStep": 1,
+    "byStage": 1,
+    "byStatus": 1,
     "bySubscription": 1
   },
   "opaqueFields": [],

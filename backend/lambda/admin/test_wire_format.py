@@ -33,10 +33,14 @@ class WireFormatCasesTest(unittest.TestCase):
         value = {
             "bySubscription": {"past_due": 2, "active": 1},
             "byOnboardingStep": {"photos": 1, "needs_review": 3},
+            "byStage": {"listed": 4, "past_due": 1},
+            "byStatus": {"drafted": 3, "past_due": 2},
         }
         wire = wire_format.to_wire(value, contract)
         self.assertEqual(wire["by_subscription"], {"past_due": 2, "active": 1})
         self.assertEqual(wire["by_onboarding_step"], {"photos": 1, "needs_review": 3})
+        self.assertEqual(wire["by_stage"], {"listed": 4, "past_due": 1})
+        self.assertEqual(wire["by_status"], {"drafted": 3, "past_due": 2})
         self.assertEqual(wire_format.from_wire(wire, contract), value)
 
     def test_map_field_data_keys_are_not_camelized(self) -> None:

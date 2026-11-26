@@ -92,6 +92,11 @@ def html_headers() -> dict[str, str]:
     return {"content-type": "text/html; charset=utf-8", **request_id_headers()}
 
 
+def plain_headers() -> dict[str, str]:
+    """Plain-text response headers, including the request id when one is bound."""
+    return {"Content-Type": "text/plain", **request_id_headers()}
+
+
 def _json_response(status_code: int, payload: dict[str, Any] | list[Any] | str) -> dict[str, Any]:
     if status_code >= 400 and isinstance(payload, dict):
         payload = _with_problem(status_code, payload)

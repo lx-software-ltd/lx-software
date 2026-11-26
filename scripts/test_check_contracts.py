@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import sys
+import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -27,12 +28,13 @@ class CheckContractsWireCopyTest(unittest.TestCase):
         self.assertEqual(out.getvalue().strip(), "check skipped: findingalpha checkout not found")
 
     def test_a_directory_that_is_not_a_checkout_is_ignored(self) -> None:
-        root = Path("/tmp/lx-check-contracts-root")
-        missing = root / "not-a-repo"
-        missing.mkdir(parents=True, exist_ok=True)
-        with patch.dict("os.environ", {"FINDINGALPHA_CHECKOUT": str(missing)}):
-            with patch.object(check, "ROOT", root / "lx-software"):
-                self.assertIsNone(check._findingalpha_checkout())
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            missing = root / "not-a-repo"
+            missing.mkdir()
+            with patch.dict("os.environ", {"FINDINGALPHA_CHECKOUT": str(missing)}):
+                with patch.object(check, "ROOT", root / "lx-software"):
+                    self.assertIsNone(check._findingalpha_checkout())
 
     def test_the_checker_does_not_hardcode_an_agent_path(self) -> None:
         text = _PATH.read_text(encoding="utf-8")

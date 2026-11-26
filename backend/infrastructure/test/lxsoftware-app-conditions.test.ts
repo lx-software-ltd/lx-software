@@ -48,9 +48,35 @@ describe("assembled templates", () => {
       });
     }
     const admin = stacks.find((stack) => stack.node.id === "lxsoftware-admin-web");
-    const serialized = JSON.stringify(Template.fromStack(admin!).toJSON());
+    const adminJson = Template.fromStack(admin!).toJSON() as {
+      Conditions?: Record<string, unknown>;
+      Outputs?: Record<string, { Value?: unknown; Export?: { Name?: unknown } }>;
+    };
+    const serialized = JSON.stringify(adminJson);
     expect(serialized).toContain("lxsoftware-AdminApiBaseUrl");
-    expect(serialized).not.toContain("lxsoftware-CspApiExecuteApiOrigin");
+    expect(serialized).not.toContain("CspApiExecuteApiOrigin");
     expect(serialized).not.toContain("UseApiCustomDomain");
+    expect(serialized).not.toContain("execute-api");
+    expect(adminJson.Conditions ?? {}).not.toHaveProperty("UseApiCustomDomain");
+    const adminExports = Object.values(adminJson.Outputs ?? {}).map((output) =>
+      JSON.stringify(output.Export ?? {}),
+    );
+    expect(adminExports.join(" ")).not.toContain("CspApiExecuteApiOrigin");
+  });
+
+  test("the backend template still exports the HTTP API endpoint", () => {
+    const app = new cdk.App({
+      context: { "aws:cdk:bundling-stacks": [] },
+    });
+    assemble(app);
+    const backend = app.node.children.find(
+      (child) => cdk.Stack.isStack(child) && child.node.id === "lxsoftware",
+    );
+    expect(backend).toBeDefined();
+    const outputs = (Template.fromStack(backend as cdk.Stack).toJSON() as {
+      Outputs?: Record<string, unknown>;
+    }).Outputs;
+    expect(JSON.stringify(outputs)).toContain("ApiEndpoint");
+    expect(JSON.stringify(outputs)).not.toContain("CspApiExecuteApiOrigin");
   });
 });
