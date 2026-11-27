@@ -12,6 +12,8 @@ updates:
       day: "monday"
     cooldown:
       default-days: 7
+      exclude:
+        - "lx-software-ltd/actions/*"
     commit-message:
       prefix: "ci"
     labels:
