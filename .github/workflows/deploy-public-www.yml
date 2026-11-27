@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@4362f03b0b45bd7933790e159e757ad9691b12a1 # main 2026-11-27
+        uses: lx-software-ltd/actions/setup-node@133492f777ad088cdd0ef2e3d133843f79c13e93 # main 2026-11-27
         with:
           cache: npm
           working-directory: apps/public_www
@@ -53,13 +53,13 @@ jobs:
       # After the build. npm ci and the build must not see the deploy role.
       - name: Configure AWS credentials
         id: aws
-        uses: lx-software-ltd/actions/aws-oidc@4362f03b0b45bd7933790e159e757ad9691b12a1 # main 2026-11-27
+        uses: lx-software-ltd/actions/aws-oidc@133492f777ad088cdd0ef2e3d133843f79c13e93 # main 2026-11-27
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ vars.AWS_REGION }}
 
       - name: Deploy public website
-        uses: lx-software-ltd/actions/s3-cloudfront-deploy@4362f03b0b45bd7933790e159e757ad9691b12a1 # main 2026-11-27
+        uses: lx-software-ltd/actions/s3-cloudfront-deploy@133492f777ad088cdd0ef2e3d133843f79c13e93 # main 2026-11-27
         with:
           source: apps/public_www/dist
 # template:set

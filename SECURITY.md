@@ -44,7 +44,7 @@ You get updates while the fix is in progress and a note when it ships. The advis
 
 `lx-software` deploys the LX Software public website and a private admin console with its backend API.
 
-- `security.yml` runs Checkov, CodeQL, the personal-data denylist, Gitleaks, pip-audit, Bandit, and npm audit. `semgrep.yml` runs Semgrep.
+- `security.yml` runs Checkov, CodeQL, the personal-data denylist, Gitleaks, pip-audit, Bandit, npm audit, and Semgrep. `lint.yml` checks the lockfiles. Both gates are required.
 - The owner name on the public website is published on purpose. It is not on the personal-data denylist.
 - Known limitations: the admin distribution gets a web ACL only when `WafWebAclArn` is set. The stacks here do not set up CloudTrail.
 
