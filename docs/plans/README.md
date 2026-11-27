@@ -16,3 +16,4 @@ before any write. The zone map is [`docs/architecture/zones.md`](../architecture
 | [`2026-11-26-board-alias-wire-cache.md`](2026-11-26-board-alias-wire-cache.md) | Keep the old board paths and header for one deploy, and cache the wire contract |
 | [`2026-11-26-drop-board-alias.md`](2026-11-26-drop-board-alias.md) | Remove the board aliases and check the admin SPA uses the API hostname |
 | [`2026-11-26-request-id-on-plain-text.md`](2026-11-26-request-id-on-plain-text.md) | Put the request id on newsletter, outreach, and Meta plain-text responses |
+| [`2026-11-27-dependabot-batch.md`](2026-11-27-dependabot-batch.md) | Open one pull request for routine Dependabot updates |
