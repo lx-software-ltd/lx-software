@@ -25,10 +25,10 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@605040de8abecf8828d5db5a62648b1c35c12589 # main 2026-11-26
+        uses: lx-software-ltd/actions/setup-python@4362f03b0b45bd7933790e159e757ad9691b12a1 # main 2026-11-27
 
       - name: Run harness checks
-        uses: lx-software-ltd/actions/agent-harness@605040de8abecf8828d5db5a62648b1c35c12589 # main 2026-11-26
+        uses: lx-software-ltd/actions/agent-harness@4362f03b0b45bd7933790e159e757ad9691b12a1 # main 2026-11-27
 
   repo-checks:
     name: Repository checks
@@ -40,10 +40,10 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@605040de8abecf8828d5db5a62648b1c35c12589 # main 2026-11-26
+        uses: lx-software-ltd/actions/setup-python@4362f03b0b45bd7933790e159e757ad9691b12a1 # main 2026-11-27
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@605040de8abecf8828d5db5a62648b1c35c12589 # main 2026-11-26
+        uses: lx-software-ltd/actions/setup-node@4362f03b0b45bd7933790e159e757ad9691b12a1 # main 2026-11-27
         with:
           install: "false"
 
@@ -61,14 +61,14 @@ jobs:
 
 
       - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@605040de8abecf8828d5db5a62648b1c35c12589 # main 2026-11-26
+        uses: lx-software-ltd/actions/setup-python@4362f03b0b45bd7933790e159e757ad9691b12a1 # main 2026-11-27
         with:
           # template:set
           requirements: ""
           # template:end
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@605040de8abecf8828d5db5a62648b1c35c12589 # main 2026-11-26
+        uses: lx-software-ltd/actions/setup-node@4362f03b0b45bd7933790e159e757ad9691b12a1 # main 2026-11-27
         with:
           install: "false"
 
@@ -93,7 +93,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@605040de8abecf8828d5db5a62648b1c35c12589 # main 2026-11-26
+        uses: lx-software-ltd/actions/setup-node@4362f03b0b45bd7933790e159e757ad9691b12a1 # main 2026-11-27
         with:
           cache: npm
           working-directory: apps/admin_web
@@ -110,7 +110,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@605040de8abecf8828d5db5a62648b1c35c12589 # main 2026-11-26
+        uses: lx-software-ltd/actions/setup-node@4362f03b0b45bd7933790e159e757ad9691b12a1 # main 2026-11-27
         with:
           cache: npm
           working-directory: apps/public_www
@@ -127,13 +127,13 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@605040de8abecf8828d5db5a62648b1c35c12589 # main 2026-11-26
+        uses: lx-software-ltd/actions/setup-node@4362f03b0b45bd7933790e159e757ad9691b12a1 # main 2026-11-27
         with:
           cache: npm
           working-directory: backend/infrastructure
 
       - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@605040de8abecf8828d5db5a62648b1c35c12589 # main 2026-11-26
+        uses: lx-software-ltd/actions/setup-python@4362f03b0b45bd7933790e159e757ad9691b12a1 # main 2026-11-27
 
 
       - name: Lint CDK
@@ -164,7 +164,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@605040de8abecf8828d5db5a62648b1c35c12589 # main 2026-11-26
+        uses: lx-software-ltd/actions/setup-node@4362f03b0b45bd7933790e159e757ad9691b12a1 # main 2026-11-27
 
       - name: Type-check Node apps
         run: |
@@ -186,7 +186,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Check workflows
-        uses: lx-software-ltd/actions/workflow-conformance@605040de8abecf8828d5db5a62648b1c35c12589 # main 2026-11-26
+        uses: lx-software-ltd/actions/workflow-conformance@4362f03b0b45bd7933790e159e757ad9691b12a1 # main 2026-11-27
 
   lint:
     name: lint
@@ -206,6 +206,6 @@ jobs:
     if: always()
     steps:
       - name: Require every lint job
-        uses: lx-software-ltd/actions/require-jobs@605040de8abecf8828d5db5a62648b1c35c12589 # main 2026-11-26
+        uses: lx-software-ltd/actions/require-jobs@4362f03b0b45bd7933790e159e757ad9691b12a1 # main 2026-11-27
         with:
           needs-json: ${{ toJson(needs) }}

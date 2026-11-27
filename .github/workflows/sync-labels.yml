@@ -1,0 +1,38 @@
+name: Sync Labels
+
+# Applies the shared catalogue to the calling repository. github.token
+# writes labels there.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "main"
+  schedule:
+    - cron: "0 8 * * 1"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Leave a running apply to finish. The writes are idempotent, and the
+  # next run applies whatever is still missing.
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: Sync Labels
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Apply the shared catalogue
+        uses: lx-software-ltd/actions/sync-labels@4362f03b0b45bd7933790e159e757ad9691b12a1 # main 2026-11-27
+        with:
+          mode: apply
+          repositories: ${{ github.repository }}

@@ -48,13 +48,13 @@ jobs:
 
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@605040de8abecf8828d5db5a62648b1c35c12589 # main 2026-11-26
+        uses: lx-software-ltd/actions/setup-node@4362f03b0b45bd7933790e159e757ad9691b12a1 # main 2026-11-27
         with:
           cache: npm
           working-directory: backend/infrastructure
 
       - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@605040de8abecf8828d5db5a62648b1c35c12589 # main 2026-11-26
+        uses: lx-software-ltd/actions/setup-python@4362f03b0b45bd7933790e159e757ad9691b12a1 # main 2026-11-27
 
       - name: Determine deployment region
         id: region
@@ -65,7 +65,7 @@ jobs:
 
       - name: Configure AWS credentials
         id: aws
-        uses: lx-software-ltd/actions/aws-oidc@605040de8abecf8828d5db5a62648b1c35c12589 # main 2026-11-26
+        uses: lx-software-ltd/actions/aws-oidc@4362f03b0b45bd7933790e159e757ad9691b12a1 # main 2026-11-27
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ steps.region.outputs.region }}
@@ -77,7 +77,7 @@ jobs:
 
 
       - name: Check CDK bootstrap
-        uses: lx-software-ltd/actions/cdk-bootstrap-check@605040de8abecf8828d5db5a62648b1c35c12589 # main 2026-11-26
+        uses: lx-software-ltd/actions/cdk-bootstrap-check@4362f03b0b45bd7933790e159e757ad9691b12a1 # main 2026-11-27
         with:
           qualifier: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
           region: ${{ steps.region.outputs.region }}
@@ -93,7 +93,7 @@ jobs:
 
 
       - name: Deploy stacks
-        uses: lx-software-ltd/actions/cdk-deploy@605040de8abecf8828d5db5a62648b1c35c12589 # main 2026-11-26
+        uses: lx-software-ltd/actions/cdk-deploy@4362f03b0b45bd7933790e159e757ad9691b12a1 # main 2026-11-27
         with:
           working-directory: backend/infrastructure
           plan-file: backend/infrastructure/cdk-plan.json
