@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PIN = "b911ce02864881b95506a008a471108db22ce29e"
+PIN = "8ed507ce395319e1cb0b1d40d26a5f5897cf211f"
 
 
 class DependabotBatchWorkflowTest(unittest.TestCase):
@@ -25,7 +25,7 @@ class DependabotBatchWorkflowTest(unittest.TestCase):
         self.assertIn("contents: write\n", text)
         self.assertIn("pull-requests: write\n", text)
         self.assertIn(
-            f"uses: lx-software-ltd/actions/dependabot-batch@{PIN} # main 2026-11-27\n",
+            f"uses: lx-software-ltd/actions/dependabot-batch@{PIN} # main 2026-11-28\n",
             text,
         )
         self.assertIn("mode: open\n", text)

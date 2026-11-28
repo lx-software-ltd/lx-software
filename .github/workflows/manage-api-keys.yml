@@ -83,7 +83,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@b911ce02864881b95506a008a471108db22ce29e # main 2026-11-27
+        uses: lx-software-ltd/actions/setup-python@8ed507ce395319e1cb0b1d40d26a5f5897cf211f # main 2026-11-28
 
       - name: Validate inputs
         env:
@@ -96,7 +96,7 @@ jobs:
 
       - name: Configure AWS credentials
         id: aws
-        uses: lx-software-ltd/actions/aws-oidc@b911ce02864881b95506a008a471108db22ce29e # main 2026-11-27
+        uses: lx-software-ltd/actions/aws-oidc@8ed507ce395319e1cb0b1d40d26a5f5897cf211f # main 2026-11-28
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ vars.AWS_REGION }}

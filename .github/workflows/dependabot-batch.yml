@@ -23,7 +23,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Open the batch pull request
-        uses: lx-software-ltd/actions/dependabot-batch@b911ce02864881b95506a008a471108db22ce29e # main 2026-11-27
+        uses: lx-software-ltd/actions/dependabot-batch@8ed507ce395319e1cb0b1d40d26a5f5897cf211f # main 2026-11-28
         with:
           mode: open
           start-gates: dispatch
